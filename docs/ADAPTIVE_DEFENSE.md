@@ -17,6 +17,8 @@ Principio:
 
 > **se entrambi i peer dimostrano attività recente sul control-plane ma il data-plane tra loro non funziona, Freedom deve trattare il caso come probabile route failure/interferenza e tentare automaticamente percorsi indipendenti.**
 
+Questa informazione non deve restare nascosta nel motore di rete: il client deve poterla spiegare all'utente in modo comprensibile e tecnicamente onesto.
+
 ---
 
 ## 2. Control-plane e data-plane
@@ -210,7 +212,38 @@ Azione: transport/path diversity più aggressiva.
 
 ---
 
-## 8. Privacy e metadata trade-off
+## 8. Freedom Network Indicator
+
+Lo stato dell'Adaptive Defense Engine deve alimentare un indicatore di rete visibile e cliccabile nel client ufficiale.
+
+Stati UX concettuali:
+
+```text
+NORMAL       percorso funzionante
+SHIELDED     percorso protetto/shielded attivo
+DEGRADED     degradazione o fallback
+SUSPECTED    interferenza/filtraggio o route failure selettiva sospetta
+UNAVAILABLE  peer recentemente attivo ma nessun percorso valido trovato
+```
+
+Quando viene rilevato un evento `SUSPECTED` o `UNAVAILABLE`, il pannello può aprirsi automaticamente una volta per incidente per spiegare:
+
+- fatti osservati;
+- inferenza corrente;
+- percorso fallito;
+- contromisure tentate;
+- percorso alternativo eventualmente attivo;
+- livello di protezione.
+
+Il colore non deve essere l'unico segnale. Testo e icona devono accompagnarlo.
+
+Il motore deve fornire al layer UI dati sufficienti per distinguere **evidenza** da **inferenza**.
+
+Dettagli UX: [`NETWORK_STATUS_UI.md`](NETWORK_STATUS_UI.md).
+
+---
+
+## 9. Privacy e metadata trade-off
 
 Usare il registro per liveness/recovery crea inevitabilmente un pattern temporale osservabile a livello di chain/provider.
 
@@ -232,7 +265,7 @@ Il sistema deve documentare che il control-plane può ridurre l'ambiguità tra o
 
 ---
 
-## 9. Gas e costi
+## 10. Gas e costi
 
 I recovery beacon possono richiedere una write on-chain nella prima implementazione NEAR.
 
@@ -243,7 +276,7 @@ messaggio normale                 -> 0 chain writes
 sessione attiva                   -> 0 heartbeat writes
 route valida                      -> 0 recovery writes
 perdita completa route            -> recovery beacon possibile
-interferenza sospetta              -> recovery coordination possibile
+interferenza sospetta             -> recovery coordination possibile
 ```
 
 Fee relayer indipendenti possono sponsorizzare il gas senza possedere l'identità dell'utente.
@@ -252,7 +285,7 @@ Un singolo fee relayer non deve essere necessario per attivare il recovery.
 
 ---
 
-## 10. Core vs Freedom Pro / Shield
+## 11. Core, Emergency Shield e Freedom Pro
 
 La capacità minima di rilevare route failure e cambiare provider/percorso è una proprietà di resilienza del protocollo e non deve essere rimossa dal core gratuito.
 
@@ -263,7 +296,18 @@ La capacità minima di rilevare route failure e cambiare provider/percorso è un
 - fallback relay/path;
 - recovery rendezvous;
 - rilevamento `peer recently active + data path unavailable`;
-- cambio route automatico quando esiste un'alternativa compatibile.
+- cambio route automatico quando esiste un'alternativa compatibile;
+- stessa informazione significativa mostrata agli utenti Free e Pro.
+
+### Emergency Shield Free
+
+Quando community/direct/fallback gratuiti non bastano e l'infrastruttura gestita può superare il blocco, il client ufficiale può offrire una quota limitata di capacità Shield gratuita.
+
+La quota può essere contabilizzata internamente per byte, tempo, sessione o capacity token e presentata all'utente in forma semplice.
+
+Il numero definitivo deve essere deciso solo dopo misure reali di costo e abuso.
+
+Freedom non deve lasciare deliberatamente offline un utente Free dopo aver rilevato una probabile interferenza solo per creare un paywall.
 
 ### Freedom Pro — Shield
 
@@ -271,6 +315,7 @@ Il piano Pro può monetizzare capacità infrastrutturale e contromisure più cos
 
 - **Always-Shielded mode** senza direct IP;
 - maggiore pool di relay gestiti;
+- budget Shield molto superiore;
 - multi-hop gestito;
 - path diversity più ampia;
 - pre-warming di candidate alternativi;
@@ -280,11 +325,11 @@ Il piano Pro può monetizzare capacità infrastrutturale e contromisure più cos
 - padding/metadata protection opzionale quando implementato;
 - policy **Maximum Resilience** che mantiene più percorsi indipendenti pronti prima del failure.
 
-Il piano Pro non compra una cifratura più forte e non deve diventare requisito per autenticare una sessione Freedom.
+Il piano Pro non compra una cifratura più forte, una classificazione tecnica più favorevole o informazioni diagnostiche fondamentali migliori.
 
 ---
 
-## 11. Maximum Resilience
+## 12. Maximum Resilience
 
 Modalità Pro opzionale:
 
@@ -304,7 +349,22 @@ Non deve essere presentata come garanzia di anonimato o incensurabilità assolut
 
 ---
 
-## 12. Invarianti
+## 13. Anti-dark-pattern
+
+Adaptive Defense non deve essere usato come leva di paura commerciale.
+
+Il client non deve:
+
+- elevare artificialmente `DEGRADED` a `SUSPECTED` per vendere Pro;
+- cambiare la classificazione tecnica in base al tier;
+- nascondere agli utenti Free il fatto che un peer risulta recentemente attivo;
+- attribuire sorveglianza o censura a un attore specifico senza evidenza;
+- degradare route Free funzionanti;
+- mostrare un paywall prima di aver tentato le contromisure Free disponibili durante un incidente critico.
+
+---
+
+## 14. Invarianti
 
 Adaptive Defense deve rispettare queste invarianti:
 
@@ -316,4 +376,6 @@ Adaptive Defense deve rispettare queste invarianti:
 - un beacon prova attività recente, non "online" in senso assoluto;
 - il sistema può rilevare interferenza/route failure, non una sorveglianza passiva invisibile;
 - il recovery smette di scrivere appena una sessione valida viene ristabilita;
-- il costo on-chain dipende da eventi di recovery, non dal volume della conversazione.
+- il costo on-chain dipende da eventi di recovery, non dal volume della conversazione;
+- stato e spiegazioni fondamentali restano visibili anche nel tier Free;
+- l'accesso a Emergency Shield Free non deve essere manipolato per creare falsi incentivi commerciali.
