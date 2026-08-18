@@ -668,7 +668,7 @@ class MainActivity : AppCompatActivity() {
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES or
                 InputType.TYPE_TEXT_FLAG_MULTI_LINE
         }
-        inputLayout.addView(input, ViewGroup.LayoutParams(MATCH, WRAP))
+        inputLayout.addView(input, LinearLayout.LayoutParams(MATCH, WRAP))
         composer.addView(inputLayout, LinearLayout.LayoutParams(0, WRAP, 1f).apply { marginEnd = dp(8) })
         composer.addView(MaterialButton(this).apply {
             text = ""
@@ -1223,7 +1223,7 @@ class MainActivity : AppCompatActivity() {
                 InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_WORDS
             setSingleLine(true)
         }
-        layout.addView(input, ViewGroup.LayoutParams(MATCH, WRAP))
+        layout.addView(input, LinearLayout.LayoutParams(MATCH, WRAP))
         return layout to input
     }
 
