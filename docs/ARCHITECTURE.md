@@ -2,21 +2,22 @@
 
 ## 1. Definizione
 
-Freedom è un protocollo decentralizzato di comunicazione. L'architettura separa cinque responsabilità:
+Freedom è un protocollo decentralizzato di comunicazione sincrona. L'architettura separa sei responsabilità:
 
 1. **identity** — chi è il device;
-2. **rendezvous** — come due device online si ritrovano quando non hanno più un percorso valido;
-3. **routing/transport** — come i pacchetti attraversano la rete;
-4. **secure session** — come gli endpoint si autenticano e derivano chiavi;
-5. **application** — messaggi, file, audio e video.
+2. **verifiable registry** — come viene risolta e aggiornata l'identità;
+3. **rendezvous** — come due device online si ritrovano quando non hanno più un percorso valido;
+4. **routing/transport** — come i pacchetti attraversano la rete;
+5. **secure session** — come gli endpoint si autenticano e derivano chiavi;
+6. **application** — messaggi, file, audio e video.
 
-La blockchain interviene solo nei primi due punti. Il traffico applicativo rimane sempre off-chain.
+La prima implementazione del registro usa una blockchain, ma il traffico applicativo rimane sempre off-chain.
 
 ## 2. Componenti
 
 ```text
                     +----------------------+
-                    |      Blockchain      |
+                    | Verifiable Registry  |
                     | Device Registry      |
                     | Fallback Rendezvous  |
                     +----------+-----------+
@@ -30,15 +31,17 @@ La blockchain interviene solo nei primi due punti. Il traffico applicativo riman
 | Freedom    |                                    | Freedom    |
 +-----+------+                                    +-----+------+
       |                                                 |
-      | direct / NAT traversal / relay                 |
+      | direct / NAT / relay / shielded path           |
       +================ E2EE ===========================+
                                |
                       optional relay peers
 ```
 
+Il registro è fondamentale come **funzione distribuita e verificabile** del trust model attuale. NEAR è soltanto la prima implementazione tramite `ChainAdapter` e deve essere sostituibile.
+
 ## 3. Identity plane
 
-Ogni installazione autorizzata possiede un `DeviceID` stabile e una identity key custodita localmente.
+Ogni installazione possiede un `DeviceID` stabile e una identity key custodita localmente.
 
 ```text
 DeviceRecord {
@@ -62,11 +65,13 @@ ACTIVE
 REVOKED
 ```
 
-Una rotazione incrementa `key_epoch`. Un client deve rifiutare prove firmate con un epoch revocato o superato quando la chain indica una chiave più recente.
+Una rotazione incrementa `key_epoch`. Un client deve rifiutare prove firmate con un epoch revocato o superato quando il registro indica una chiave più recente.
+
+Il `DeviceID` è un'identità protocollare, non deve essere trattato come indirizzo di rete né esposto inutilmente ai trasporti.
 
 ## 4. Contact bootstrap
 
-Il contatto non viene scoperto casualmente. Viene scambiato intenzionalmente tramite QR, link, NFC o altro canale esterno.
+Il contatto viene scambiato intenzionalmente tramite QR, link, NFC o altro canale esterno.
 
 ```text
 FreedomContact {
@@ -78,82 +83,73 @@ FreedomContact {
 }
 ```
 
-La `rendezvous_capability` è un valore casuale ad alta entropia. Può essere one-shot oppure ruotare periodicamente.
+La `rendezvous_capability` è un valore casuale ad alta entropia. Può essere one-shot oppure temporanea.
 
 Serve al primo contatto per creare un rendezvous opaco senza dover pubblicare una relazione leggibile `sender_device_id -> recipient_device_id`.
 
 ## 5. Pair rendezvous secret
 
-Dopo il primo handshake autenticato, i due endpoint derivano e persistono localmente un segreto di coppia:
+Dopo il primo handshake autenticato, i due endpoint derivano e persistono localmente:
 
 ```text
 PairRendezvousSecret_AB
 ```
 
-Da questo vengono derivati slot on-chain opachi e rotanti.
+Da questo vengono derivati slot opachi e rotanti. Il secret non viene pubblicato.
 
-Esempio concettuale:
-
-```text
-slot_A_to_B(epoch) = H(secret || "A->B" || epoch)
-slot_B_to_A(epoch) = H(secret || "B->A" || epoch)
-```
-
-La direzionalità evita collisioni tra scritture simultanee e permette la regola semplice read-before-write.
+Gli slot sono direzionali, così A e B possono pubblicare offerte indipendenti senza collisione.
 
 ## 6. Rendezvous rule
 
-La blockchain non è una tabella di routing continuamente aggiornata.
+Il registro non è una tabella di routing continuamente aggiornata.
 
-Viene usata solo quando non esiste più alcun percorso Freedom valido tra due endpoint che devono comunicare.
+Viene usato solo quando non esiste più alcun percorso Freedom valido tra due endpoint che devono comunicare.
 
 Per A che vuole ritrovare B:
 
 ```text
-1. controlla i route candidate locali già conosciuti
-2. tenta direct / NAT traversal / relay già noti
+1. controlla route candidate locali già conosciuti
+2. tenta i percorsi consentiti dalla policy locale
 3. se tutti falliscono, legge lo slot B->A
 4. se trova un record valido, usa quello e NON scrive
-5. se non trova niente, pubblica il proprio record nello slot A->B
-6. continua a leggere lo slot remoto fino a riconnessione/scadenza
+5. se non trova niente, legge il proprio slot A->B
+6. se esiste già un'offerta locale valida, non riscrive
+7. altrimenti pubblica un nuovo record indipendente
+8. continua a leggere lo slot remoto fino a riconnessione/scadenza
 ```
 
-B applica la stessa regola.
-
-Non serve un leader di coppia.
+La regola è **read-before-write**.
 
 ## 7. Rendezvous record
 
-Il record esterno deve rivelare il minimo indispensabile.
+Ogni rendezvous è autosufficiente e non richiede uno storico di revisioni precedenti.
 
 ```text
 RendezvousRecord {
     version
-    opaque_slot
-    sequence
     expires_at
     ciphertext
 }
 ```
 
-Il plaintext cifrato può contenere:
+Il payload cifrato può contenere:
 
 ```text
 RendezvousPayload {
     sender_device_id
     sender_key_epoch
-    transport_nonce
+    rendezvous_nonce
     route_candidates[]
     relay_candidates[]
-    ephemeral_transport_key
+    ephemeral_transport_public_key
 }
 ```
 
-Il record ha TTL breve e sequence monotono. Non viene cancellato dopo l'uso: scade naturalmente, evitando una scrittura aggiuntiva.
+Il record ha TTL breve. Freshness e validità dipendono dallo slot atteso, dallo stato verificato del registro, da `expires_at`, dal nonce e dall'autenticazione del payload; non esiste una `sequence` storica del rendezvous.
 
 ## 8. Route candidates
 
-Un indirizzo IP da solo non rappresenta un percorso.
+Un indirizzo IP da solo non rappresenta un'identità né un percorso completo.
 
 ```text
 RouteCandidate {
@@ -166,18 +162,9 @@ RouteCandidate {
 }
 ```
 
-`endpoint` può includere IP e porta; `candidate_type` può distinguere local, reflexive, direct, relay o altri tipi futuri.
+`endpoint` può includere IP e porta; `candidate_type` può distinguere local, observed, direct, relay o tipi futuri.
 
 Freedom deve monitorare la raggiungibilità del percorso, non soltanto il cambio IP.
-
-Sotto NAT possono cambiare:
-
-- porta pubblica;
-- mapping;
-- protocollo disponibile;
-- interfaccia;
-- relay necessario;
-- reachability pur mantenendo lo stesso IP.
 
 ## 9. Route maintenance
 
@@ -194,32 +181,55 @@ RouteUpdate {
 
 Non viene effettuata alcuna scrittura blockchain per un semplice cambio IP/porta se esiste ancora almeno un percorso attraverso cui gli endpoint possono scambiarsi l'aggiornamento.
 
-La chain torna in gioco solo dopo la perdita di tutti i percorsi conosciuti.
+Il registro torna in gioco solo dopo la perdita di tutti i percorsi conosciuti.
 
-## 10. Path selection
+## 10. Path selection e privacy
 
-Ordine iniziale preferito:
+La selezione del path è locale e dipende dalla policy dell'utente/client.
+
+Possibili classi:
 
 ```text
-1. direct candidate già verificato
-2. NAT traversal / hole punching
-3. relay candidate già conosciuto
-4. blockchain rendezvous
+DIRECT
+NAT_TRAVERSAL
+RELAY
+SHIELDED / MULTI-HOP
 ```
 
-Il path selector locale può usare:
+Il direct path è efficiente ma espone gli endpoint di rete ai peer. Per questo non deve essere obbligatorio: un client deve poter preferire relay o percorsi schermati quando la privacy di rete è prioritaria.
 
+Il path selector può usare:
+
+- policy privacy;
 - RTT;
 - stabilità recente;
-- directness;
 - costo del relay;
 - disponibilità del trasporto;
 - durata prevista del mapping;
-- preferenze di rete dell'utente.
+- rischio di censura/blocco;
+- preferenze dell'utente.
 
 Nessuna autorità centrale decide il percorso.
 
-## 11. Relay architecture
+## 11. Path diversity e censorship resistance
+
+Freedom mira a evitare single points of control.
+
+```text
+direct blocked      -> altro route
+relay A blocked     -> relay B / altro path
+RPC A blocked       -> RPC B
+transport filtrato  -> transport alternativo
+fee relayer down    -> altro relayer / pagamento compatibile
+```
+
+Bootstrap, RPC, relay, fee relayer e provider devono essere multipli e sostituibili.
+
+Un IP, dominio o endpoint specifico non deve essere requisito permanente del protocollo.
+
+Freedom non può garantire disponibilità se il dispositivo perde ogni forma di connettività, né anonimato assoluto contro un avversario globale capace di osservare l'intera rete.
+
+## 12. Relay architecture
 
 Un relay Freedom è un endpoint di forwarding transitivo.
 
@@ -242,34 +252,42 @@ Requisiti:
 - buffer limitati;
 - TTL breve;
 - quote per peer/connessione;
-- possibilità di interrompere il servizio di relay localmente;
+- possibilità di interrompere il servizio localmente;
 - nessuna fiducia necessaria per l'autenticità del contenuto.
 
 Un relay può osservare metadati necessari al forwarding e può droppare o ritardare pacchetti. Per questo non viene trattato come componente fidato.
 
-## 12. Endpoint storage
+## 13. Synchronous delivery
 
-Solo gli endpoint partecipanti conservano la cronologia della conversazione.
-
-```text
-Blockchain  -> no message storage
-Relay       -> transient buffer only
-Device A/B  -> local conversation storage
-```
-
-Se B è offline:
+Freedom è sincrono by design.
 
 ```text
-A -> B unavailable
+active authenticated session?
+  yes -> transmit
+  no  -> discard / fail locally
 ```
 
-il messaggio rimane pending sul dispositivo A. Freedom non lo replica automaticamente nella rete.
+Il protocollo base non crea una mailbox locale di consegna futura e non replica automaticamente messaggi su blockchain o relay.
 
-## 13. Secure session
+Un messaggio perso perché la sessione cade durante l'invio non viene trasformato implicitamente in un messaggio asincrono.
+
+## 14. Live / ephemeral client mode
+
+Un client può offrire una modalità Live in cui:
+
+- i messaggi non entrano nella cronologia persistente;
+- i contenuti non vengono inclusi nei backup automatici;
+- uscita dalla chat/chiusura app/termine sessione elimina lo stato locale previsto dalla policy;
+- le chiavi effimere di sessione vengono distrutte al termine;
+- notifiche e preview non devono introdurre copie persistenti del plaintext.
+
+Questa proprietà non può impedire a un peer remoto o a un dispositivo compromesso di conservare autonomamente ciò che ha ricevuto.
+
+## 15. Secure session
 
 Trovare un endpoint non significa aver autenticato il device.
 
-A risolve il `DeviceRecord` di B sulla blockchain e ottiene la public key attesa. B fa lo stesso con A.
+A risolve il `DeviceRecord` di B tramite `ChainAdapter` e ottiene la public key attesa. B fa lo stesso con A.
 
 L'handshake deve dimostrare bilateralmente il possesso delle private key e legare:
 
@@ -290,11 +308,9 @@ session_id
 
 Una modifica di uno di questi campi deve invalidare il transcript.
 
-## 14. Session lifecycle
+## 16. Session lifecycle
 
 Ogni nuova connessione genera materiale effimero nuovo.
-
-Dopo l'handshake vengono create chiavi separate per direzione e per classi di traffico quando necessario.
 
 La specifica deve mantenere separati almeno:
 
@@ -302,9 +318,9 @@ La specifica deve mantenere separati almeno:
 - route control keys;
 - media keys per chiamate.
 
-La rotazione interna delle chiavi deve poter avvenire senza blockchain finché l'identity key on-chain non cambia.
+La rotazione interna delle chiavi deve poter avvenire senza blockchain finché l'identity key del registro non cambia.
 
-## 15. Blockchain adapter
+## 17. Chain adapter
 
 Il core non chiama direttamente API NEAR.
 
@@ -322,15 +338,31 @@ interface ChainAdapter {
 
 La prima implementazione è `NearChainAdapter` su NEAR Testnet.
 
-## 16. Bootstrap della rete
+La funzione di registro/rendezvous è parte del trust model; l'implementazione concreta deve poter cambiare.
 
-Freedom deve distinguere il bootstrap dalla fiducia.
+## 18. Gas e fee relayer
 
-Un client può usare più fonti iniziali per trovare peer/relay o RPC, ma nessuna di esse autentica un DeviceID. L'autenticità deriva dalla chain e dalle firme.
+Le operazioni on-chain rare possono essere sponsorizzate da fee relayer indipendenti.
 
-Le fonti bootstrap devono essere sostituibili e multiple, evitando che un singolo endpoint diventi requisito permanente del protocollo.
+Un fee relayer:
 
-## 17. Applicazione
+- paga il gas;
+- non possiede la identity key del device;
+- non può firmare come DeviceID;
+- non deve essere unico o obbligatorio;
+- può essere sostituito senza cambiare identità o wire protocol.
+
+La private key di un fee relayer non deve mai essere incorporata nel client distribuito.
+
+## 19. Bootstrap della rete
+
+Freedom distingue bootstrap dalla fiducia.
+
+Un client può usare più fonti iniziali per trovare peer, relay o RPC, ma nessuna di esse autentica un DeviceID. L'autenticità deriva dal registro verificato e dalle firme.
+
+Le fonti bootstrap devono essere multiple e sostituibili.
+
+## 20. Applicazione
 
 Sopra la sessione sicura vivono:
 
@@ -345,26 +377,27 @@ route updates
 session control
 ```
 
-La blockchain non è nel packet hot path.
+Il registro distribuito non è nel packet hot path.
 
-## 18. Piattaforme
+## 21. Monetizzazione e indipendenza
 
-### Android
+I servizi commerciali ufficiali possono offrire capacità relay gestita, percorsi privacy, funzionalità Plus, SDK, deployment e supporto Business.
 
-Prima piattaforma. Può sperimentare più liberamente listener, NAT traversal e relay.
+Questi servizi non devono diventare requisiti del protocollo. Un client compatibile deve poter continuare a stabilire sessioni Freedom anche se l'infrastruttura commerciale ufficiale non è disponibile.
 
-### iOS
+Vedi [`MONETIZATION.md`](MONETIZATION.md).
 
-Il protocollo resta identico, ma il client deve adattarsi alle limitazioni di background del sistema. Eventuali meccanismi di wake della piattaforma devono essere trattati come hint, non come trasporto o trust anchor.
-
-## 19. Proprietà architetturali
+## 22. Proprietà architetturali
 
 Freedom mira a mantenere queste invarianti:
 
 - identità indipendente dal percorso;
+- nessun IP come identità stabile;
 - percorso indipendente dalla sessione applicativa;
 - sessione autenticata indipendentemente dal relay;
-- blockchain non necessaria per ogni pacchetto o ogni cambio route;
+- comunicazione sincrona senza mailbox di rete;
+- registro distribuito non necessario per ogni pacchetto o ogni cambio route;
 - relay incapace di leggere il contenuto;
-- nessun componente singolo necessario per conservare i messaggi;
+- direct path non obbligatorio;
+- componenti di bootstrap, RPC, relay e fee relayer sostituibili;
 - scritture on-chain proporzionali agli eventi di identità e ai casi di perdita completa del route, non al volume della comunicazione.
