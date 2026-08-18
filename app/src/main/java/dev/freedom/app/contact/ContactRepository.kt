@@ -26,17 +26,16 @@ class ContactRepository(context: Context) {
     }
 
     @Synchronized
-    fun save(contact: FreedomContact) {
+    fun save(contact: FreedomContact): Boolean {
         val contacts = all().toMutableList()
         val existingIndex = contacts.indexOfFirst { it.freedomNumber == contact.freedomNumber }
         if (existingIndex >= 0) contacts[existingIndex] = contact else contacts += contact
-        persist(contacts)
+        return persist(contacts)
     }
 
     @Synchronized
-    fun delete(freedomNumber: String) {
+    fun delete(freedomNumber: String): Boolean =
         persist(all().filterNot { it.freedomNumber == freedomNumber })
-    }
 
     fun findByNumber(freedomNumber: String): FreedomContact? =
         all().firstOrNull { it.freedomNumber == FreedomNumber.normalize(freedomNumber) }
@@ -44,7 +43,7 @@ class ContactRepository(context: Context) {
     fun findByFingerprint(fingerprint: String): FreedomContact? =
         all().firstOrNull { it.fingerprint.equals(fingerprint, ignoreCase = true) }
 
-    private fun persist(contacts: List<FreedomContact>) {
+    private fun persist(contacts: List<FreedomContact>): Boolean {
         val array = JSONArray()
         contacts.forEach { contact ->
             array.put(
@@ -55,9 +54,7 @@ class ContactRepository(context: Context) {
                     .put("network", contact.networkId)
             )
         }
-        check(preferences.edit().putString(KEY_CONTACTS, array.toString()).commit()) {
-            "Unable to persist contacts"
-        }
+        return preferences.edit().putString(KEY_CONTACTS, array.toString()).commit()
     }
 
     private fun decode(value: JSONObject): FreedomContact? {

@@ -12,6 +12,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.text.InputType
+import android.util.Log
 import android.view.Gravity
 import android.view.Menu
 import android.view.View
@@ -704,42 +705,55 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showAddContactOptions() {
-        MaterialAlertDialogBuilder(this)
-            .setTitle(R.string.add_contact_title)
-            .setItems(arrayOf(getString(R.string.scan_qr), getString(R.string.enter_number))) { _, which ->
-                if (which == 0) scanContactQr() else showNumberEntry()
-            }
-            .setNegativeButton(R.string.cancel, null)
-            .show()
+        safelyRunContactAction {
+            MaterialAlertDialogBuilder(this)
+                .setTitle(R.string.add_contact_title)
+                .setItems(arrayOf(getString(R.string.scan_qr), getString(R.string.enter_number))) { _, which ->
+                    if (which == 0) scanContactQr() else showNumberEntry()
+                }
+                .setNegativeButton(R.string.cancel, null)
+                .show()
+        }
     }
 
     private fun scanContactQr() {
-        val options = GmsBarcodeScannerOptions.Builder()
-            .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
-            .enableAutoZoom()
-            .build()
-        GmsBarcodeScanning.getClient(this, options)
-            .startScan()
-            .addOnSuccessListener { barcode ->
-                val contact = try {
-                    FreedomContactCodec.decode(barcode.rawValue.orEmpty())
-                } catch (_: Exception) {
-                    null
+        try {
+            val options = GmsBarcodeScannerOptions.Builder()
+                .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
+                .enableAutoZoom()
+                .build()
+            GmsBarcodeScanning.getClient(this, options)
+                .startScan()
+                .addOnSuccessListener(this) { barcode ->
+                    val contact = try {
+                        FreedomContactCodec.decode(barcode.rawValue.orEmpty())
+                    } catch (_: Exception) {
+                        null
+                    }
+                    if (contact == null || contact.freedomNumber == ownContact().freedomNumber) {
+                        showMessage(getString(R.string.invalid_contact))
+                    } else {
+                        confirmScannedContact(contact)
+                    }
                 }
-                if (contact == null || contact.freedomNumber == ownContact().freedomNumber) {
-                    showMessage(getString(R.string.invalid_contact))
-                } else {
-                    confirmScannedContact(contact)
-                }
-            }
-            .addOnFailureListener { error ->
-                showMessage(
-                    getString(
-                        R.string.scanner_error_format,
-                        error.localizedMessage ?: error.javaClass.simpleName
-                    )
-                )
-            }
+                .addOnFailureListener(this, ::handleScannerFailure)
+        } catch (error: RuntimeException) {
+            handleScannerFailure(error)
+        } catch (error: LinkageError) {
+            handleScannerFailure(error)
+        }
+    }
+
+    private fun handleScannerFailure(error: Throwable) {
+        Log.e(TAG, "Unable to start or complete the QR scanner", error)
+        if (!canShowUi()) return
+        showMessage(
+            getString(
+                R.string.scanner_error_format,
+                error.localizedMessage ?: error.javaClass.simpleName
+            )
+        )
+        mainHandler.post { if (canShowUi()) showNumberEntry() }
     }
 
     private fun confirmScannedContact(scanned: FreedomContact) {
@@ -758,9 +772,7 @@ class MainActivity : AppCompatActivity() {
                         .ifBlank { getString(R.string.contact_default_name) }
                         .take(48)
                 )
-                contacts.save(saved)
-                showMessage(getString(R.string.contact_saved_format, saved.displayName))
-                showContacts()
+                saveContact(saved)
             }
             .setNegativeButton(R.string.cancel, null)
             .show()
@@ -813,9 +825,18 @@ class MainActivity : AppCompatActivity() {
             fingerprint = presence.fingerprint,
             networkId = chainSettings.network.id
         )
-        contacts.save(contact)
-        showMessage(getString(R.string.contact_saved_format, contact.displayName))
-        showContacts()
+        saveContact(contact)
+    }
+
+    private fun saveContact(contact: FreedomContact) {
+        safelyRunContactAction {
+            if (!contacts.save(contact)) {
+                showMessage(getString(R.string.contact_save_error))
+                return@safelyRunContactAction
+            }
+            showMessage(getString(R.string.contact_saved_format, contact.displayName))
+            showContacts()
+        }
     }
 
     private fun confirmUnknownPeer(fingerprint: String) {
@@ -835,7 +856,11 @@ class MainActivity : AppCompatActivity() {
                     fingerprint = fingerprint,
                     networkId = chainSettings.network.id
                 )
-                contacts.save(contact)
+                if (!contacts.save(contact)) {
+                    showMessage(getString(R.string.contact_save_error))
+                    node.rejectPendingPeer()
+                    return@setPositiveButton
+                }
                 currentContact = contact
                 node.approvePendingPeer()
             }
@@ -1208,10 +1233,26 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showMessage(message: String) {
-        Snackbar.make(appRoot, message, Snackbar.LENGTH_LONG).show()
+        if (!canShowUi() || !::appRoot.isInitialized || !appRoot.isAttachedToWindow) return
+        runCatching { Snackbar.make(appRoot, message, Snackbar.LENGTH_LONG).show() }
     }
 
     private fun ui(block: () -> Unit) = runOnUiThread(block)
+
+    private fun safelyRunContactAction(action: () -> Unit) {
+        if (!canShowUi()) return
+        try {
+            action()
+        } catch (error: RuntimeException) {
+            Log.e(TAG, "Contact action failed", error)
+            showMessage(getString(R.string.contact_action_error))
+        } catch (error: LinkageError) {
+            Log.e(TAG, "Contact action failed because an Android component is unavailable", error)
+            showMessage(getString(R.string.contact_action_error))
+        }
+    }
+
+    private fun canShowUi(): Boolean = !isFinishing && !isDestroyed
 
     private fun color(resId: Int): Int = getColor(resId)
 
@@ -1244,5 +1285,6 @@ class MainActivity : AppCompatActivity() {
         const val LOCAL_NETWORK_PERMISSION = "android.permission.ACCESS_LOCAL_NETWORK"
         const val ACTION_IDENTITY = 3001
         const val ACTION_SHARE = 3002
+        const val TAG = "FreedomContacts"
     }
 }
