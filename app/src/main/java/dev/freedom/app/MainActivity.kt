@@ -25,12 +25,15 @@ import android.widget.Space
 import android.widget.TextView
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.floatingactionbutton.FloatingActionButton
+import com.google.android.material.navigation.NavigationBarView
 import com.google.android.material.snackbar.Snackbar
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
@@ -131,6 +134,8 @@ class MainActivity : AppCompatActivity() {
     )
 
     private fun buildChrome() {
+        val toolbarHeight = dp(72)
+        val navigationHeight = dp(80)
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(color(R.color.freedom_surface))
@@ -146,7 +151,7 @@ class MainActivity : AppCompatActivity() {
             )
             contentInsetStartWithNavigation = dp(10)
         }
-        root.addView(toolbar, LinearLayout.LayoutParams(MATCH, dp(72)))
+        root.addView(toolbar, LinearLayout.LayoutParams(MATCH, toolbarHeight))
 
         content = FrameLayout(this).apply {
             setBackgroundColor(color(R.color.freedom_surface))
@@ -157,6 +162,7 @@ class MainActivity : AppCompatActivity() {
             inflateMenu(R.menu.main_navigation)
             setBackgroundColor(color(R.color.freedom_surface))
             itemActiveIndicatorColor = getColorStateList(R.color.freedom_primary_container)
+            labelVisibilityMode = NavigationBarView.LABEL_VISIBILITY_LABELED
             setOnItemSelectedListener { item ->
                 when (item.itemId) {
                     R.id.navigation_chats -> showChats()
@@ -167,10 +173,38 @@ class MainActivity : AppCompatActivity() {
                 true
             }
         }
-        root.addView(bottomNavigation, LinearLayout.LayoutParams(MATCH, dp(80)))
+        root.addView(bottomNavigation, LinearLayout.LayoutParams(MATCH, navigationHeight))
+
+        ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
+            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+
+            toolbar.setPadding(
+                toolbar.paddingLeft,
+                systemBars.top,
+                toolbar.paddingRight,
+                toolbar.paddingBottom
+            )
+            toolbar.layoutParams = (toolbar.layoutParams as LinearLayout.LayoutParams).apply {
+                height = toolbarHeight + systemBars.top
+            }
+
+            bottomNavigation.setPadding(
+                bottomNavigation.paddingLeft,
+                bottomNavigation.paddingTop,
+                bottomNavigation.paddingRight,
+                systemBars.bottom
+            )
+            bottomNavigation.layoutParams =
+                (bottomNavigation.layoutParams as LinearLayout.LayoutParams).apply {
+                    height = navigationHeight + systemBars.bottom
+                }
+
+            WindowInsetsCompat.CONSUMED
+        }
 
         setContentView(root)
         appRoot = root
+        ViewCompat.requestApplyInsets(root)
     }
 
     private fun buildNode(): FreedomNode = FreedomNode(
