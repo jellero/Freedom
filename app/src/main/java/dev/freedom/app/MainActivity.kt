@@ -45,6 +45,10 @@ import dev.freedom.app.chain.ChainSettings
 import dev.freedom.app.chain.ChainHealth
 import dev.freedom.app.chain.IdentityNetwork
 import dev.freedom.app.chain.NearChainAdapter
+import dev.freedom.app.chain.NearCredentialStore
+import dev.freedom.app.chain.NearCredentials
+import dev.freedom.app.chain.NearDirectClient
+import dev.freedom.app.chain.NearKeyQrCodec
 import dev.freedom.app.chat.ChatMessage
 import dev.freedom.app.chat.ChatRepository
 import dev.freedom.app.contact.ContactRepository
@@ -60,6 +64,8 @@ import dev.freedom.app.net.PeerPresence
 import dev.freedom.app.net.PeerTrustVerifier
 import dev.freedom.app.net.SharedPreferencesPeerTrustStore
 import java.text.DateFormat
+import java.math.BigInteger
+import java.util.Base64
 import java.util.Date
 import java.util.concurrent.Executors
 
@@ -71,6 +77,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var chats: ChatRepository
     private lateinit var chainSettings: ChainSettings
     private lateinit var nearChain: NearChainAdapter
+    private lateinit var nearDirect: NearDirectClient
+    private lateinit var nearCredentialStore: NearCredentialStore
     private lateinit var node: FreedomNode
 
     private lateinit var toolbar: MaterialToolbar
@@ -88,6 +96,8 @@ class MainActivity : AppCompatActivity() {
     private var chainHealth: ChainHealth? = null
     private var chainHealthError: String? = null
     private var chainHealthLoading = false
+    private var nearOperationStatus: String? = null
+    private var nearOperationInProgress = false
     private var systemBottomInset = 0
     private var imeBottomInset = 0
 
@@ -97,11 +107,12 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         CrashReporter.record(this, "main_activity_on_create")
-        identity = IdentityStore()
+        identity = IdentityStore(this)
         contacts = ContactRepository(this)
         chats = ChatRepository(this)
         chainSettings = ChainSettings(this)
-        nearChain = NearChainAdapter()
+        nearCredentialStore = NearCredentialStore(this)
+        rebuildNearClients()
 
         buildChrome()
         node = buildNode()
@@ -501,20 +512,53 @@ class MainActivity : AppCompatActivity() {
             )
         )
 
+        if (chainSettings.network == IdentityNetwork.NEAR_TESTNET) {
+            column.addView(sectionLabel(R.string.near_access_section), margins(top = 28))
+            val configuredAccount = nearCredentialStore.accountId()
+            column.addView(
+                actionCard(
+                    title = getString(
+                        if (configuredAccount == null) R.string.configure_near_key
+                        else R.string.change_near_key
+                    ),
+                    subtitle = configuredAccount?.let {
+                        getString(R.string.near_key_configured_for, it)
+                    } ?: getString(R.string.near_key_not_configured),
+                    icon = R.drawable.ic_qr
+                ) { showNearKeyOptions() },
+                margins(top = 10)
+            )
+            column.addView(
+                actionCard(
+                    title = getString(R.string.configure_rpc),
+                    subtitle = chainSettings.customRpcEndpoint
+                        ?: getString(R.string.default_rpc_endpoints),
+                    icon = R.drawable.ic_settings
+                ) { showRpcConfiguration() },
+                margins(top = 10)
+            )
+            if (configuredAccount != null) {
+                column.addView(
+                    actionCard(
+                        title = getString(R.string.activate_device_on_chain),
+                        subtitle = when {
+                            nearOperationInProgress -> getString(R.string.near_activation_in_progress)
+                            nearOperationStatus != null -> nearOperationStatus.orEmpty()
+                            else -> getString(R.string.activate_device_on_chain_body)
+                        },
+                        icon = R.drawable.ic_contacts
+                    ) { activateOwnDeviceOnChain() },
+                    margins(top = 10)
+                )
+            }
+        }
+
         column.addView(sectionLabel(R.string.network_costs_section), margins(top = 28))
         column.addView(
             informationCard(
-                title = getString(R.string.sponsored_fees),
-                body = getString(R.string.sponsored_fees_body),
-                badge = getString(R.string.recommended),
+                title = getString(R.string.direct_fees),
+                body = getString(R.string.direct_fees_body),
                 accentColor = color(R.color.freedom_success)
-            )
-        )
-        column.addView(
-            informationCard(
-                title = getString(R.string.personal_wallet),
-                body = getString(R.string.personal_wallet_body),
-                accentColor = color(R.color.freedom_outline)
             )
         )
 
@@ -538,6 +582,209 @@ class MainActivity : AppCompatActivity() {
         )
         setPage(scroll)
         refreshChainHealthIfNeeded()
+    }
+
+    private fun rebuildNearClients() {
+        val endpoints = chainSettings.rpcEndpoints()
+        nearChain = NearChainAdapter(rpcEndpoints = endpoints)
+        nearDirect = NearDirectClient(NearChainAdapter.TESTNET_CONTRACT_ID, endpoints)
+    }
+
+    private fun showNearKeyOptions() {
+        val options = mutableListOf(
+            getString(R.string.scan_secret_key_qr),
+            getString(R.string.enter_secret_key_manually)
+        )
+        if (nearCredentialStore.hasCredentials()) options += getString(R.string.remove_near_key)
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.configure_near_key)
+            .setItems(options.toTypedArray()) { _, which ->
+                when (which) {
+                    0 -> scanNearKeyQr()
+                    1 -> showNearKeyManualEntry()
+                    else -> confirmRemoveNearKey()
+                }
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun scanNearKeyQr() {
+        val options = GmsBarcodeScannerOptions.Builder()
+            .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
+            .enableAutoZoom()
+            .build()
+        GmsBarcodeScanning.getClient(this, options).startScan()
+            .addOnSuccessListener { barcode ->
+                val raw = barcode.rawValue
+                if (raw == null) {
+                    showMessage(getString(R.string.invalid_near_key_qr))
+                    return@addOnSuccessListener
+                }
+                runCatching { NearKeyQrCodec.decode(raw, chainSettings.network) }
+                    .onSuccess(::validateAndSaveNearKey)
+                    .onFailure { showMessage(it.message ?: getString(R.string.invalid_near_key_qr)) }
+            }
+            .addOnFailureListener {
+                showMessage(getString(R.string.scanner_error_format, it.javaClass.simpleName))
+            }
+    }
+
+    private fun showNearKeyManualEntry() {
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(8), dp(20), 0)
+        }
+        val account = textInput(getString(R.string.near_account_hint))
+        val privateKey = textInput(
+            hint = getString(R.string.near_private_key_hint),
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+        )
+        privateKey.first.endIconMode = TextInputLayout.END_ICON_PASSWORD_TOGGLE
+        container.addView(account.first)
+        container.addView(privateKey.first, margins(top = 12))
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.enter_secret_key_manually)
+            .setMessage(R.string.near_key_security_warning)
+            .setView(container)
+            .setPositiveButton(R.string.verify_and_save) { _, _ ->
+                runCatching {
+                    NearCredentials.parse(
+                        account.second.text?.toString().orEmpty(),
+                        privateKey.second.text?.toString().orEmpty()
+                    )
+                }.onSuccess(::validateAndSaveNearKey)
+                    .onFailure { showMessage(it.message ?: getString(R.string.invalid_near_key)) }
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun validateAndSaveNearKey(credentials: NearCredentials) {
+        if (nearOperationInProgress) return
+        nearOperationInProgress = true
+        nearOperationStatus = getString(R.string.near_key_validation_in_progress)
+        if (currentScreen == Screen.SETTINGS) showSettings()
+        chainExecutor.execute {
+            val result = nearDirect.validateRestrictedKey(credentials)
+            if (result.isSuccess) runCatching { nearCredentialStore.save(credentials) }
+                .onFailure { failure ->
+                    ui {
+                        nearOperationInProgress = false
+                        nearOperationStatus = failure.message
+                        if (currentScreen == Screen.SETTINGS) showSettings()
+                    }
+                }
+                .onSuccess {
+                    ui {
+                        nearOperationInProgress = false
+                        nearOperationStatus = getString(R.string.near_key_saved)
+                        showMessage(getString(R.string.near_key_saved))
+                        if (currentScreen == Screen.SETTINGS) showSettings()
+                    }
+                }
+            else ui {
+                nearOperationInProgress = false
+                nearOperationStatus = result.exceptionOrNull()?.message
+                showMessage(nearOperationStatus ?: getString(R.string.invalid_near_key))
+                if (currentScreen == Screen.SETTINGS) showSettings()
+            }
+        }
+    }
+
+    private fun confirmRemoveNearKey() {
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.remove_near_key)
+            .setMessage(R.string.remove_near_key_body)
+            .setPositiveButton(R.string.remove) { _, _ ->
+                nearCredentialStore.clear()
+                nearOperationStatus = null
+                showSettings()
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun showRpcConfiguration() {
+        val rpc = textInput(
+            hint = getString(R.string.rpc_endpoint_hint),
+            initialValue = chainSettings.customRpcEndpoint.orEmpty(),
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
+        )
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.configure_rpc)
+            .setMessage(R.string.configure_rpc_body)
+            .setView(rpc.first)
+            .setPositiveButton(R.string.save) { _, _ ->
+                runCatching {
+                    chainSettings.customRpcEndpoint = rpc.second.text?.toString().orEmpty()
+                        .takeIf { it.isNotBlank() }
+                    rebuildNearClients()
+                    chainHealth = null
+                    chainHealthError = null
+                }.onSuccess {
+                    showSettings()
+                }.onFailure { showMessage(it.message ?: getString(R.string.invalid_rpc_endpoint)) }
+            }
+            .setNeutralButton(R.string.restore_default) { _, _ ->
+                chainSettings.customRpcEndpoint = null
+                rebuildNearClients()
+                chainHealth = null
+                chainHealthError = null
+                showSettings()
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun activateOwnDeviceOnChain() {
+        if (nearOperationInProgress) return
+        val credentials = nearCredentialStore.load().getOrElse {
+            showMessage(getString(R.string.invalid_near_key))
+            return
+        }
+        nearOperationInProgress = true
+        nearOperationStatus = getString(R.string.near_activation_in_progress)
+        showSettings()
+        chainExecutor.execute {
+            val result = runCatching {
+                nearDirect.validateRestrictedKey(credentials).getOrThrow()
+                val existing = nearChain.resolveDevice(identity.deviceId).getOrThrow()
+                if (existing != null) {
+                    require(existing.active) { "Il dispositivo risulta revocato su NEAR" }
+                    require(existing.identityPublicKey.contentEquals(identity.compressedPublicKey)) {
+                        "Il Device ID è già associato a una chiave identità diversa"
+                    }
+                    return@runCatching getString(R.string.device_already_active)
+                }
+                val balance = BigInteger(nearChain.storageBalance(credentials.accountId).getOrThrow())
+                require(balance.signum() > 0) { getString(R.string.storage_credit_missing) }
+                val publicKey = identity.compressedPublicKey
+                val signature = identity.registrationSignature(
+                    NearChainAdapter.TESTNET_CONTRACT_ID,
+                    NearChainAdapter.PROTOCOL_VERSION
+                )
+                val arguments = org.json.JSONObject()
+                    .put("device_id", identity.deviceId)
+                    .put("identity_public_key", Base64.getEncoder().encodeToString(publicKey))
+                    .put("protocol_version", NearChainAdapter.PROTOCOL_VERSION)
+                    .put("signature", Base64.getEncoder().encodeToString(signature))
+                val transaction = nearDirect.callFunction(
+                    credentials,
+                    "register_device",
+                    arguments
+                ).getOrThrow()
+                getString(R.string.device_activation_success, transaction.transactionHash.take(12))
+            }
+            ui {
+                nearOperationInProgress = false
+                nearOperationStatus = result.getOrElse {
+                    it.message ?: getString(R.string.device_activation_failed)
+                }
+                showMessage(nearOperationStatus.orEmpty())
+                if (currentScreen == Screen.SETTINGS) showSettings()
+            }
+        }
     }
 
     private fun refreshChainHealthIfNeeded() {
@@ -1230,14 +1477,15 @@ class MainActivity : AppCompatActivity() {
     private fun textInput(
         hint: String,
         initialValue: String = "",
-        numeric: Boolean = false
+        numeric: Boolean = false,
+        inputType: Int? = null
     ): Pair<TextInputLayout, TextInputEditText> {
         val layout = TextInputLayout(this, null, com.google.android.material.R.attr.textInputOutlinedStyle).apply {
             this.hint = hint
         }
         val input = TextInputEditText(layout.context).apply {
             setText(initialValue)
-            inputType = if (numeric) InputType.TYPE_CLASS_PHONE else
+            this.inputType = inputType ?: if (numeric) InputType.TYPE_CLASS_PHONE else
                 InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_WORDS
             setSingleLine(true)
         }

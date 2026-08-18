@@ -30,8 +30,26 @@ class ChainSettings(context: Context) {
             }
         }
 
+    var customRpcEndpoint: String?
+        get() = preferences.getString(KEY_CUSTOM_RPC, null)?.takeIf { it.isNotBlank() }
+        set(value) {
+            val normalized = value?.trim()?.removeSuffix("/")?.takeIf { it.isNotBlank() }
+            if (normalized != null) {
+                require(normalized.startsWith("https://")) {
+                    "L'endpoint RPC deve usare HTTPS"
+                }
+            }
+            check(preferences.edit().putString(KEY_CUSTOM_RPC, normalized).commit()) {
+                "Unable to persist custom RPC endpoint"
+            }
+        }
+
+    fun rpcEndpoints(): List<String> =
+        customRpcEndpoint?.let(::listOf) ?: NearChainAdapter.TESTNET_RPC_ENDPOINTS
+
     private companion object {
         const val PREFERENCES = "freedom.chain.settings.v1"
         const val KEY_NETWORK = "identity-network"
+        const val KEY_CUSTOM_RPC = "custom-rpc"
     }
 }

@@ -32,7 +32,7 @@ interface ChainAdapter {
 }
 
 class NearChainAdapter(
-    private val contractId: String = TESTNET_CONTRACT_ID,
+    val contractId: String = TESTNET_CONTRACT_ID,
     private val rpcEndpoints: List<String> = TESTNET_RPC_ENDPOINTS,
     private val connectionFactory: (String) -> HttpURLConnection = { endpoint ->
         URL(endpoint).openConnection() as HttpURLConnection
@@ -75,6 +75,14 @@ class NearChainAdapter(
             protocolVersion = value.getInt("protocol_version"),
             updatedAtNs = value.getString("updated_at_ns").toLong()
         )
+    }
+
+    fun storageBalance(accountId: String): Result<String> = runCatching {
+        val response = callView(
+            "storage_balance_of",
+            JSONObject().put("account_id", accountId)
+        )
+        (response.value as JSONObject).getString("available")
     }
 
     private fun callView(methodName: String, arguments: JSONObject): ViewResponse {
