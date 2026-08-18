@@ -13,6 +13,7 @@ Questa specifica descrive gli oggetti logici e i flussi minimi del protocollo. G
 - i relay inoltrano, non archiviano;
 - se il destinatario è offline non esiste consegna distribuita automatica;
 - read-before-write è obbligatorio per il rendezvous;
+- ogni rendezvous on-chain è autosufficiente e non dipende da revisioni precedenti;
 - una sessione attiva gestisce direttamente i propri route update.
 
 ## 2. Header
@@ -58,6 +59,8 @@ RotateDeviceKey {
 
 Una rotazione valida incrementa l'epoch. La specifica della prova dipende dal modello del contratto chain, ma il client deve sempre poter determinare la chiave corrente e lo stato di revoca.
 
+`key_epoch` appartiene all'identità del device; non è una revisione del rendezvous.
+
 ## 5. Contact descriptor
 
 ```text
@@ -82,28 +85,29 @@ Dopo il primo handshake i peer derivano:
 PairRendezvousState {
     peer_device_id
     rendezvous_secret
-    local_sequence
-    remote_sequence
 }
 ```
 
 Il segreto non viene scritto on-chain.
 
-Gli slot sono derivati in modo direzionale e rotante:
+Gli slot possono essere derivati in modo direzionale e rotante:
 
 ```text
-slot_local(epoch)
-slot_remote(epoch)
+slot_local(context)
+slot_remote(context)
 ```
+
+La derivazione deve essere deterministica per entrambe le parti nel contesto corrente e non deve richiedere la conoscenza di un record precedente.
 
 Il formato concreto della KDF viene fissato con la crypto suite.
 
 ## 7. Rendezvous record
 
+Ogni record on-chain è indipendente. Per il lettore è sempre equivalente a una nuova **rev 0**.
+
 ```text
 RendezvousRecord {
     version
-    sequence
     expires_at
     ciphertext
 }
@@ -126,6 +130,8 @@ RendezvousPayload {
 
 Il payload deve essere autenticato e cifrato.
 
+Non esiste `sequence`, `revision`, `previous_record_hash` o altro requisito che obblighi il destinatario a conoscere il rendezvous precedente.
+
 ## 8. Read-before-write
 
 Algoritmo normativo per A che deve raggiungere B dopo aver perso tutti i route:
@@ -133,15 +139,21 @@ Algoritmo normativo per A che deve raggiungere B dopo aver perso tutti i route:
 ```text
 remote = chain.readRendezvous(remote_slot)
 
-if remote.valid && !remote.expired && remote.sequence > stored_remote_sequence:
+if remote.valid && !remote.expired:
     try(remote.route_candidates)
     DO_NOT_WRITE
 else:
-    if local slot does not already contain a valid current record:
-        chain.writeRendezvous(local_slot, local_record)
+    local = chain.readRendezvous(local_slot)
+
+    if local.valid && !local.expired:
+        WAIT_AND_POLL(remote_slot)
+    else:
+        chain.writeRendezvous(local_slot, new_independent_record)
 ```
 
-Il client non deve riscrivere un record soltanto perché non ha ancora ricevuto risposta. Deve rispettare TTL, sequence e backoff.
+Il client non deve riscrivere un record soltanto perché non ha ancora ricevuto risposta. Deve rispettare TTL e backoff.
+
+Quando serve un nuovo rendezvous, questo viene generato da zero con nuovo nonce/materiale effimero e deve poter essere interpretato senza stato storico del rendezvous precedente.
 
 ## 9. Route candidate
 
@@ -194,6 +206,8 @@ RouteUpdate {
 ```
 
 Questo oggetto viaggia dentro la sessione autenticata.
+
+Il `sequence` di `RouteUpdate` appartiene alla sessione attiva e serve a ordinamento/anti-replay. Non è una revisione blockchain.
 
 Finché almeno un percorso valido permette di scambiare `RouteUpdate`, non si usa la blockchain per aggiornare il routing della coppia.
 
@@ -273,14 +287,18 @@ InnerFrame {
 
 Il sequence è monotono per direzione e protetto dall'AEAD.
 
+Questo sequence appartiene esclusivamente alla sessione crittografica e non ha alcuna relazione con i rendezvous on-chain.
+
 ## 15. Replay protection
 
 Requisiti:
 
-- reject dei sequence già accettati;
+- reject dei sequence già accettati nella sessione;
 - finestra limitata se il trasporto ammette reorder;
 - memoria bounded;
 - nessun reset senza transizione autenticata di sessione.
+
+Il rendezvous on-chain non usa sequence storico: freshness e validità derivano dallo stato chain verificato, dallo slot atteso, da `expires_at` e dall'autenticazione del payload.
 
 ## 16. Text message
 
@@ -483,7 +501,8 @@ La prima implementazione usa NEAR Testnet.
 - capability bootstrap;
 - opaque slots;
 - read-before-write;
-- TTL/sequence;
+- TTL;
+- rendezvous indipendenti sempre interpretabili come rev 0;
 - route payload cifrato.
 
 ### M3 — secure communication
