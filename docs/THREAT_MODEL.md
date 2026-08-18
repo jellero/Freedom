@@ -164,6 +164,55 @@ Mitigazioni architetturali:
 
 Freedom mira a essere resistente al blocco di componenti individuali, non a garantire comunicazione se l'avversario elimina ogni forma di connettività disponibile.
 
+### 10.1 Adaptive interference detection
+
+Il registro/rendezvous può ridurre l'ambiguità tra "peer offline" e "peer recentemente attivo ma data path non disponibile".
+
+Dopo la perdita completa del percorso, i peer possono usare slot pairwise opachi per pubblicare `RecoveryBeacon` cifrati e a TTL breve.
+
+Un beacon recente indica **attività recente sul control-plane**, non prova presenza perfetta in tempo reale.
+
+Pattern di interesse:
+
+```text
+connettività generale locale       OK
+almeno un registry/RPC             OK
+beacon recente del peer            OK
+data path corrente                 FAIL
+```
+
+Questo pattern può giustificare lo stato `INTERFERENCE_OR_ROUTE_FAILURE_SUSPECTED` e attivare failover automatico.
+
+Non prova però:
+
+- chi stia causando il blocco;
+- che il blocco sia intenzionale;
+- che il peer sia sotto sorveglianza;
+- che un osservatore passivo esista.
+
+Un global passive adversary può monitorare senza produrre un segnale rilevabile.
+
+Rischi aggiuntivi introdotti dai beacon:
+
+- pattern temporali osservabili on-chain/provider;
+- chain write spam;
+- battery/network cost;
+- false positive se il data path è semplicemente instabile;
+- stale beacon interpretati male.
+
+Mitigazioni:
+
+- beacon solo dopo failure o policy esplicita;
+- TTL breve;
+- slot pairwise opachi e rotanti;
+- payload cifrato;
+- read-before-write;
+- rate limit/backoff;
+- soglie su più segnali, non un singolo timeout;
+- stop delle write appena una sessione viene ristabilita.
+
+Dettagli: [`ADAPTIVE_DEFENSE.md`](ADAPTIVE_DEFENSE.md).
+
 ## 11. Malicious RPC
 
 Un RPC può mentire, omettere dati, rispondere con dati stale o rifiutare richieste.
@@ -260,6 +309,8 @@ Difese:
 - client read-before-write;
 - backoff;
 - limiti contrattuali compatibili con il modello scelto.
+
+Recovery beacon e policy di resilienza devono rispettare gli stessi limiti e non trasformarsi in heartbeat continui.
 
 ## 16. Contact spam
 
@@ -383,6 +434,7 @@ Freedom non pretende di:
 - rendere un direct connection invisibile ai due peer;
 - garantire disponibilità in assenza completa di connettività;
 - impedire a un destinatario legittimo di copiare ciò che riceve;
-- essere impossibile da censurare in senso assoluto.
+- essere impossibile da censurare in senso assoluto;
+- rilevare in modo affidabile una sorveglianza passiva invisibile.
 
 L'obiettivo è più concreto: **nessun singolo server, relay, RPC, fee relayer, provider, IP o percorso deve costituire da solo un punto unico dal quale controllare o interrompere Freedom.**
