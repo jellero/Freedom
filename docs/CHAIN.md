@@ -279,13 +279,13 @@ Gli RPC trasportano dati chain; non costituiscono l'identità dell'utente.
 
 Su testnet vengono usate risorse di test.
 
-L'onboarding normale non deve richiedere l'acquisto di token. Su mainnet il modello predefinito è una meta-transazione firmata dal device e pagata da un relayer con quota e allowlist del contratto Freedom. NEAR supporta questo flusso tramite [NEP-366 meta transactions](https://docs.near.org/protocol/transactions/meta-tx): il relayer paga il gas senza ottenere la chiave dell'utente.
+Il client corrente non dipende da un relayer. Importa una Function-Call key dedicata e limitata al contratto Freedom, firma sul telefono e invia la transazione a uno degli RPC configurati dall'utente. Una Full Access key non è mai accettata dal client.
 
 Modelli supportabili:
 
-- fee sponsorizzate per registrazione, rotazione e rendezvous entro limiti anti-abuso;
-- wallet personale opzionale per utenti avanzati;
-- eventuale on-ramp esterno e regolamentato, mai requisito per iniziare a comunicare.
+- pagamento diretto del gas da parte dell'account configurato;
+- credito storage prepagato una tantum tramite wallet o CLI;
+- eventuale on-ramp esterno e regolamentato, separato dal protocollo Freedom.
 
 Un eventuale relayer di fee non deve poter firmare al posto del DeviceID né diventare obbligatorio per il protocollo.
 
@@ -330,13 +330,13 @@ Contratto corrente:
 
 ```text
 account: freedom-registry-jellero.testnet
-version: 0.1.0
+version: 0.2.0
 curve: P-256
 protocol: 1
 relayer account: freedom-relayer-jellero.testnet
 ```
 
-Il deploy iniziale è stato confermato nella transazione `ExXqfngxKUcvuXocK51s1m9ba6KXUqNgTw8U4VwVuSCq`. Le chiavi del contratto non sono presenti nel client Android.
+Il deploy iniziale è stato confermato nella transazione `ExXqfngxKUcvuXocK51s1m9ba6KXUqNgTw8U4VwVuSCq`. L'upgrade atomico alla versione `0.2.0`, con migrazione dello stato e saldi storage prepagati, è stato confermato nella transazione `9Wx5MwKtxSKhDZgLNdcVrPAhHZybBdg3E1yE7tywTokk`. Le chiavi del contratto non sono presenti nel client Android.
 
 La verifica integrata P-256 su Testnet è stata completata con una registrazione firmata dal device e pagata dall'account relayer nella transazione `BQY3wkQyiWdDpLEGg3ygvtvYa5KV6QKSxGBbUk7Miv3Z`. L'identità usata dal test era effimera, priva di PII e la relativa private key è stata scartata.
 

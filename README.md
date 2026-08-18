@@ -200,17 +200,21 @@ Freedom è un sistema di contatti espliciti tramite DeviceID/QR, non una random 
 
 ## Stato del codice Android
 
-Il client Android `0.2.0-alpha` include una prima esperienza da app di messaggistica: home, rubrica, chat, profilo condivisibile con QR e numero Freedom, scansione QR, persistenza locale e impostazioni della rete identità. Sulla stessa LAN i dispositivi si annunciano e si risolvono tramite Android NSD, quindi l'utente non inserisce né vede indirizzi IP.
+Il client Android `0.3.0-alpha` include una prima esperienza da app di messaggistica: home, rubrica, chat, profilo condivisibile con QR e numero Freedom, scansione QR, persistenza locale e impostazioni della rete identità. Sulla stessa LAN i dispositivi si annunciano e si risolvono tramite Android NSD, quindi l'utente non inserisce né vede indirizzi IP.
 
 Il numero Freedom è un identificatore umano con checksum derivato dall'identità pubblica. Diventerà canonico quando il registry on-chain ne garantirà unicità e stato. La connessione locale resta autenticata dal fingerprint scambiato nel QR e dall'handshake E2EE.
 
-Il registro Freedom `0.1.0` è distribuito su NEAR Testnet all'account `freedom-registry-jellero.testnet`. Il client interroga lo stato finalizzato tramite `NearChainAdapter`, verifica versione del protocollo e curva P-256 e usa fallback RPC. Registrazione e scritture passano dal servizio separato in `relayer/`, finanziato dall'account limitato `freedom-relayer-jellero.testnet`: nessuna chiave NEAR viene incorporata nell'APK.
+Il registro Freedom `0.2.0` è distribuito su NEAR Testnet all'account `freedom-registry-jellero.testnet`. Il client interroga lo stato finalizzato tramite `NearChainAdapter`, verifica versione del protocollo e curva P-256 e consente di sostituire completamente gli endpoint RPC pubblici iniziali.
+
+Registrazione e scritture vengono firmate direttamente sul telefono. L'utente importa nelle impostazioni, tramite QR segreto o inserimento manuale, una Function-Call key NEAR dedicata e limitata ai soli metodi del contratto Freedom. Le Full Access key vengono rifiutate. La chiave importata viene cifrata con AES-GCM usando una chiave non esportabile dell'Android Keystore. Nessun relayer Freedom e nessun server fisico predefinito sono necessari per accedere alla blockchain.
+
+Poiché una Function-Call key non può allegare NEAR, l'account versa una volta il credito storage tramite wallet o CLI; successivamente il telefono esegue registrazione e rendezvous con deposito zero e paga soltanto il gas dal proprio account. La directory `relayer/` resta nel repository come prototipo storico e non appartiene al percorso operativo del client `0.3.0-alpha`.
 
 La sequenza ancora da completare è:
 
 ```text
 DeviceID + firma Android Keystore
- -> relayer fee-sponsorizzato
+ -> transazione NEAR firmata direttamente sul telefono
  -> NEAR Testnet identity
  -> QR contact
  -> chain verification
