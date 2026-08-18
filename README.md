@@ -25,6 +25,8 @@ Il traffico applicativo viaggia fuori dalla blockchain, direttamente tra endpoin
 - nessun messaggio o media memorizzato sulla blockchain;
 - relay `forward-only`, con buffer limitati e temporanei;
 - nessun singolo server, relay, RPC, provider, IP o percorso deve essere requisito permanente per il funzionamento del protocollo;
+- rilevamento di route failure/interferenza probabile attraverso segnali indipendenti, incluso il caso **peer recentemente attivo sul control-plane ma data-plane indisponibile**;
+- recovery automatico attraverso route/relay/transport alternativi quando disponibili;
 - protocollo indipendente da Android, iOS, store e servizi commerciali ufficiali;
 - possibilità di sostituire la blockchain tramite un adapter senza cambiare il protocollo applicativo.
 
@@ -46,7 +48,8 @@ Freedom necessita della **funzione** di un registro distribuito e verificabile p
 
 - risolvere `DeviceID -> identity_public_key`;
 - verificare key rotation e revocation;
-- pubblicare/leggere rendezvous di fallback quando tutte le route note sono perse.
+- pubblicare/leggere rendezvous di fallback quando tutte le route note sono perse;
+- coordinare recovery pairwise temporaneo quando il data-plane è perso e serve distinguere peer offline da peer recentemente attivo ma non raggiungibile sul percorso corrente.
 
 Questa funzione è fondamentale per il trust model attuale. **NEAR non è fondamentale come tecnologia specifica.**
 
@@ -91,6 +94,30 @@ Regola fondamentale:
 ```
 
 Appena viene ristabilita una sessione, gli aggiornamenti di endpoint, NAT candidate e relay candidate passano direttamente nel canale E2EE. La chain non viene più aggiornata finché esiste almeno un percorso valido.
+
+### Recovery beacon
+
+Freedom non pubblica una presenza globale continua. Dopo la perdita completa del data path, due peer già autenticati possono usare slot pairwise opachi per pubblicare un `RecoveryBeacon` cifrato e a TTL breve.
+
+Un beacon indica **attività recente**, non presenza assoluta in tempo reale.
+
+Se entrambi i peer risultano recentemente attivi sul control-plane ma la route corrente non trasporta pacchetti, il client può classificare il caso come probabile interferenza/route failure e attivare contromisure di routing.
+
+```text
+peer recently active       yes
+current data path           fail
+alternate control-plane     reachable
+        |
+        v
+INTERFERENCE_OR_ROUTE_FAILURE_SUSPECTED
+        |
+        v
+alternate route / relay / transport
+```
+
+Il sistema non deve dichiarare di aver rilevato sorveglianza passiva: un osservatore può monitorare senza lasciare segnali osservabili.
+
+Dettagli: [`docs/ADAPTIVE_DEFENSE.md`](docs/ADAPTIVE_DEFENSE.md).
 
 ## Primo contatto
 
@@ -154,6 +181,8 @@ transport filtrato      -> transport alternativo
 ```
 
 Bootstrap, RPC, relay, fee relayer e provider devono essere multipli e sostituibili. Nessuno deve autenticare un DeviceID solo perché controlla il percorso di rete.
+
+Quando il peer è recentemente attivo sul control-plane ma il data-plane fallisce, Freedom può aumentare aggressivamente la path diversity anziché limitarsi a considerare il peer offline.
 
 ## Relay
 
@@ -228,7 +257,8 @@ Requisiti:
 - un relayer non può firmare come DeviceID;
 - più relayer devono poter coesistere;
 - il blocco di un singolo relayer non deve bloccare il protocollo;
-- messaggi, ACK, file, audio, video e route update in-session non generano transazioni on-chain.
+- messaggi, ACK, file, audio, video e route update in-session non generano transazioni on-chain;
+- eventuali recovery beacon producono write solo in condizioni di failure/recovery e non diventano heartbeat continui.
 
 ## Monetizzazione
 
@@ -241,12 +271,13 @@ Principio economico:
 Possibili linee:
 
 - core messaging/live E2EE gratuito;
-- **Freedom Plus** per capacità relay gestita, percorsi privacy/multi-hop, limiti superiori e funzioni client avanzate;
+- resilienza base e route fallback nel core gratuito;
+- **Freedom Plus / Shield** per capacità relay gestita, Always-Shielded, percorsi privacy/multi-hop, path diversity più ampia, candidate pre-warmed, failover parallelo e **Maximum Resilience**;
 - **Freedom Business** per SDK, deployment, relay dedicati, supporto e SLA;
 - relay community/best-effort e relay gestiti a pagamento opzionale;
 - fee relayer per gas sostituibili e non autoritativi.
 
-La monetizzazione non deve trasformare Freedom in un servizio dipendente da un singolo soggetto commerciale.
+La monetizzazione non deve trasformare Freedom in un servizio dipendente da un singolo soggetto commerciale e il piano Pro non deve comprare una cifratura più forte.
 
 Dettagli: [`docs/MONETIZATION.md`](docs/MONETIZATION.md).
 
@@ -288,6 +319,7 @@ DeviceID
 - [`docs/PROTOCOL.md`](docs/PROTOCOL.md) — oggetti e flussi del protocollo.
 - [`docs/CHAIN.md`](docs/CHAIN.md) — NEAR, Device Registry e rendezvous.
 - [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md) — modello di sicurezza.
+- [`docs/ADAPTIVE_DEFENSE.md`](docs/ADAPTIVE_DEFENSE.md) — liveness/recovery pairwise, rilevamento interferenza e Freedom Shield.
 - [`docs/PRODUCT_SCOPE.md`](docs/PRODUCT_SCOPE.md) — scope V1, Live Groups/Rooms e roadmap multi-party.
 - [`docs/MONETIZATION.md`](docs/MONETIZATION.md) — principi economici e servizi opzionali.
 - [`docs/LAUNCH_PLAN.md`](docs/LAUNCH_PLAN.md) — piano dettagliato di validazione, creator program e lancio.
@@ -306,20 +338,23 @@ M5  relay forward-only
 M6  V1: 1:1 messaging + media + voice/video + Live mode
 M7  V1.5: Live Groups / Live Rooms
 M8  V2: group voice/video + media forwarding scalabile
-M9  iOS + platform wake integration
-M10 hardening, censorship resistance, testing, interoperability
+M9  adaptive recovery + Freedom Shield hardening
+M10 iOS + platform wake integration
+M11 hardening, censorship resistance, testing, interoperability
 ```
 
 ## TODO
 
 - [ ] Brand client ufficiale: **Freedom Messenger** — *Powered by Freedom Protocol*.
 - [ ] **Censorship resistance / path diversity:** nessun singolo server, relay, RPC endpoint, provider blockchain, fee relayer, IP o percorso di rete deve costituire un punto unico di controllo o interruzione.
+- [ ] **Adaptive Defense:** implementare recovery beacon pairwise, temporanei e cifrati per distinguere peer recentemente attivo da peer offline quando il data-plane fallisce; usare più segnali prima di classificare una probabile interferenza e attivare route/relay/transport alternativi.
+- [ ] **Freedom Shield / Pro:** Always-Shielded, relay gestiti multipli, multi-hop, pre-warming, failover parallelo e Maximum Resilience senza rendere il piano Pro un requisito del protocollo base.
 - [ ] **Network privacy / metadata resistance:** evitare identificatori di rete stabili e correlabili; supportare alias/session identifiers pairwise o temporanei e percorsi relay/shielded quando l'utente non vuole esporre il proprio endpoint, minimizzando il più possibile latenza e overhead.
 - [ ] **Resilient bootstrap / rendezvous:** bootstrap, discovery, RPC e rendezvous devono avere fonti multiple, intercambiabili e verificabili; la perdita, censura o compromissione di una singola fonte non deve impedire a due peer autorizzati di ritrovarsi quando esiste almeno un percorso disponibile.
 - [ ] **Transport diversity:** consentire transport alternativi/sostituibili per ridurre la dipendenza da una singola firma di rete o classe di endpoint.
 - [ ] **V1 product:** completare 1:1 text/media/file, voice messages, audio call, video call, Live mode e onboarding senza configurazione tecnica manuale; i gruppi non devono bloccare il lancio.
 - [ ] **Live Rooms:** introdurre successivamente gruppi sincroni/effimeri senza mailbox condivisa o consegna offline automatica; progettare separatamente voce/video multi-party e forwarding media scalabile.
-- [ ] **Monetizzazione:** mantenere core interoperabile gratuito e monetizzare capacità relay/privacy gestita, funzioni Plus e servizi Business senza monetizzare contenuti o metadati di conversazione.
+- [ ] **Monetizzazione:** mantenere core interoperabile gratuito e monetizzare capacità relay/privacy gestita, funzioni Plus/Shield e servizi Business senza monetizzare contenuti o metadati di conversazione.
 - [ ] **Launch:** completare Founder Cohort, security/privacy review, Creator Pilot e criteri Go/No-Go definiti in [`docs/LAUNCH_PLAN.md`](docs/LAUNCH_PLAN.md) prima di scalare la promozione pubblica.
 
-Freedom è definito dalle proprietà tecniche del protocollo: identità verificabile, comunicazione E2EE sincrona, routing distribuito, relay non fidati, path diversity e minima dipendenza dal registro distribuito durante una sessione attiva.
+Freedom è definito dalle proprietà tecniche del protocollo: identità verificabile, comunicazione E2EE sincrona, routing distribuito, relay non fidati, path diversity, adaptive recovery e minima dipendenza dal registro distribuito durante una sessione attiva.
