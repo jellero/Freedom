@@ -25,16 +25,9 @@ Il traffico applicativo viaggia fuori dalla blockchain, direttamente tra endpoin
 - protocollo indipendente da Android, iOS e dagli store;
 - possibilità di sostituire la blockchain tramite un adapter senza cambiare il protocollo applicativo.
 
-## Non-obiettivi
+## Architettura
 
-Freedom, nella specifica attuale, non è:
-
-- una blockchain messenger;
-- un sistema di storage distribuito;
-- una mailbox offline globale;
-- un wallet o un exchange;
-- una random chat;
-- un sistema che pubblica IP permanenti on-chain.
+![Architettura del sistema Freedom](docs/assets/freedom-architecture.svg)
 
 Per la consegna di un messaggio applicativo entrambi gli endpoint devono essere online. Se il destinatario non è raggiungibile, il messaggio resta sul dispositivo mittente e non viene disseminato automaticamente nella rete.
 
