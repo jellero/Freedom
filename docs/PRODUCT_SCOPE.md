@@ -40,6 +40,7 @@ La prima versione destinata a Founder Cohort, reviewer, creator e successivament
 - riconnessione automatica quando esiste un percorso valido;
 - route selection coerente con la privacy policy scelta;
 - possibilità di evitare il direct path quando la protezione dell'endpoint è prioritaria;
+- rilevamento base di route failure e fallback tra percorsi/provider disponibili;
 - blocco contatto e funzioni minime richieste dai client ufficiali/store.
 
 ### 2.2 Esperienza target
@@ -82,7 +83,10 @@ Non sono prerequisiti della prima release pubblica:
 - bot platform;
 - feed/social graph;
 - mailbox offline;
-- sincronizzazione cloud della cronologia.
+- sincronizzazione cloud della cronologia;
+- modalità Pro Maximum Resilience completa;
+- pool bridge/non-public avanzato;
+- padding/metadata protection avanzato.
 
 Freedom deve preferire un core 1:1 estremamente affidabile a una suite ampia ma fragile.
 
@@ -181,7 +185,59 @@ La progettazione E2EE multi-party deve essere definita e reviewata separatamente
 
 ---
 
-## 7. Roadmap prodotto
+## 7. Adaptive Defense e Freedom Shield
+
+Freedom deve poter usare il control-plane di rendezvous come segnale di recovery quando il data-plane fallisce.
+
+Non deve esistere una presenza globale pubblica. Dopo una failure, i peer possono pubblicare beacon pairwise opachi e a TTL breve per dimostrare **attività recente**.
+
+Esempio prodotto:
+
+```text
+peer recentemente attivo       yes
+current data path               fail
+altro RPC/control-plane         reachable
+```
+
+Il client può quindi mostrare:
+
+> **Interferenza o anomalia di rete rilevata. Freedom sta usando un percorso alternativo.**
+
+Non deve mostrare claim come "sei sorvegliato" o attribuire il blocco a un soggetto specifico senza evidenza.
+
+### 7.1 Core gratuito
+
+La resilienza minima resta nel core:
+
+- route health;
+- provider/RPC fallback;
+- relay/path fallback;
+- recovery rendezvous;
+- rilevamento `peer recently active + data path unavailable`;
+- route switch automatico quando esiste un'alternativa.
+
+### 7.2 Freedom Pro — Shield
+
+Il piano Pro può offrire capacità più costose:
+
+- Always-Shielded mode senza direct IP;
+- relay gestiti multipli;
+- multi-hop;
+- path diversity più ampia;
+- candidate alternativi pre-warmed;
+- failover parallelo rapido;
+- transport rotation più aggressiva;
+- pool bridge/non-public quando disponibile;
+- padding/metadata protection opzionale;
+- **Maximum Resilience** con più percorsi indipendenti pronti prima del failure.
+
+La sicurezza crittografica di base non deve dipendere dal piano Pro.
+
+Dettagli: [`ADAPTIVE_DEFENSE.md`](ADAPTIVE_DEFENSE.md).
+
+---
+
+## 8. Roadmap prodotto
 
 ```text
 V1 — Launch
@@ -194,6 +250,7 @@ V1 — Launch
   QR/link contacts
   automatic identity/bootstrap
   route/privacy policy
+  basic route failure detection/fallback
 
 V1.5 — Live Groups
   small group text
@@ -208,11 +265,17 @@ V2 — Multi-party realtime
   scalable media forwarding
   replaceable/distributed SFU or equivalent
   multi-party privacy hardening
+
+Pro evolution — Freedom Shield
+  Always-Shielded
+  multi-hop managed paths
+  aggressive path/transport diversity
+  Maximum Resilience
 ```
 
 ---
 
-## 8. Launch quality gate
+## 9. Launch quality gate
 
 Prima del Creator Pilot il V1 deve essere stabile sul percorso principale.
 
@@ -228,14 +291,14 @@ Blocker:
 - privacy claim non ancora implementati;
 - dipendenza hardcoded da credenziali personali o singola infrastruttura non sostituibile.
 
-Gruppi e multi-party media **non devono ritardare il lancio** se il V1 1:1 soddisfa questi criteri.
+Gruppi, multi-party media e Shield avanzato **non devono ritardare il lancio** se il V1 1:1 soddisfa questi criteri.
 
 ---
 
-## 9. Principio di prodotto
+## 10. Principio di prodotto
 
 Freedom deve resistere alla tentazione di diventare un messenger generalista prima di aver dimostrato il proprio modello.
 
 Priorità:
 
-> **prima rendere impeccabile una comunicazione privata live tra due persone; poi estendere la stessa semantica a più persone.**
+> **prima rendere impeccabile una comunicazione privata live tra due persone; poi estendere la stessa semantica a più persone e rafforzare progressivamente la resilienza di rete.**
