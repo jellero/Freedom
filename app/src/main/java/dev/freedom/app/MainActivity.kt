@@ -43,6 +43,7 @@ import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
 import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
 import dev.freedom.app.chain.ChainSettings
 import dev.freedom.app.chain.ChainHealth
+import dev.freedom.app.chain.ChainDeviceRecord
 import dev.freedom.app.chain.IdentityNetwork
 import dev.freedom.app.chain.NearChainAdapter
 import dev.freedom.app.chain.NearCredentialStore
@@ -57,6 +58,8 @@ import dev.freedom.app.contact.FreedomContactCodec
 import dev.freedom.app.contact.FreedomNumber
 import dev.freedom.app.contact.QrCodeRenderer
 import dev.freedom.app.crypto.IdentityStore
+import dev.freedom.app.crypto.Crypto
+import dev.freedom.app.crypto.MailboxKeyStore
 import dev.freedom.app.diagnostics.CrashReporter
 import dev.freedom.app.net.FreedomNode
 import dev.freedom.app.net.LocalPeerDirectory
@@ -71,8 +74,10 @@ import java.util.concurrent.Executors
 
 class MainActivity : AppCompatActivity() {
     private enum class Screen { CHATS, CONTACTS, SETTINGS, IDENTITY, CHAT }
+    private enum class NearKeyState { CHECKING, ACTIVE, INVALID }
 
     private lateinit var identity: IdentityStore
+    private lateinit var mailboxIdentity: MailboxKeyStore
     private lateinit var contacts: ContactRepository
     private lateinit var chats: ChatRepository
     private lateinit var chainSettings: ChainSettings
@@ -98,19 +103,37 @@ class MainActivity : AppCompatActivity() {
     private var chainHealthLoading = false
     private var nearOperationStatus: String? = null
     private var nearOperationInProgress = false
+    private var nearKeyState: NearKeyState? = null
+    private var nearKeyStateDetail: String? = null
+    private var nearKeyCheckInProgress = false
+    private var nearSelfTestInProgress = false
+    private var nearSelfTestStatus: String? = null
+    private var messageSendInProgress = false
+    private var mailboxPollingStarted = false
+    private var mailboxPollErrorReported = false
     private var systemBottomInset = 0
     private var imeBottomInset = 0
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private val chainExecutor = Executors.newSingleThreadExecutor()
+    private val mailboxPollRunnable = object : Runnable {
+        override fun run() {
+            pollBlockchainMailbox()
+            mainHandler.postDelayed(this, MAILBOX_POLL_INTERVAL_MILLIS)
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         CrashReporter.record(this, "main_activity_on_create")
         identity = IdentityStore(this)
+        mailboxIdentity = MailboxKeyStore(this)
         contacts = ContactRepository(this)
         chats = ChatRepository(this)
         chainSettings = ChainSettings(this)
+        if (chainSettings.network != IdentityNetwork.NEAR_TESTNET) {
+            chainSettings.network = IdentityNetwork.NEAR_TESTNET
+        }
         nearCredentialStore = NearCredentialStore(this)
         rebuildNearClients()
 
@@ -128,7 +151,7 @@ class MainActivity : AppCompatActivity() {
             }
         })
         showChats()
-        startCommunicationOrRequestPermission()
+        startMailboxPolling()
         mainHandler.postDelayed(::showCrashReportIfPresent, CRASH_REPORT_DELAY_MILLIS)
     }
 
@@ -149,6 +172,7 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         CrashReporter.record(this, "main_activity_on_destroy")
         directory?.close()
+        mainHandler.removeCallbacks(mailboxPollRunnable)
         if (::node.isInitialized) node.close()
         chainExecutor.shutdownNow()
         super.onDestroy()
@@ -158,7 +182,12 @@ class MainActivity : AppCompatActivity() {
         displayName = getString(R.string.contact_default_name),
         freedomNumber = FreedomNumber.fromPublicKey(identity.publicKey),
         fingerprint = identity.fingerprint,
-        networkId = chainSettings.network.id
+        networkId = chainSettings.network.id,
+        deviceId = identity.deviceId,
+        identityPublicKey = Base64.getEncoder().encodeToString(identity.compressedPublicKey),
+        rendezvousCapability = Base64.getEncoder().encodeToString(identity.rendezvousCapability),
+        mailboxPublicKey = Base64.getEncoder().encodeToString(mailboxIdentity.compressedPublicKey),
+        keyEpoch = 1
     )
 
     private fun buildChrome() {
@@ -354,6 +383,15 @@ class MainActivity : AppCompatActivity() {
         requestPermissions(arrayOf(LOCAL_NETWORK_PERMISSION), REQUEST_LOCAL_NETWORK)
     }
 
+    private fun startBlockchainCommunication() {
+        directory?.close()
+        directory = null
+        if (!communicationStarted) {
+            communicationStarted = true
+            node.start()
+        }
+    }
+
     private fun startCommunication() {
         if (!communicationStarted) {
             communicationStarted = true
@@ -462,12 +500,7 @@ class MainActivity : AppCompatActivity() {
         val column = pageColumn()
         scroll.addView(column)
 
-        column.addView(sectionLabel(R.string.identity_network_section))
-        column.addView(networkCard(IdentityNetwork.NEAR_TESTNET, R.string.near_testnet_description))
-        column.addView(networkCard(IdentityNetwork.NEAR_MAINNET, R.string.near_mainnet_description))
-        column.addView(networkCard(IdentityNetwork.LOCAL, R.string.local_only_description))
-
-        column.addView(sectionLabel(R.string.chain_status_section), margins(top = 28))
+        column.addView(sectionLabel(R.string.chain_status_section))
         val currentHealth = chainHealth
         val statusTitle: String
         val statusBody: String
@@ -515,6 +548,39 @@ class MainActivity : AppCompatActivity() {
         if (chainSettings.network == IdentityNetwork.NEAR_TESTNET) {
             column.addView(sectionLabel(R.string.near_access_section), margins(top = 28))
             val configuredAccount = nearCredentialStore.accountId()
+            val keyTitle: String
+            val keyBody: String
+            val keyColor: Int
+            when {
+                configuredAccount == null -> {
+                    keyTitle = getString(R.string.near_key_inactive)
+                    keyBody = getString(R.string.near_key_not_configured)
+                    keyColor = color(R.color.freedom_outline)
+                }
+                nearKeyState == NearKeyState.ACTIVE -> {
+                    keyTitle = getString(R.string.near_key_active)
+                    keyBody = getString(R.string.near_key_active_for, configuredAccount)
+                    keyColor = color(R.color.freedom_success)
+                }
+                nearKeyState == NearKeyState.INVALID -> {
+                    keyTitle = getString(R.string.near_key_invalid)
+                    keyBody = nearKeyStateDetail ?: getString(R.string.invalid_near_key)
+                    keyColor = color(R.color.freedom_error)
+                }
+                else -> {
+                    keyTitle = getString(R.string.near_key_checking)
+                    keyBody = getString(R.string.near_key_checking_body, configuredAccount)
+                    keyColor = color(R.color.freedom_primary)
+                }
+            }
+            column.addView(
+                informationCard(
+                    title = keyTitle,
+                    body = keyBody,
+                    badge = if (nearKeyState == NearKeyState.ACTIVE) getString(R.string.active) else null,
+                    accentColor = keyColor
+                )
+            )
             column.addView(
                 actionCard(
                     title = getString(
@@ -526,15 +592,6 @@ class MainActivity : AppCompatActivity() {
                     } ?: getString(R.string.near_key_not_configured),
                     icon = R.drawable.ic_qr
                 ) { showNearKeyOptions() },
-                margins(top = 10)
-            )
-            column.addView(
-                actionCard(
-                    title = getString(R.string.configure_rpc),
-                    subtitle = chainSettings.customRpcEndpoint
-                        ?: getString(R.string.default_rpc_endpoints),
-                    icon = R.drawable.ic_settings
-                ) { showRpcConfiguration() },
                 margins(top = 10)
             )
             if (configuredAccount != null) {
@@ -571,7 +628,30 @@ class MainActivity : AppCompatActivity() {
             )
         )
 
+        column.addView(sectionLabel(R.string.advanced_section), margins(top = 28))
+        column.addView(
+            actionCard(
+                title = getString(R.string.near_connection_advanced),
+                subtitle = chainSettings.customRpcEndpoint
+                    ?: getString(R.string.near_connection_automatic),
+                icon = R.drawable.ic_settings
+            ) { showRpcConfiguration() },
+            margins(top = 10)
+        )
+
         column.addView(sectionLabel(R.string.diagnostics_section), margins(top = 28))
+        column.addView(
+            actionCard(
+                title = getString(R.string.near_full_test),
+                subtitle = when {
+                    nearSelfTestInProgress -> getString(R.string.near_full_test_running)
+                    nearSelfTestStatus != null -> nearSelfTestStatus.orEmpty()
+                    else -> getString(R.string.near_full_test_body)
+                },
+                icon = R.drawable.ic_send
+            ) { runNearSelfTest() },
+            margins(top = 10)
+        )
         column.addView(
             actionCard(
                 title = getString(R.string.share_diagnostic_log),
@@ -582,6 +662,7 @@ class MainActivity : AppCompatActivity() {
         )
         setPage(scroll)
         refreshChainHealthIfNeeded()
+        refreshNearKeyStatusIfNeeded()
     }
 
     private fun rebuildNearClients() {
@@ -663,6 +744,8 @@ class MainActivity : AppCompatActivity() {
     private fun validateAndSaveNearKey(credentials: NearCredentials) {
         if (nearOperationInProgress) return
         nearOperationInProgress = true
+        nearKeyState = NearKeyState.CHECKING
+        nearKeyStateDetail = null
         nearOperationStatus = getString(R.string.near_key_validation_in_progress)
         if (currentScreen == Screen.SETTINGS) showSettings()
         chainExecutor.execute {
@@ -671,6 +754,8 @@ class MainActivity : AppCompatActivity() {
                 .onFailure { failure ->
                     ui {
                         nearOperationInProgress = false
+                        nearKeyState = NearKeyState.INVALID
+                        nearKeyStateDetail = failure.message
                         nearOperationStatus = failure.message
                         if (currentScreen == Screen.SETTINGS) showSettings()
                     }
@@ -678,6 +763,8 @@ class MainActivity : AppCompatActivity() {
                 .onSuccess {
                     ui {
                         nearOperationInProgress = false
+                        nearKeyState = NearKeyState.ACTIVE
+                        nearKeyStateDetail = null
                         nearOperationStatus = getString(R.string.near_key_saved)
                         showMessage(getString(R.string.near_key_saved))
                         if (currentScreen == Screen.SETTINGS) showSettings()
@@ -685,6 +772,8 @@ class MainActivity : AppCompatActivity() {
                 }
             else ui {
                 nearOperationInProgress = false
+                nearKeyState = NearKeyState.INVALID
+                nearKeyStateDetail = result.exceptionOrNull()?.message
                 nearOperationStatus = result.exceptionOrNull()?.message
                 showMessage(nearOperationStatus ?: getString(R.string.invalid_near_key))
                 if (currentScreen == Screen.SETTINGS) showSettings()
@@ -699,6 +788,8 @@ class MainActivity : AppCompatActivity() {
             .setPositiveButton(R.string.remove) { _, _ ->
                 nearCredentialStore.clear()
                 nearOperationStatus = null
+                nearKeyState = null
+                nearKeyStateDetail = null
                 showSettings()
             }
             .setNegativeButton(R.string.cancel, null)
@@ -722,6 +813,8 @@ class MainActivity : AppCompatActivity() {
                     rebuildNearClients()
                     chainHealth = null
                     chainHealthError = null
+                    nearKeyState = null
+                    nearKeyStateDetail = null
                 }.onSuccess {
                     showSettings()
                 }.onFailure { showMessage(it.message ?: getString(R.string.invalid_rpc_endpoint)) }
@@ -731,6 +824,8 @@ class MainActivity : AppCompatActivity() {
                 rebuildNearClients()
                 chainHealth = null
                 chainHealthError = null
+                nearKeyState = null
+                nearKeyStateDetail = null
                 showSettings()
             }
             .setNegativeButton(R.string.cancel, null)
@@ -748,33 +843,8 @@ class MainActivity : AppCompatActivity() {
         showSettings()
         chainExecutor.execute {
             val result = runCatching {
-                nearDirect.validateRestrictedKey(credentials).getOrThrow()
-                val existing = nearChain.resolveDevice(identity.deviceId).getOrThrow()
-                if (existing != null) {
-                    require(existing.active) { "Il dispositivo risulta revocato su NEAR" }
-                    require(existing.identityPublicKey.contentEquals(identity.compressedPublicKey)) {
-                        "Il Device ID è già associato a una chiave identità diversa"
-                    }
-                    return@runCatching getString(R.string.device_already_active)
-                }
-                val balance = BigInteger(nearChain.storageBalance(credentials.accountId).getOrThrow())
-                require(balance.signum() > 0) { getString(R.string.storage_credit_missing) }
-                val publicKey = identity.compressedPublicKey
-                val signature = identity.registrationSignature(
-                    NearChainAdapter.TESTNET_CONTRACT_ID,
-                    NearChainAdapter.PROTOCOL_VERSION
-                )
-                val arguments = org.json.JSONObject()
-                    .put("device_id", identity.deviceId)
-                    .put("identity_public_key", Base64.getEncoder().encodeToString(publicKey))
-                    .put("protocol_version", NearChainAdapter.PROTOCOL_VERSION)
-                    .put("signature", Base64.getEncoder().encodeToString(signature))
-                val transaction = nearDirect.callFunction(
-                    credentials,
-                    "register_device",
-                    arguments
-                ).getOrThrow()
-                getString(R.string.device_activation_success, transaction.transactionHash.take(12))
+                ensureOwnIdentityOnChain(credentials)
+                getString(R.string.device_and_number_active)
             }
             ui {
                 nearOperationInProgress = false
@@ -787,6 +857,189 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun ensureOwnIdentityOnChain(credentials: NearCredentials): ChainDeviceRecord {
+        nearDirect.validateRestrictedKey(credentials).getOrThrow()
+        var device = nearChain.resolveDevice(identity.deviceId).getOrThrow()
+        if (device != null) {
+            require(device.active) { "Il dispositivo risulta revocato su NEAR" }
+            require(device.identityPublicKey.contentEquals(identity.compressedPublicKey)) {
+                "Il Device ID è già associato a una chiave identità diversa"
+            }
+        } else {
+            val balance = BigInteger(nearChain.storageBalance(credentials.accountId).getOrThrow())
+            require(balance.signum() > 0) { getString(R.string.storage_credit_missing) }
+            val publicKey = identity.compressedPublicKey
+            val signature = identity.registrationSignature(
+                NearChainAdapter.TESTNET_CONTRACT_ID,
+                NearChainAdapter.PROTOCOL_VERSION
+            )
+            val arguments = org.json.JSONObject()
+                .put("device_id", identity.deviceId)
+                .put("identity_public_key", Base64.getEncoder().encodeToString(publicKey))
+                .put("protocol_version", NearChainAdapter.PROTOCOL_VERSION)
+                .put("signature", Base64.getEncoder().encodeToString(signature))
+            nearDirect.callFunction(credentials, "register_device", arguments).getOrThrow()
+            device = nearChain.resolveDevice(identity.deviceId).getOrThrow()
+                ?: error("Registrazione del dispositivo non visibile su NEAR")
+        }
+
+        val ownNumber = ownContact().freedomNumber
+        val published = nearChain.resolveContact(ownNumber).getOrThrow()
+        val mailboxKey = mailboxIdentity.compressedPublicKey
+        if (published?.deviceId != identity.deviceId ||
+            !published.mailboxPublicKey.contentEquals(mailboxKey)
+        ) {
+            val publishNonce = device.authNonce + 1
+            val signature = identity.contactPublishSignature(
+                contractId = NearChainAdapter.TESTNET_CONTRACT_ID,
+                freedomNumber = ownNumber,
+                mailboxPublicKey = mailboxKey,
+                authNonce = publishNonce,
+                keyEpoch = device.keyEpoch,
+                protocolVersion = NearChainAdapter.PROTOCOL_VERSION
+            )
+            val publishArguments = org.json.JSONObject()
+                .put("device_id", identity.deviceId)
+                .put("freedom_number", ownNumber)
+                .put(
+                    "rendezvous_capability",
+                    Base64.getEncoder().encodeToString(identity.rendezvousCapability)
+                )
+                .put("mailbox_public_key", Base64.getEncoder().encodeToString(mailboxKey))
+                .put("auth_nonce", publishNonce.toString())
+                .put("signature", Base64.getEncoder().encodeToString(signature))
+            nearDirect.callFunction(credentials, "publish_contact", publishArguments).getOrThrow()
+            device = nearChain.resolveDevice(identity.deviceId).getOrThrow()
+                ?: error("Pubblicazione del numero non visibile su NEAR")
+        }
+        return device
+    }
+
+    private fun runNearSelfTest() {
+        if (nearSelfTestInProgress || nearOperationInProgress) return
+        val credentials = nearCredentialStore.load().getOrElse {
+            showMessage(getString(R.string.invalid_near_key))
+            return
+        }
+        nearSelfTestInProgress = true
+        nearSelfTestStatus = getString(R.string.near_full_test_running)
+        CrashReporter.record(this, "near_self_test_started")
+        if (currentScreen == Screen.SETTINGS) showSettings()
+        chainExecutor.execute {
+            var stage = "rpc"
+            var transactionHash: String? = null
+            val result = runCatching {
+                nearChain.checkHealth().getOrThrow()
+                stage = "key"
+                nearDirect.validateRestrictedKey(credentials).getOrThrow()
+                stage = "identity"
+                ensureOwnIdentityOnChain(credentials)
+                stage = "encrypt"
+                val marker = "freedom-self-test-${Crypto.randomBytes(12).toHex()}"
+                    .toByteArray(Charsets.UTF_8)
+                stage = "write"
+                val sent = sendEncryptedMessage(
+                    credentials = credentials,
+                    recipientDeviceId = identity.deviceId,
+                    recipientMailboxPublicKey = mailboxIdentity.compressedPublicKey,
+                    plaintext = marker
+                )
+                transactionHash = sent.second
+                CrashReporter.record(this, "near_self_test_tx:${sent.second.take(16)}")
+                stage = "read"
+                val stored = nearChain.getMessages(identity.deviceId).getOrThrow()
+                    .firstOrNull { it.messageId == sent.first }
+                    ?: error("Il messaggio di test non è leggibile dopo la finalizzazione")
+                stage = "decrypt"
+                val decrypted = Crypto.decryptChainMessage(
+                    privateKey = mailboxIdentity.privateKey,
+                    senderDeviceId = stored.senderDeviceId,
+                    recipientDeviceId = stored.recipientDeviceId,
+                    messageId = stored.messageId,
+                    expiresAtNs = stored.expiresAtNs,
+                    ephemeralPublicKey = stored.ephemeralPublicKey,
+                    nonce = stored.nonce,
+                    ciphertext = stored.ciphertext
+                )
+                require(decrypted.contentEquals(marker)) { "Contenuto decifrato non valido" }
+                sent.second
+            }
+            ui {
+                nearSelfTestInProgress = false
+                result.onSuccess { hash ->
+                    mailboxPollErrorReported = false
+                    nearSelfTestStatus = getString(R.string.near_full_test_success, hash.take(12))
+                    CrashReporter.record(this, "near_self_test_success")
+                    showMessage(getString(R.string.near_full_test_success, hash.take(12)))
+                }.onFailure { error ->
+                    val wrapped = IllegalStateException(
+                        "Test NEAR fallito nella fase $stage" +
+                            (transactionHash?.let { " (tx=${it.take(24)})" } ?: ""),
+                        error
+                    )
+                    CrashReporter.record(this, "near_self_test_failed:$stage")
+                    CrashReporter.recordHandledError(this, "near_self_test_$stage", wrapped)
+                    nearSelfTestStatus = getString(
+                        R.string.near_full_test_failed,
+                        stage,
+                        error.message ?: error.javaClass.simpleName
+                    )
+                    showMessage(nearSelfTestStatus.orEmpty())
+                }
+                if (currentScreen == Screen.SETTINGS) showSettings()
+            }
+        }
+    }
+
+    private fun sendEncryptedMessage(
+        credentials: NearCredentials,
+        recipientDeviceId: String,
+        recipientMailboxPublicKey: ByteArray,
+        plaintext: ByteArray
+    ): Pair<String, String> {
+        val sender = nearChain.resolveDevice(identity.deviceId).getOrThrow()
+            ?: error("Dispositivo Freedom non attivato su NEAR")
+        require(sender.active) { "Dispositivo Freedom revocato su NEAR" }
+        val messageId = Crypto.randomBytes(32).toHex()
+        val expiresAtNs = Math.multiplyExact(
+            System.currentTimeMillis() + MESSAGE_TTL_MILLIS,
+            1_000_000L
+        )
+        val envelope = Crypto.encryptChainMessage(
+            recipientPublicKey = recipientMailboxPublicKey,
+            senderDeviceId = identity.deviceId,
+            recipientDeviceId = recipientDeviceId,
+            messageId = messageId,
+            expiresAtNs = expiresAtNs,
+            plaintext = plaintext
+        )
+        val authNonce = sender.authNonce + 1
+        val signature = identity.messageSendSignature(
+            contractId = NearChainAdapter.TESTNET_CONTRACT_ID,
+            recipientDeviceId = recipientDeviceId,
+            messageId = messageId,
+            expiresAtNs = expiresAtNs,
+            ephemeralPublicKey = envelope.ephemeralPublicKey,
+            nonce = envelope.nonce,
+            ciphertext = envelope.ciphertext,
+            authNonce = authNonce,
+            keyEpoch = sender.keyEpoch,
+            protocolVersion = NearChainAdapter.PROTOCOL_VERSION
+        )
+        val arguments = org.json.JSONObject()
+            .put("sender_device_id", identity.deviceId)
+            .put("recipient_device_id", recipientDeviceId)
+            .put("message_id", messageId)
+            .put("expires_at_ns", expiresAtNs.toString())
+            .put("ephemeral_public_key", Base64.getEncoder().encodeToString(envelope.ephemeralPublicKey))
+            .put("nonce", Base64.getEncoder().encodeToString(envelope.nonce))
+            .put("ciphertext", Base64.getEncoder().encodeToString(envelope.ciphertext))
+            .put("auth_nonce", authNonce.toString())
+            .put("signature", Base64.getEncoder().encodeToString(signature))
+        val transaction = nearDirect.callFunction(credentials, "send_message", arguments).getOrThrow()
+        return messageId to transaction.transactionHash
+    }
+
     private fun refreshChainHealthIfNeeded() {
         if (chainSettings.network != IdentityNetwork.NEAR_TESTNET) return
         if (chainHealth != null || chainHealthError != null || chainHealthLoading) return
@@ -797,6 +1050,31 @@ class MainActivity : AppCompatActivity() {
                 chainHealthLoading = false
                 chainHealth = result.getOrNull()
                 chainHealthError = result.exceptionOrNull()?.message
+                if (currentScreen == Screen.SETTINGS) showSettings()
+            }
+        }
+    }
+
+    private fun refreshNearKeyStatusIfNeeded() {
+        if (!nearCredentialStore.hasCredentials()) {
+            nearKeyState = null
+            nearKeyStateDetail = null
+            return
+        }
+        if (nearKeyCheckInProgress || nearKeyState != null) return
+        val credentials = nearCredentialStore.load().getOrElse {
+            nearKeyState = NearKeyState.INVALID
+            nearKeyStateDetail = it.message
+            return
+        }
+        nearKeyCheckInProgress = true
+        nearKeyState = NearKeyState.CHECKING
+        chainExecutor.execute {
+            val result = nearDirect.validateRestrictedKey(credentials)
+            ui {
+                nearKeyCheckInProgress = false
+                nearKeyState = if (result.isSuccess) NearKeyState.ACTIVE else NearKeyState.INVALID
+                nearKeyStateDetail = result.exceptionOrNull()?.message
                 if (currentScreen == Screen.SETTINGS) showSettings()
             }
         }
@@ -866,19 +1144,9 @@ class MainActivity : AppCompatActivity() {
     private fun openChat(contact: FreedomContact) {
         currentContact = contact
         currentScreen = Screen.CHAT
-        chatStatusRes = if (connectedContactNumber == contact.freedomNumber) {
-            R.string.chat_connected
-        } else {
-            R.string.chat_connecting
-        }
+        chatStatusRes = R.string.chat_connecting
         renderChat(contact)
-
-        if (connectedContactNumber != null && connectedContactNumber != contact.freedomNumber) {
-            node.disconnect()
-            mainHandler.postDelayed({ connectToContact(contact) }, 250)
-        } else if (connectedContactNumber != contact.freedomNumber) {
-            connectToContact(contact)
-        }
+        connectToContact(contact)
     }
 
     private fun renderChat(contact: FreedomContact) {
@@ -910,13 +1178,6 @@ class MainActivity : AppCompatActivity() {
         messageScroll.addView(messagesColumn)
         root.addView(messageScroll, LinearLayout.LayoutParams(MATCH, 0, 1f))
 
-        if (connectedContactNumber != contact.freedomNumber) {
-            root.addView(MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
-                text = getString(R.string.connect_contact)
-                setOnClickListener { connectToContact(contact) }
-            }, LinearLayout.LayoutParams(MATCH, dp(52)).apply { bottomMargin = dp(8) })
-        }
-
         val composer = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.BOTTOM
@@ -937,13 +1198,17 @@ class MainActivity : AppCompatActivity() {
             text = ""
             setIconResource(R.drawable.ic_send)
             iconGravity = MaterialButton.ICON_GRAVITY_TEXT_START
-            isEnabled = connectedContactNumber == contact.freedomNumber
+            isEnabled = connectedContactNumber == contact.freedomNumber &&
+                nearCredentialStore.hasCredentials() && !messageSendInProgress
             contentDescription = getString(R.string.send_e2ee)
             insetTop = 0
             insetBottom = 0
             setOnClickListener {
                 val value = input.text?.toString().orEmpty().trim()
-                if (value.isNotEmpty()) node.sendText(value)
+                if (value.isNotEmpty()) {
+                    input.text?.clear()
+                    sendBlockchainMessage(contact, value)
+                }
             }
         }, LinearLayout.LayoutParams(dp(56), dp(56)))
         root.addView(composer, LinearLayout.LayoutParams(MATCH, WRAP))
@@ -953,31 +1218,155 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun connectToContact(contact: FreedomContact) {
-        if (!hasLocalNetworkPermission()) {
-            startCommunicationOrRequestPermission()
-            return
-        }
         currentContact = contact
         chatStatusRes = R.string.chat_connecting
         if (currentScreen == Screen.CHAT) renderChat(contact)
-        directory?.find(contact.freedomNumber) { presence ->
-            if (currentContact?.freedomNumber != contact.freedomNumber) return@find
-            if (presence == null) {
-                chatStatusRes = R.string.chat_offline
-                if (currentScreen == Screen.CHAT) renderChat(contact)
-                showMessage(getString(R.string.contact_not_found))
-                return@find
+        chainExecutor.execute {
+            val result = nearChain.resolveContact(contact.freedomNumber)
+            ui {
+                if (currentContact?.freedomNumber != contact.freedomNumber) return@ui
+                result.onSuccess { chainContact ->
+                    if (chainContact == null) {
+                        connectedContactNumber = null
+                        chatStatusRes = R.string.chat_offline
+                        showMessage(getString(R.string.contact_not_found_on_chain))
+                    } else {
+                        val publicKey = runCatching {
+                            Crypto.decodeCompressedP256PublicKey(chainContact.identityPublicKey)
+                        }.getOrNull()
+                        if (publicKey == null ||
+                            !Crypto.fingerprint(publicKey).equals(contact.fingerprint, ignoreCase = true)
+                        ) {
+                            connectedContactNumber = null
+                            chatStatusRes = R.string.chat_offline
+                            showMessage(getString(R.string.identity_mismatch_body))
+                        } else {
+                            val updated = contact.copy(
+                                deviceId = chainContact.deviceId,
+                                identityPublicKey = Base64.getEncoder().encodeToString(chainContact.identityPublicKey),
+                                rendezvousCapability = Base64.getEncoder().encodeToString(chainContact.rendezvousCapability),
+                                mailboxPublicKey = Base64.getEncoder().encodeToString(chainContact.mailboxPublicKey),
+                                keyEpoch = chainContact.keyEpoch
+                            )
+                            contacts.save(updated)
+                            currentContact = updated
+                            connectedContactNumber = updated.freedomNumber
+                            chatStatusRes = R.string.chat_connected
+                        }
+                    }
+                }.onFailure { error ->
+                    connectedContactNumber = null
+                    chatStatusRes = R.string.chat_offline
+                    CrashReporter.recordHandledError(this, "near_contact_resolve", error)
+                    showMessage(error.message ?: getString(R.string.chain_not_connected))
+                }
+                if (currentScreen == Screen.CHAT) renderChat(currentContact ?: contact)
             }
-            if (!presence.fingerprint.equals(contact.fingerprint, ignoreCase = true)) {
-                chatStatusRes = R.string.chat_offline
-                MaterialAlertDialogBuilder(this)
-                    .setTitle(R.string.identity_mismatch_title)
-                    .setMessage(R.string.identity_mismatch_body)
-                    .setPositiveButton(android.R.string.ok, null)
-                    .show()
-                return@find
+        }
+    }
+
+    private fun sendBlockchainMessage(contact: FreedomContact, text: String) {
+        if (messageSendInProgress) return
+        val credentials = nearCredentialStore.load().getOrElse {
+            showMessage(getString(R.string.invalid_near_key))
+            return
+        }
+        val recipientDeviceId = contact.deviceId
+        val mailboxPublicKey = contact.mailboxPublicKey?.let {
+            runCatching { Base64.getDecoder().decode(it) }.getOrNull()
+        }
+        if (recipientDeviceId == null || mailboxPublicKey == null) {
+            showMessage(getString(R.string.contact_not_found_on_chain))
+            connectToContact(contact)
+            return
+        }
+        messageSendInProgress = true
+        if (currentScreen == Screen.CHAT) renderChat(contact)
+        chainExecutor.execute {
+            val result = runCatching {
+                val sent = sendEncryptedMessage(
+                    credentials,
+                    recipientDeviceId,
+                    mailboxPublicKey,
+                    text.toByteArray(Charsets.UTF_8)
+                )
+                ChatMessage(
+                    messageId = sent.first,
+                    contactNumber = contact.freedomNumber,
+                    text = text,
+                    outgoing = true,
+                    timestampMillis = System.currentTimeMillis()
+                )
             }
-            node.connect(presence.host)
+            ui {
+                messageSendInProgress = false
+                result.onSuccess { message ->
+                    chats.add(message)
+                    CrashReporter.record(this, "near_message_sent")
+                }.onFailure { error ->
+                    CrashReporter.record(this, "near_message_send_failed:${error.javaClass.simpleName}")
+                    CrashReporter.recordHandledError(this, "near_message_send", error)
+                    showMessage(error.message ?: getString(R.string.message_send_failed))
+                }
+                if (currentScreen == Screen.CHAT) renderChat(currentContact ?: contact)
+            }
+        }
+    }
+
+    private fun startMailboxPolling() {
+        if (mailboxPollingStarted) return
+        mailboxPollingStarted = true
+        mainHandler.postDelayed(mailboxPollRunnable, 2_000L)
+    }
+
+    private fun pollBlockchainMailbox() {
+        if (!nearCredentialStore.hasCredentials() || chainExecutor.isShutdown) return
+        chainExecutor.execute {
+            val result = nearChain.getMessages(identity.deviceId)
+            result.onSuccess { messages ->
+                mailboxPollErrorReported = false
+                val received = mutableListOf<Pair<FreedomContact, ChatMessage>>()
+                messages.forEach { stored ->
+                    if (stored.senderDeviceId == identity.deviceId) return@forEach
+                    val contact = contacts.findByDeviceId(stored.senderDeviceId) ?: return@forEach
+                    if (chats.contains(stored.messageId)) return@forEach
+                    runCatching {
+                        val plaintext = Crypto.decryptChainMessage(
+                            privateKey = mailboxIdentity.privateKey,
+                            senderDeviceId = stored.senderDeviceId,
+                            recipientDeviceId = stored.recipientDeviceId,
+                            messageId = stored.messageId,
+                            expiresAtNs = stored.expiresAtNs,
+                            ephemeralPublicKey = stored.ephemeralPublicKey,
+                            nonce = stored.nonce,
+                            ciphertext = stored.ciphertext
+                        )
+                        val text = plaintext.toString(Charsets.UTF_8)
+                        require(text.isNotBlank())
+                        contact to ChatMessage(
+                            messageId = stored.messageId,
+                            contactNumber = contact.freedomNumber,
+                            text = text,
+                            outgoing = false,
+                            timestampMillis = stored.sentAtNs / 1_000_000L
+                        )
+                    }.onSuccess(received::add)
+                }
+                if (received.isNotEmpty()) ui {
+                    received.forEach { (contact, message) ->
+                        chats.add(message)
+                        CrashReporter.record(this, "near_message_received")
+                        if (currentScreen != Screen.CHAT) showMessage(getString(R.string.new_message_from, contact.displayName))
+                    }
+                    currentContact?.let { if (currentScreen == Screen.CHAT) renderChat(it) }
+                }
+            }.onFailure { error ->
+                if (!mailboxPollErrorReported) {
+                    mailboxPollErrorReported = true
+                    CrashReporter.record(this, "near_mailbox_poll_failed:${error.javaClass.simpleName}")
+                    CrashReporter.recordHandledError(this, "near_mailbox_poll", error)
+                }
+            }
         }
     }
 
@@ -1095,13 +1484,43 @@ class MainActivity : AppCompatActivity() {
                 dialog.dismiss()
                 CrashReporter.record(this, "contacts_manual_lookup_started")
                 showMessage(getString(R.string.discovering_number_format, FreedomNumber.format(number)))
-                directory?.find(number) { presence ->
-                    if (presence == null) {
-                        showMessage(getString(R.string.contact_not_found))
-                    } else {
-                        savePresenceAsContact(presence, requestedName)
+                chainExecutor.execute {
+                    val result = nearChain.resolveContact(number)
+                    ui {
+                        val record = result.getOrNull()
+                        if (record == null) {
+                            showMessage(
+                                result.exceptionOrNull()?.message
+                                    ?: getString(R.string.contact_not_found_on_chain)
+                            )
+                            return@ui
+                        }
+                        val publicKey = runCatching {
+                            Crypto.decodeCompressedP256PublicKey(record.identityPublicKey)
+                        }.getOrElse {
+                            showMessage(getString(R.string.invalid_chain_contact))
+                            return@ui
+                        }
+                        saveContact(
+                            FreedomContact(
+                                displayName = requestedName.ifBlank {
+                                    getString(R.string.contact_default_name)
+                                }.take(48),
+                                freedomNumber = record.freedomNumber,
+                                fingerprint = Crypto.fingerprint(publicKey),
+                                networkId = IdentityNetwork.NEAR_TESTNET.id,
+                                deviceId = record.deviceId,
+                                identityPublicKey = Base64.getEncoder()
+                                    .encodeToString(record.identityPublicKey),
+                                rendezvousCapability = Base64.getEncoder()
+                                    .encodeToString(record.rendezvousCapability),
+                                mailboxPublicKey = Base64.getEncoder()
+                                    .encodeToString(record.mailboxPublicKey),
+                                keyEpoch = record.keyEpoch
+                            )
+                        )
                     }
-                } ?: showMessage(getString(R.string.contact_not_found))
+                }
             }
         }
         dialog.show()
@@ -1254,11 +1673,11 @@ class MainActivity : AppCompatActivity() {
             texts.addView(titleText(contact.displayName))
             val last = chats.lastMessage(contact.freedomNumber)
             texts.addView(captionText(last?.text ?: FreedomNumber.format(contact.freedomNumber), maxLines = 1))
-            val nearby = directory?.presence(contact.freedomNumber) != null
+            val activeOnChain = contact.deviceId != null && contact.mailboxPublicKey != null
             texts.addView(TextView(context).apply {
-                text = getString(if (nearby) R.string.online_nearby else R.string.offline_or_remote)
+                text = getString(if (activeOnChain) R.string.online_nearby else R.string.offline_or_remote)
                 textSize = 12f
-                setTextColor(color(if (nearby) R.color.freedom_success else R.color.freedom_on_surface_variant))
+                setTextColor(color(if (activeOnChain) R.color.freedom_success else R.color.freedom_on_surface_variant))
                 setPadding(0, dp(3), 0, 0)
             })
             row.addView(texts, LinearLayout.LayoutParams(0, WRAP, 1f))
@@ -1620,6 +2039,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
+    private fun ByteArray.toHex(): String = joinToString("") { "%02x".format(it) }
+
     private fun margins(
         start: Int = 0,
         top: Int = 0,
@@ -1644,5 +2065,7 @@ class MainActivity : AppCompatActivity() {
         const val ACTION_SHARE = 3002
         const val TAG = "FreedomContacts"
         const val CRASH_REPORT_DELAY_MILLIS = 700L
+        const val MAILBOX_POLL_INTERVAL_MILLIS = 10_000L
+        const val MESSAGE_TTL_MILLIS = 24 * 60 * 60 * 1_000L
     }
 }

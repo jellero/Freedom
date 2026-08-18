@@ -12,7 +12,12 @@ data class FreedomContact(
     val displayName: String,
     val freedomNumber: String,
     val fingerprint: String,
-    val networkId: String
+    val networkId: String,
+    val deviceId: String? = null,
+    val identityPublicKey: String? = null,
+    val rendezvousCapability: String? = null,
+    val mailboxPublicKey: String? = null,
+    val keyEpoch: Long? = null
 )
 
 object FreedomNumber {
@@ -81,12 +86,22 @@ object FreedomContactCodec {
     fun encode(contact: FreedomContact): String {
         require(FreedomNumber.isValid(contact.freedomNumber))
         require(isFingerprint(contact.fingerprint))
+        val hasBlockchainIdentity = contact.deviceId != null &&
+            contact.identityPublicKey != null && contact.rendezvousCapability != null &&
+            contact.mailboxPublicKey != null
         return buildString {
-            append("freedom://contact?v=1")
+            append("freedom://contact?v=").append(if (hasBlockchainIdentity) "2" else "1")
             append("&network=").append(encodeValue(contact.networkId))
             append("&number=").append(contact.freedomNumber)
             append("&name=").append(encodeValue(contact.displayName.take(MAX_NAME_LENGTH)))
             append("&fingerprint=").append(encodeValue(contact.fingerprint.uppercase()))
+            if (hasBlockchainIdentity) {
+                append("&device_id=").append(encodeValue(contact.deviceId.orEmpty()))
+                append("&identity_key=").append(encodeValue(contact.identityPublicKey.orEmpty()))
+                append("&rendezvous=").append(encodeValue(contact.rendezvousCapability.orEmpty()))
+                append("&mailbox_key=").append(encodeValue(contact.mailboxPublicKey.orEmpty()))
+                append("&key_epoch=").append(contact.keyEpoch ?: 1)
+            }
         }
     }
 
@@ -102,7 +117,8 @@ object FreedomContactCodec {
                 decodeValue(key) to decodeValue(value)
             }
 
-        require(values["v"] == "1")
+        val version = values["v"]
+        require(version == "1" || version == "2")
         val number = FreedomNumber.normalize(values.getValue("number"))
         require(FreedomNumber.isValid(number))
         val fingerprint = values.getValue("fingerprint").uppercase()
@@ -110,12 +126,24 @@ object FreedomContactCodec {
         val network = values.getValue("network").trim()
         require(network.isNotBlank() && network.length <= 40)
         val name = values["name"]?.trim().orEmpty().take(MAX_NAME_LENGTH)
+        val deviceId = values["device_id"]?.takeIf { DEVICE_ID.matches(it) }
+        val identityKey = values["identity_key"]?.takeIf(String::isNotBlank)
+        val rendezvous = values["rendezvous"]?.takeIf(String::isNotBlank)
+        val mailboxKey = values["mailbox_key"]?.takeIf(String::isNotBlank)
+        if (version == "2") {
+            require(deviceId != null && identityKey != null && rendezvous != null && mailboxKey != null)
+        }
 
         return FreedomContact(
             displayName = name,
             freedomNumber = number,
             fingerprint = fingerprint,
-            networkId = network
+            networkId = network,
+            deviceId = deviceId,
+            identityPublicKey = identityKey,
+            rendezvousCapability = rendezvous,
+            mailboxPublicKey = mailboxKey,
+            keyEpoch = values["key_epoch"]?.toLongOrNull()
         )
     }
 
@@ -129,5 +157,6 @@ object FreedomContactCodec {
         URLDecoder.decode(value, StandardCharsets.UTF_8.name())
 
     private val FINGERPRINT = Regex("(?:[0-9A-F]{2}:){31}[0-9A-F]{2}")
+    private val DEVICE_ID = Regex("[0-9a-f]{64}")
     private const val MAX_NAME_LENGTH = 48
 }

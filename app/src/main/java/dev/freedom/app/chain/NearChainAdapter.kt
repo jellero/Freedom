@@ -2,6 +2,7 @@ package dev.freedom.app.chain
 
 import org.json.JSONArray
 import org.json.JSONObject
+import org.json.JSONTokener
 import java.net.HttpURLConnection
 import java.net.URL
 import java.nio.charset.StandardCharsets
@@ -24,6 +25,32 @@ data class ChainDeviceRecord(
     val active: Boolean,
     val protocolVersion: Int,
     val updatedAtNs: Long
+)
+
+data class ChainContactRecord(
+    val freedomNumber: String,
+    val deviceId: String,
+    val identityPublicKey: ByteArray,
+    val rendezvousCapability: ByteArray,
+    val mailboxPublicKey: ByteArray,
+    val keyEpoch: Long,
+    val updatedAtNs: Long
+)
+
+data class ChainRendezvousRecord(
+    val expiresAtNs: Long,
+    val ciphertext: ByteArray
+)
+
+data class ChainMessageRecord(
+    val messageId: String,
+    val senderDeviceId: String,
+    val recipientDeviceId: String,
+    val sentAtNs: Long,
+    val expiresAtNs: Long,
+    val ephemeralPublicKey: ByteArray,
+    val nonce: ByteArray,
+    val ciphertext: ByteArray
 )
 
 interface ChainAdapter {
@@ -83,6 +110,62 @@ class NearChainAdapter(
             JSONObject().put("account_id", accountId)
         )
         (response.value as JSONObject).getString("available")
+    }
+
+    fun resolveContact(freedomNumber: String): Result<ChainContactRecord?> = runCatching {
+        val response = callView(
+            "get_contact_by_number",
+            JSONObject().put("freedom_number", freedomNumber)
+        )
+        if (response.value === JSONObject.NULL) return@runCatching null
+        val value = response.value as JSONObject
+        ChainContactRecord(
+            freedomNumber = value.getString("freedom_number"),
+            deviceId = value.getString("device_id"),
+            identityPublicKey = Base64.getDecoder().decode(value.getString("identity_public_key")),
+            rendezvousCapability = Base64.getDecoder().decode(value.getString("rendezvous_capability")),
+            mailboxPublicKey = Base64.getDecoder().decode(value.getString("mailbox_public_key")),
+            keyEpoch = value.getString("key_epoch").toLong(),
+            updatedAtNs = value.getString("updated_at_ns").toLong()
+        )
+    }
+
+    fun getMessages(deviceId: String): Result<List<ChainMessageRecord>> = runCatching {
+        require(DEVICE_ID.matches(deviceId)) { "Device ID non valido" }
+        val response = callView("get_messages", JSONObject().put("device_id", deviceId))
+        val values = response.value as? JSONArray
+            ?: throw IllegalStateException("Risposta get_messages NEAR non valida")
+        buildList {
+            for (index in 0 until values.length()) {
+                val value = values.getJSONObject(index)
+                add(
+                    ChainMessageRecord(
+                        messageId = value.getString("message_id"),
+                        senderDeviceId = value.getString("sender_device_id"),
+                        recipientDeviceId = value.getString("recipient_device_id"),
+                        sentAtNs = value.getString("sent_at_ns").toLong(),
+                        expiresAtNs = value.getString("expires_at_ns").toLong(),
+                        ephemeralPublicKey = Base64.getDecoder().decode(value.getString("ephemeral_public_key")),
+                        nonce = Base64.getDecoder().decode(value.getString("nonce")),
+                        ciphertext = Base64.getDecoder().decode(value.getString("ciphertext"))
+                    )
+                )
+            }
+        }
+    }
+
+    fun getRendezvous(slot: String): Result<ChainRendezvousRecord?> = runCatching {
+        require(DEVICE_ID.matches(slot)) { "Slot rendezvous non valido" }
+        val response = callView(
+            "get_rendezvous",
+            JSONObject().put("slot", slot)
+        )
+        if (response.value === JSONObject.NULL) return@runCatching null
+        val value = response.value as JSONObject
+        ChainRendezvousRecord(
+            expiresAtNs = value.getString("expires_at_ns").toLong(),
+            ciphertext = Base64.getDecoder().decode(value.getString("ciphertext"))
+        )
     }
 
     private fun callView(methodName: String, arguments: JSONObject): ViewResponse {
@@ -147,7 +230,7 @@ class NearChainAdapter(
             val bytes = result.getJSONArray("result").toByteArray()
             val decoded = String(bytes, StandardCharsets.UTF_8)
             return ViewResponse(
-                value = if (decoded == "null") JSONObject.NULL else JSONObject(decoded),
+                value = if (decoded == "null") JSONObject.NULL else JSONTokener(decoded).nextValue(),
                 blockHeight = result.getLong("block_height"),
                 rpcEndpoint = endpoint
             )

@@ -96,7 +96,7 @@ class NearDirectClient(
                     "params",
                     JSONObject()
                         .put("signed_tx_base64", signedBase64)
-                        .put("wait_until", "EXECUTED_OPTIMISTIC")
+                        .put("wait_until", "FINAL")
                 )
         ).result
         val hash = response.optJSONObject("transaction")?.optString("hash")
@@ -192,6 +192,9 @@ class NearDirectClient(
             "register_device",
             "rotate_device_key",
             "revoke_device",
+            "publish_contact",
+            "send_message",
+            "remove_expired_message",
             "put_rendezvous",
             "remove_expired_rendezvous"
         )

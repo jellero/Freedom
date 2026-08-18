@@ -2,7 +2,7 @@ use near_sdk::json_types::{Base64VecU8, U128, U64};
 use near_sdk::store::LookupMap;
 use near_sdk::{assert_one_yocto, env, near, require, AccountId, NearToken, Promise};
 
-const CONTRACT_VERSION: &str = "0.2.0";
+const CONTRACT_VERSION: &str = "0.3.0";
 const PROTOCOL_VERSION: u16 = 1;
 const DEVICE_ID_BYTES: usize = 32;
 const P256_PUBLIC_KEY_BYTES: usize = 33;
@@ -15,6 +15,16 @@ const AUTH_DOMAIN: &[u8] = b"FREEDOM_REGISTRY_V1\0";
 const REGISTER_OPERATION: u8 = 1;
 const ROTATE_OPERATION: u8 = 2;
 const REVOKE_OPERATION: u8 = 3;
+const PUBLISH_CONTACT_OPERATION: u8 = 4;
+const SEND_MESSAGE_OPERATION: u8 = 5;
+const FREEDOM_NUMBER_DIGITS: usize = 12;
+const RENDEZVOUS_CAPABILITY_BYTES: usize = 32;
+const MESSAGE_ID_BYTES: usize = 32;
+const MESSAGE_NONCE_BYTES: usize = 12;
+const MAX_MESSAGE_CIPHERTEXT_BYTES: usize = 4_096;
+const MIN_MESSAGE_TTL_NS: u64 = 60 * 1_000_000_000;
+const MAX_MESSAGE_TTL_NS: u64 = 7 * 24 * 60 * 60 * 1_000_000_000;
+const MAX_MAILBOX_MESSAGES: usize = 100;
 
 #[near(serializers = [borsh, json])]
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -84,9 +94,59 @@ pub struct StorageBalance {
 }
 
 #[near(serializers = [borsh])]
-struct FreedomRegistryV1 {
+struct FreedomRegistryV2 {
     devices: LookupMap<String, StoredDeviceRecord>,
     rendezvous: LookupMap<String, StoredRendezvousRecord>,
+    storage_balances: LookupMap<AccountId, u128>,
+}
+
+#[near(serializers = [borsh])]
+#[derive(Clone)]
+struct StoredContactRecord {
+    device_id: String,
+    rendezvous_capability: Vec<u8>,
+    mailbox_public_key: Vec<u8>,
+    updated_at_ns: u64,
+}
+
+#[near(serializers = [json])]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ContactRecord {
+    pub freedom_number: String,
+    pub device_id: String,
+    pub identity_public_key: Base64VecU8,
+    pub rendezvous_capability: Base64VecU8,
+    pub mailbox_public_key: Base64VecU8,
+    pub key_epoch: U64,
+    pub updated_at_ns: U64,
+}
+
+#[near(serializers = [borsh])]
+#[derive(Clone)]
+struct StoredMessageRecord {
+    version: u8,
+    sender_device_id: String,
+    recipient_device_id: String,
+    sent_at_ns: u64,
+    expires_at_ns: u64,
+    ephemeral_public_key: Vec<u8>,
+    nonce: Vec<u8>,
+    ciphertext: Vec<u8>,
+    storage_payer: AccountId,
+}
+
+#[near(serializers = [json])]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MessageRecord {
+    pub version: u8,
+    pub message_id: String,
+    pub sender_device_id: String,
+    pub recipient_device_id: String,
+    pub sent_at_ns: U64,
+    pub expires_at_ns: U64,
+    pub ephemeral_public_key: Base64VecU8,
+    pub nonce: Base64VecU8,
+    pub ciphertext: Base64VecU8,
 }
 
 #[near(contract_state)]
@@ -94,6 +154,10 @@ pub struct FreedomRegistry {
     devices: LookupMap<String, StoredDeviceRecord>,
     rendezvous: LookupMap<String, StoredRendezvousRecord>,
     storage_balances: LookupMap<AccountId, u128>,
+    contacts: LookupMap<String, StoredContactRecord>,
+    device_numbers: LookupMap<String, String>,
+    messages: LookupMap<String, StoredMessageRecord>,
+    mailboxes: LookupMap<String, Vec<String>>,
 }
 
 impl Default for FreedomRegistry {
@@ -102,6 +166,10 @@ impl Default for FreedomRegistry {
             devices: LookupMap::new(b"d"),
             rendezvous: LookupMap::new(b"r"),
             storage_balances: LookupMap::new(b"s"),
+            contacts: LookupMap::new(b"c"),
+            device_numbers: LookupMap::new(b"n"),
+            messages: LookupMap::new(b"m"),
+            mailboxes: LookupMap::new(b"b"),
         }
     }
 }
@@ -110,12 +178,16 @@ impl Default for FreedomRegistry {
 impl FreedomRegistry {
     #[init(ignore_state)]
     pub fn migrate() -> Self {
-        let old: FreedomRegistryV1 =
+        let old: FreedomRegistryV2 =
             env::state_read().unwrap_or_else(|| env::panic_str("Legacy state is unavailable"));
         Self {
             devices: old.devices,
             rendezvous: old.rendezvous,
-            storage_balances: LookupMap::new(b"s"),
+            storage_balances: old.storage_balances,
+            contacts: LookupMap::new(b"c"),
+            device_numbers: LookupMap::new(b"n"),
+            messages: LookupMap::new(b"m"),
+            mailboxes: LookupMap::new(b"b"),
         }
     }
 
@@ -141,6 +213,39 @@ impl FreedomRegistry {
         StorageBalance {
             available: U128(self.storage_balances.get(&account_id).copied().unwrap_or(0)),
         }
+    }
+
+    pub fn get_contact_by_number(&self, freedom_number: String) -> Option<ContactRecord> {
+        validate_freedom_number(&freedom_number);
+        let contact = self.contacts.get(&freedom_number)?;
+        let device = self.devices.get(&contact.device_id)?;
+        if device.status != DeviceStatus::Active {
+            return None;
+        }
+        Some(ContactRecord {
+            freedom_number,
+            device_id: contact.device_id.clone(),
+            identity_public_key: Base64VecU8(device.identity_public_key.clone()),
+            rendezvous_capability: Base64VecU8(contact.rendezvous_capability.clone()),
+            mailbox_public_key: Base64VecU8(contact.mailbox_public_key.clone()),
+            key_epoch: U64(device.key_epoch),
+            updated_at_ns: U64(contact.updated_at_ns),
+        })
+    }
+
+    pub fn get_messages(&self, device_id: String) -> Vec<MessageRecord> {
+        validate_hex_identifier(&device_id, DEVICE_ID_BYTES, "Invalid device ID");
+        let now = env::block_timestamp();
+        self.mailboxes
+            .get(&device_id)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|message_id| {
+                let record = self.messages.get(&message_id)?;
+                (record.expires_at_ns > now).then(|| message_view(message_id, record))
+            })
+            .collect()
     }
 
     #[payable]
@@ -325,6 +430,218 @@ impl FreedomRegistry {
         device_view(device_id, &record)
     }
 
+    #[payable]
+    pub fn publish_contact(
+        &mut self,
+        device_id: String,
+        freedom_number: String,
+        rendezvous_capability: Base64VecU8,
+        mailbox_public_key: Base64VecU8,
+        auth_nonce: U64,
+        signature: Base64VecU8,
+    ) -> ContactRecord {
+        validate_hex_identifier(&device_id, DEVICE_ID_BYTES, "Invalid device ID");
+        validate_freedom_number(&freedom_number);
+        require!(
+            rendezvous_capability.0.len() == RENDEZVOUS_CAPABILITY_BYTES,
+            "Invalid rendezvous capability"
+        );
+        let mailbox_public_key = validate_public_key(mailbox_public_key.0);
+        let mut device = self
+            .devices
+            .get(&device_id)
+            .cloned()
+            .unwrap_or_else(|| env::panic_str("Device ID is not registered"));
+        require!(device.status == DeviceStatus::Active, "Device is revoked");
+        require!(
+            auth_nonce.0 == device.auth_nonce.saturating_add(1),
+            "Invalid authorization nonce"
+        );
+        if let Some(existing) = self.contacts.get(&freedom_number) {
+            require!(existing.device_id == device_id, "Freedom number is already registered");
+        }
+
+        let mut key_material = freedom_number.as_bytes().to_vec();
+        key_material.extend_from_slice(&rendezvous_capability.0);
+        key_material.extend_from_slice(&mailbox_public_key);
+        let message = authorization_message(
+            PUBLISH_CONTACT_OPERATION,
+            &device_id,
+            auth_nonce.0,
+            device.key_epoch,
+            device.protocol_version,
+            &key_material,
+        );
+        let signature = validate_signature(signature.0);
+        verify_authorization(&device.identity_public_key, &signature, &message);
+
+        let storage_before = env::storage_usage();
+        if let Some(previous_number) = self.device_numbers.get(&device_id).cloned() {
+            if previous_number != freedom_number {
+                self.contacts.remove(&previous_number);
+            }
+        }
+        let contact = StoredContactRecord {
+            device_id: device_id.clone(),
+            rendezvous_capability: rendezvous_capability.0,
+            mailbox_public_key,
+            updated_at_ns: env::block_timestamp(),
+        };
+        self.contacts.insert(freedom_number.clone(), contact.clone());
+        self.device_numbers.insert(device_id.clone(), freedom_number.clone());
+        device.auth_nonce = auth_nonce.0;
+        device.updated_at_ns = env::block_timestamp();
+        self.devices.insert(device_id.clone(), device.clone());
+        self.contacts.flush();
+        self.device_numbers.flush();
+        self.devices.flush();
+        self.settle_storage(storage_before, env::predecessor_account_id());
+
+        ContactRecord {
+            freedom_number,
+            device_id,
+            identity_public_key: Base64VecU8(device.identity_public_key),
+            rendezvous_capability: Base64VecU8(contact.rendezvous_capability),
+            mailbox_public_key: Base64VecU8(contact.mailbox_public_key),
+            key_epoch: U64(device.key_epoch),
+            updated_at_ns: U64(contact.updated_at_ns),
+        }
+    }
+
+    #[payable]
+    pub fn send_message(
+        &mut self,
+        sender_device_id: String,
+        recipient_device_id: String,
+        message_id: String,
+        expires_at_ns: U64,
+        ephemeral_public_key: Base64VecU8,
+        nonce: Base64VecU8,
+        ciphertext: Base64VecU8,
+        auth_nonce: U64,
+        signature: Base64VecU8,
+    ) -> MessageRecord {
+        validate_hex_identifier(&sender_device_id, DEVICE_ID_BYTES, "Invalid sender device ID");
+        validate_hex_identifier(
+            &recipient_device_id,
+            DEVICE_ID_BYTES,
+            "Invalid recipient device ID",
+        );
+        validate_hex_identifier(&message_id, MESSAGE_ID_BYTES, "Invalid message ID");
+        let ephemeral_public_key = validate_public_key(ephemeral_public_key.0);
+        require!(nonce.0.len() == MESSAGE_NONCE_BYTES, "Invalid message nonce");
+        require!(
+            !ciphertext.0.is_empty() && ciphertext.0.len() <= MAX_MESSAGE_CIPHERTEXT_BYTES,
+            "Invalid message ciphertext size"
+        );
+        require!(self.messages.get(&message_id).is_none(), "Message ID already exists");
+
+        let now = env::block_timestamp();
+        let ttl = expires_at_ns
+            .0
+            .checked_sub(now)
+            .unwrap_or_else(|| env::panic_str("Message expiry must be in the future"));
+        require!(ttl >= MIN_MESSAGE_TTL_NS, "Message TTL is too short");
+        require!(ttl <= MAX_MESSAGE_TTL_NS, "Message TTL is too long");
+
+        let mut sender = self
+            .devices
+            .get(&sender_device_id)
+            .cloned()
+            .unwrap_or_else(|| env::panic_str("Sender device is not registered"));
+        require!(sender.status == DeviceStatus::Active, "Sender device is revoked");
+        let recipient = self
+            .devices
+            .get(&recipient_device_id)
+            .unwrap_or_else(|| env::panic_str("Recipient device is not registered"));
+        require!(recipient.status == DeviceStatus::Active, "Recipient device is revoked");
+        require!(
+            auth_nonce.0 == sender.auth_nonce.saturating_add(1),
+            "Invalid authorization nonce"
+        );
+
+        let mut key_material = hex::decode(&message_id)
+            .unwrap_or_else(|_| env::panic_str("Invalid message ID encoding"));
+        key_material.extend_from_slice(
+            &hex::decode(&recipient_device_id)
+                .unwrap_or_else(|_| env::panic_str("Invalid recipient device ID encoding")),
+        );
+        key_material.extend_from_slice(&expires_at_ns.0.to_be_bytes());
+        key_material.extend_from_slice(&ephemeral_public_key);
+        key_material.extend_from_slice(&nonce.0);
+        key_material.extend_from_slice(&env::sha256_array(&ciphertext.0));
+        let message = authorization_message(
+            SEND_MESSAGE_OPERATION,
+            &sender_device_id,
+            auth_nonce.0,
+            sender.key_epoch,
+            sender.protocol_version,
+            &key_material,
+        );
+        let signature = validate_signature(signature.0);
+        verify_authorization(&sender.identity_public_key, &signature, &message);
+
+        let mut mailbox = self
+            .mailboxes
+            .get(&recipient_device_id)
+            .cloned()
+            .unwrap_or_default();
+        mailbox.retain(|id| {
+            self.messages
+                .get(id)
+                .map(|record| record.expires_at_ns > now)
+                .unwrap_or(false)
+        });
+        require!(mailbox.len() < MAX_MAILBOX_MESSAGES, "Recipient mailbox is full");
+
+        let storage_before = env::storage_usage();
+        let record = StoredMessageRecord {
+            version: 1,
+            sender_device_id: sender_device_id.clone(),
+            recipient_device_id: recipient_device_id.clone(),
+            sent_at_ns: now,
+            expires_at_ns: expires_at_ns.0,
+            ephemeral_public_key,
+            nonce: nonce.0,
+            ciphertext: ciphertext.0,
+            storage_payer: env::predecessor_account_id(),
+        };
+        mailbox.push(message_id.clone());
+        self.messages.insert(message_id.clone(), record.clone());
+        self.mailboxes.insert(recipient_device_id, mailbox);
+        sender.auth_nonce = auth_nonce.0;
+        sender.updated_at_ns = now;
+        self.devices.insert(sender_device_id, sender);
+        self.messages.flush();
+        self.mailboxes.flush();
+        self.devices.flush();
+        self.settle_storage(storage_before, env::predecessor_account_id());
+        message_view(message_id, &record)
+    }
+
+    pub fn remove_expired_message(&mut self, message_id: String) -> bool {
+        validate_hex_identifier(&message_id, MESSAGE_ID_BYTES, "Invalid message ID");
+        let Some(record) = self.messages.get(&message_id).cloned() else {
+            return false;
+        };
+        require!(record.expires_at_ns <= env::block_timestamp(), "Message is still active");
+
+        let storage_before = env::storage_usage();
+        self.messages.remove(&message_id);
+        if let Some(mut mailbox) = self.mailboxes.get(&record.recipient_device_id).cloned() {
+            mailbox.retain(|id| id != &message_id);
+            self.mailboxes.insert(record.recipient_device_id.clone(), mailbox);
+        }
+        self.messages.flush();
+        self.mailboxes.flush();
+        let released_bytes = storage_before.saturating_sub(env::storage_usage()) as u128;
+        let refund = env::storage_byte_cost().saturating_mul(released_bytes);
+        if !refund.is_zero() {
+            self.credit_storage(record.storage_payer, refund.as_yoctonear());
+        }
+        true
+    }
+
     pub fn get_rendezvous(&self, slot: String) -> Option<RendezvousRecord> {
         validate_hex_identifier(&slot, SLOT_BYTES, "Invalid rendezvous slot");
         self.rendezvous.get(&slot).and_then(|record| {
@@ -436,6 +753,27 @@ fn validate_hex_identifier(value: &str, byte_length: usize, message: &str) {
     );
 }
 
+fn validate_freedom_number(value: &str) {
+    require!(
+        value.len() == FREEDOM_NUMBER_DIGITS
+            && value.as_bytes().iter().all(u8::is_ascii_digit)
+            && value.as_bytes().iter().any(|digit| *digit != b'0'),
+        "Invalid Freedom number"
+    );
+    let mut sum = 0_u32;
+    for (index, byte) in value.as_bytes().iter().rev().enumerate() {
+        let mut digit = (byte - b'0') as u32;
+        if index % 2 == 1 {
+            digit *= 2;
+            if digit > 9 {
+                digit -= 9;
+            }
+        }
+        sum += digit;
+    }
+    require!(sum % 10 == 0, "Invalid Freedom number checksum");
+}
+
 fn validate_public_key(value: Vec<u8>) -> Vec<u8> {
     require!(
         value.len() == P256_PUBLIC_KEY_BYTES && matches!(value.first(), Some(2 | 3)),
@@ -518,6 +856,20 @@ fn rendezvous_view(record: &StoredRendezvousRecord) -> RendezvousRecord {
     RendezvousRecord {
         version: record.version,
         expires_at_ns: U64(record.expires_at_ns),
+        ciphertext: Base64VecU8(record.ciphertext.clone()),
+    }
+}
+
+fn message_view(message_id: String, record: &StoredMessageRecord) -> MessageRecord {
+    MessageRecord {
+        version: record.version,
+        message_id,
+        sender_device_id: record.sender_device_id.clone(),
+        recipient_device_id: record.recipient_device_id.clone(),
+        sent_at_ns: U64(record.sent_at_ns),
+        expires_at_ns: U64(record.expires_at_ns),
+        ephemeral_public_key: Base64VecU8(record.ephemeral_public_key.clone()),
+        nonce: Base64VecU8(record.nonce.clone()),
         ciphertext: Base64VecU8(record.ciphertext.clone()),
     }
 }
@@ -716,11 +1068,108 @@ mod tests {
     }
 
     #[test]
-    fn migrates_v1_state_without_changing_registry_prefixes() {
+    fn publishes_and_resolves_contact_by_number() {
+        let now = 2_500_000_000;
+        context_with_deposit(now, NearToken::from_near(1));
+        let mut contract = FreedomRegistry::default();
+        contract.storage_deposit();
+
+        context_with_deposit(now, NearToken::from_yoctonear(0));
+        let identity = key(15);
+        let device_id = "66".repeat(DEVICE_ID_BYTES);
+        register(&mut contract, &identity, &device_id);
+        let freedom_number = "231057482334".to_string();
+        let capability = vec![21; RENDEZVOUS_CAPABILITY_BYTES];
+        let mailbox_public_key = public_key(&key(16));
+        let mut key_material = freedom_number.as_bytes().to_vec();
+        key_material.extend_from_slice(&capability);
+        key_material.extend_from_slice(&mailbox_public_key);
+        let message = authorization_message(
+            PUBLISH_CONTACT_OPERATION,
+            &device_id,
+            1,
+            1,
+            PROTOCOL_VERSION,
+            &key_material,
+        );
+        let published = contract.publish_contact(
+            device_id.clone(),
+            freedom_number.clone(),
+            Base64VecU8(capability.clone()),
+            Base64VecU8(mailbox_public_key.clone()),
+            U64(1),
+            sign(&identity, &message),
+        );
+        assert_eq!(published.device_id, device_id);
+        assert_eq!(published.rendezvous_capability.0, capability);
+        assert_eq!(published.mailbox_public_key.0, mailbox_public_key);
+        assert_eq!(
+            contract
+                .get_contact_by_number(freedom_number)
+                .unwrap()
+                .identity_public_key
+                .0,
+            public_key(&identity)
+        );
+    }
+
+    #[test]
+    fn sends_reads_and_cleans_up_encrypted_self_test_message() {
+        let now = 2_700_000_000;
+        context_with_deposit(now, NearToken::from_near(1));
+        let mut contract = FreedomRegistry::default();
+        contract.storage_deposit();
+
+        context_with_deposit(now, NearToken::from_yoctonear(0));
+        let identity = key(18);
+        let device_id = "88".repeat(DEVICE_ID_BYTES);
+        register(&mut contract, &identity, &device_id);
+        let message_id = "99".repeat(MESSAGE_ID_BYTES);
+        let expiry = now + MIN_MESSAGE_TTL_NS;
+        let ephemeral_public_key = public_key(&key(19));
+        let nonce = vec![7; MESSAGE_NONCE_BYTES];
+        let ciphertext = vec![8; 64];
+        let mut key_material = hex::decode(&message_id).unwrap();
+        key_material.extend_from_slice(&hex::decode(&device_id).unwrap());
+        key_material.extend_from_slice(&expiry.to_be_bytes());
+        key_material.extend_from_slice(&ephemeral_public_key);
+        key_material.extend_from_slice(&nonce);
+        key_material.extend_from_slice(&env::sha256_array(&ciphertext));
+        let authorization = authorization_message(
+            SEND_MESSAGE_OPERATION,
+            &device_id,
+            1,
+            1,
+            PROTOCOL_VERSION,
+            &key_material,
+        );
+
+        let sent = contract.send_message(
+            device_id.clone(),
+            device_id.clone(),
+            message_id.clone(),
+            U64(expiry),
+            Base64VecU8(ephemeral_public_key),
+            Base64VecU8(nonce),
+            Base64VecU8(ciphertext.clone()),
+            U64(1),
+            sign(&identity, &authorization),
+        );
+        assert_eq!(sent.ciphertext.0, ciphertext);
+        assert_eq!(contract.get_messages(device_id.clone()).len(), 1);
+
+        context_with_deposit(expiry, NearToken::from_yoctonear(0));
+        assert!(contract.get_messages(device_id).is_empty());
+        assert!(contract.remove_expired_message(message_id));
+    }
+
+    #[test]
+    fn migrates_v2_state_without_changing_registry_prefixes() {
         context(3_000_000_000);
-        let old = FreedomRegistryV1 {
+        let old = FreedomRegistryV2 {
             devices: LookupMap::new(b"d"),
             rendezvous: LookupMap::new(b"r"),
+            storage_balances: LookupMap::new(b"s"),
         };
         env::state_write(&old);
 
@@ -732,5 +1181,6 @@ mod tests {
                 .0,
             0
         );
+        assert!(migrated.get_messages("77".repeat(DEVICE_ID_BYTES)).is_empty());
     }
 }

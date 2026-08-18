@@ -88,7 +88,7 @@ object CrashReporter {
     }
 
     fun reportForSharing(context: Context): String =
-        lastCrash(context) ?: lastHandledError(context) ?: buildString {
+        latestSavedReport(context) ?: buildString {
             appendLine("Freedom diagnostic report")
             appendLine("No uncaught Java/Kotlin crash has been captured in this installation.")
             appendLine(deviceSummary(context))
@@ -96,6 +96,13 @@ object CrashReporter {
             appendLine("Recent safe breadcrumbs:")
             append(readBreadcrumbs(context))
         }
+
+    private fun latestSavedReport(context: Context): String? = synchronized(lock) {
+        listOf(crashFile(context), handledErrorFile(context))
+            .filter(File::isFile)
+            .maxByOrNull(File::lastModified)
+            ?.let { runCatching { it.readText().takeIf(String::isNotBlank) }.getOrNull() }
+    }
 
     fun hasUnseenCrash(context: Context): Boolean {
         val crashTimestamp = crashFile(context).takeIf(File::isFile)?.lastModified() ?: return false

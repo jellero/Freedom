@@ -43,6 +43,9 @@ class ContactRepository(context: Context) {
     fun findByFingerprint(fingerprint: String): FreedomContact? =
         all().firstOrNull { it.fingerprint.equals(fingerprint, ignoreCase = true) }
 
+    fun findByDeviceId(deviceId: String): FreedomContact? =
+        all().firstOrNull { it.deviceId == deviceId }
+
     private fun persist(contacts: List<FreedomContact>): Boolean {
         val array = JSONArray()
         contacts.forEach { contact ->
@@ -52,6 +55,11 @@ class ContactRepository(context: Context) {
                     .put("number", contact.freedomNumber)
                     .put("fingerprint", contact.fingerprint)
                     .put("network", contact.networkId)
+                    .put("device_id", contact.deviceId)
+                    .put("identity_key", contact.identityPublicKey)
+                    .put("rendezvous", contact.rendezvousCapability)
+                    .put("mailbox_key", contact.mailboxPublicKey)
+                    .put("key_epoch", contact.keyEpoch)
             )
         }
         return preferences.edit().putString(KEY_CONTACTS, array.toString()).commit()
@@ -65,7 +73,12 @@ class ContactRepository(context: Context) {
             displayName = value.optString("name").take(48),
             freedomNumber = number,
             fingerprint = fingerprint,
-            networkId = value.optString("network", "near-testnet")
+            networkId = value.optString("network", "near-testnet"),
+            deviceId = value.optString("device_id").takeIf { it.length == 64 },
+            identityPublicKey = value.optString("identity_key").takeIf(String::isNotBlank),
+            rendezvousCapability = value.optString("rendezvous").takeIf(String::isNotBlank),
+            mailboxPublicKey = value.optString("mailbox_key").takeIf(String::isNotBlank),
+            keyEpoch = value.optLong("key_epoch").takeIf { it > 0 }
         )
     }
 

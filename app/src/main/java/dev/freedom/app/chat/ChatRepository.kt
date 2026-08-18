@@ -33,6 +33,9 @@ class ChatRepository(context: Context) {
 
     fun lastMessage(contactNumber: String): ChatMessage? = messages(contactNumber).lastOrNull()
 
+    @Synchronized
+    fun contains(messageId: String): Boolean = readAll().any { it.messageId == messageId }
+
     private fun readAll(): List<ChatMessage> {
         val raw = preferences.getString(KEY_MESSAGES, null) ?: return emptyList()
         return try {
