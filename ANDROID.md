@@ -4,11 +4,11 @@
 
 Android è la prima piattaforma di implementazione.
 
-Il codice attualmente presente sotto `app/` è un **transport/crypto spike** sviluppato prima della specifica corrente. Dimostra una connessione TCP diretta, un handshake autenticato, messaggi cifrati e pinning esplicito del fingerprint approvato, ma usa ancora IP manuale.
+Il client `0.2.0-alpha` offre home, contatti, chat, profilo QR/numero Freedom, aggiunta tramite scanner o numero, persistenza locale e impostazioni rete. Sulla stessa Wi-Fi usa Android NSD per risolvere i peer senza chiedere o mostrare indirizzi IP; il trasporto TCP, l'handshake autenticato e i messaggi cifrati restano il livello sottostante.
 
-Questa parte resta utile come laboratorio di trasporto, ma **non è più l'M1 canonico**.
+Il numero Freedom attuale è derivato dall'identità pubblica e protetto da checksum. È adatto all'onboarding locale ma diventerà un identificatore canonico soltanto con il registry on-chain.
 
-La nuova implementazione deve partire da DeviceID + NEAR Testnet.
+`NearChainAdapter`, contratto e rendezvous non sono ancora implementati. La UI mostra l'adapter come non connesso e continua a usare la discovery locale; il prossimo milestone deve partire da DeviceID + NEAR Testnet.
 
 ## Obiettivo UX iniziale
 

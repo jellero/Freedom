@@ -279,11 +279,13 @@ Gli RPC trasportano dati chain; non costituiscono l'identità dell'utente.
 
 Su testnet vengono usate risorse di test.
 
-Per mainnet la policy economica è una decisione separata. Possibili modelli:
+L'onboarding normale non deve richiedere l'acquisto di token. Su mainnet il modello predefinito è una meta-transazione firmata dal device e pagata da un relayer con quota e allowlist del contratto Freedom. NEAR supporta questo flusso tramite [NEP-366 meta transactions](https://docs.near.org/protocol/transactions/meta-tx): il relayer paga il gas senza ottenere la chiave dell'utente.
 
-- piccola riserva nativa per device;
-- meta-transazioni pagate da relayer indipendenti;
-- combinazione dei due.
+Modelli supportabili:
+
+- fee sponsorizzate per registrazione, rotazione e rendezvous entro limiti anti-abuso;
+- wallet personale opzionale per utenti avanzati;
+- eventuale on-ramp esterno e regolamentato, mai requisito per iniziare a comunicare.
 
 Un eventuale relayer di fee non deve poter firmare al posto del DeviceID né diventare obbligatorio per il protocollo.
 

@@ -1,130 +1,106 @@
 package dev.freedom.app
 
-import android.app.Activity
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
-import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.text.InputType
 import android.view.Gravity
+import android.view.Menu
 import android.view.View
-import android.widget.Button
+import android.view.ViewGroup
 import android.widget.EditText
+import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
+import android.widget.Space
 import android.widget.TextView
+import androidx.activity.OnBackPressedCallback
+import androidx.appcompat.app.AppCompatActivity
+import com.google.android.material.appbar.MaterialToolbar
+import com.google.android.material.bottomnavigation.BottomNavigationView
+import com.google.android.material.button.MaterialButton
+import com.google.android.material.card.MaterialCardView
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.floatingactionbutton.FloatingActionButton
+import com.google.android.material.snackbar.Snackbar
+import com.google.android.material.textfield.TextInputEditText
+import com.google.android.material.textfield.TextInputLayout
+import com.google.mlkit.vision.barcode.common.Barcode
+import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
+import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
+import dev.freedom.app.chain.ChainSettings
+import dev.freedom.app.chain.IdentityNetwork
+import dev.freedom.app.chat.ChatMessage
+import dev.freedom.app.chat.ChatRepository
+import dev.freedom.app.contact.ContactRepository
+import dev.freedom.app.contact.FreedomContact
+import dev.freedom.app.contact.FreedomContactCodec
+import dev.freedom.app.contact.FreedomNumber
+import dev.freedom.app.contact.QrCodeRenderer
 import dev.freedom.app.crypto.IdentityStore
 import dev.freedom.app.net.FreedomNode
+import dev.freedom.app.net.LocalPeerDirectory
+import dev.freedom.app.net.PeerPresence
 import dev.freedom.app.net.PeerTrustVerifier
 import dev.freedom.app.net.SharedPreferencesPeerTrustStore
-import java.util.ArrayDeque
+import java.text.DateFormat
+import java.util.Date
 
-class MainActivity : Activity() {
+class MainActivity : AppCompatActivity() {
+    private enum class Screen { CHATS, CONTACTS, SETTINGS, IDENTITY, CHAT }
+
     private lateinit var identity: IdentityStore
+    private lateinit var contacts: ContactRepository
+    private lateinit var chats: ChatRepository
+    private lateinit var chainSettings: ChainSettings
     private lateinit var node: FreedomNode
 
-    private lateinit var statusView: TextView
-    private lateinit var localAddressView: TextView
-    private lateinit var remoteView: TextView
-    private lateinit var sessionView: TextView
-    private lateinit var hostInput: EditText
-    private lateinit var messageInput: EditText
-    private lateinit var logView: TextView
-    private lateinit var connectButton: Button
-    private lateinit var disconnectButton: Button
-    private lateinit var trustButton: Button
-    private lateinit var rejectButton: Button
-    private lateinit var sendButton: Button
+    private lateinit var toolbar: MaterialToolbar
+    private lateinit var content: FrameLayout
+    private lateinit var bottomNavigation: BottomNavigationView
+    private lateinit var appRoot: View
 
-    private val logLines = ArrayDeque<String>()
-    private var nodeStarted = false
+    private var directory: LocalPeerDirectory? = null
+    private var currentScreen = Screen.CHATS
+    private var currentContact: FreedomContact? = null
+    private var connectedContactNumber: String? = null
+    private var activeRemoteFingerprint: String? = null
+    private var communicationStarted = false
+    private var chatStatusRes = R.string.chat_waiting
+
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
         identity = IdentityStore()
-        setContentView(buildUi())
+        contacts = ContactRepository(this)
+        chats = ChatRepository(this)
+        chainSettings = ChainSettings(this)
 
-        node = FreedomNode(
-            identity,
-            PeerTrustVerifier(SharedPreferencesPeerTrustStore(this)),
-            object : FreedomNode.Listener {
-            override fun onStatus(message: String) = ui {
-                statusView.text = getString(R.string.status_format, message)
-                appendLog("• $message")
-            }
-
-            override fun onPeerVerificationRequired(
-                endpoint: String,
-                remoteFingerprint: String,
-                sessionId: String
-            ) = ui {
-                statusView.text = getString(R.string.status_verification_required)
-                remoteView.text = getString(
-                    R.string.peer_to_verify_format,
-                    endpoint,
-                    remoteFingerprint
-                )
-                sessionView.text = getString(
-                    R.string.session_pending_format,
-                    sessionId.take(16)
-                )
-                connectButton.isEnabled = false
-                disconnectButton.isEnabled = true
-                trustButton.isEnabled = true
-                rejectButton.isEnabled = true
-                sendButton.isEnabled = false
-                appendLog("⚠ Verifica manualmente il fingerprint di $endpoint")
-            }
-
-            override fun onConnected(endpoint: String, remoteFingerprint: String, sessionId: String) = ui {
-                statusView.text = getString(R.string.status_connected_format, endpoint)
-                remoteView.text = getString(R.string.peer_verified_format, remoteFingerprint)
-                sessionView.text = getString(
-                    R.string.session_ephemeral_format,
-                    sessionId.take(16)
-                )
-                connectButton.isEnabled = false
-                disconnectButton.isEnabled = true
-                trustButton.isEnabled = false
-                rejectButton.isEnabled = false
-                sendButton.isEnabled = true
-                appendLog("🔐 Sessione cifrata e identità verificata con $endpoint")
-            }
-
-            override fun onDisconnected(reason: String) = ui {
-                statusView.text = getString(R.string.status_format, reason)
-                remoteView.text = getString(R.string.remote_peer_empty)
-                sessionView.text = getString(R.string.session_empty)
-                connectButton.isEnabled = hasLocalNetworkPermission()
-                disconnectButton.isEnabled = false
-                trustButton.isEnabled = false
-                rejectButton.isEnabled = false
-                sendButton.isEnabled = false
-                appendLog("× $reason")
-            }
-
-            override fun onMessageSent(messageId: String, text: String) = ui {
-                appendLog("Io [${shortId(messageId)}]: $text")
-                if (messageInput.text.toString().trim() == text) {
-                    messageInput.setText("")
+        buildChrome()
+        node = buildNode()
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                when (currentScreen) {
+                    Screen.IDENTITY, Screen.CHAT -> showChats()
+                    else -> {
+                        isEnabled = false
+                        onBackPressedDispatcher.onBackPressed()
+                    }
                 }
             }
-
-            override fun onMessageReceived(messageId: String, text: String) = ui {
-                appendLog("Peer [${shortId(messageId)}]: $text")
-            }
-
-            override fun onAck(messageId: String) = ui {
-                appendLog("✓ ACK ${shortId(messageId)}")
-            }
-
-            override fun onError(message: String) = ui {
-                appendLog("⚠ $message")
-            }
         })
-
-        startNodeOrRequestPermission()
+        showChats()
+        startCommunicationOrRequestPermission()
     }
 
     override fun onRequestPermissionsResult(
@@ -134,256 +110,1041 @@ class MainActivity : Activity() {
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode != REQUEST_LOCAL_NETWORK) return
-
         if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
-            appendLog("✓ Accesso alla rete locale autorizzato")
-            refreshLocalAddresses()
-            startNode()
+            startCommunication()
         } else {
-            statusView.text = getString(R.string.status_local_network_denied)
-            localAddressView.text = getString(
-                R.string.local_network_permission_required_format,
-                FreedomNode.PORT
-            )
-            connectButton.isEnabled = false
-            appendLog("⚠ Freedom M1 richiede l'accesso alla rete locale per collegarsi direttamente agli altri peer")
+            showMessage(getString(R.string.local_permission_denied))
         }
     }
 
     override fun onDestroy() {
+        directory?.close()
         if (::node.isInitialized) node.close()
         super.onDestroy()
     }
 
-    private fun startNodeOrRequestPermission() {
-        if (hasLocalNetworkPermission()) {
-            refreshLocalAddresses()
-            startNode()
-            return
+    private fun ownContact(): FreedomContact = FreedomContact(
+        displayName = getString(R.string.contact_default_name),
+        freedomNumber = FreedomNumber.fromPublicKey(identity.publicKey),
+        fingerprint = identity.fingerprint,
+        networkId = chainSettings.network.id
+    )
+
+    private fun buildChrome() {
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(color(R.color.freedom_surface))
         }
 
-        connectButton.isEnabled = false
-        statusView.text = getString(R.string.status_local_network_requested)
-        appendLog("• Autorizza la rete locale per permettere connessioni P2P dirette")
+        toolbar = MaterialToolbar(this).apply {
+            setBackgroundColor(color(R.color.freedom_surface))
+            setTitleTextColor(color(R.color.freedom_on_surface))
+            setSubtitleTextColor(color(R.color.freedom_on_surface_variant))
+            setTitleTextAppearance(
+                this@MainActivity,
+                com.google.android.material.R.style.TextAppearance_Material3_TitleLarge
+            )
+            contentInsetStartWithNavigation = dp(10)
+        }
+        root.addView(toolbar, LinearLayout.LayoutParams(MATCH, dp(72)))
+
+        content = FrameLayout(this).apply {
+            setBackgroundColor(color(R.color.freedom_surface))
+        }
+        root.addView(content, LinearLayout.LayoutParams(MATCH, 0, 1f))
+
+        bottomNavigation = BottomNavigationView(this).apply {
+            inflateMenu(R.menu.main_navigation)
+            setBackgroundColor(color(R.color.freedom_surface))
+            itemActiveIndicatorColor = getColorStateList(R.color.freedom_primary_container)
+            setOnItemSelectedListener { item ->
+                when (item.itemId) {
+                    R.id.navigation_chats -> showChats()
+                    R.id.navigation_contacts -> showContacts()
+                    R.id.navigation_settings -> showSettings()
+                    else -> return@setOnItemSelectedListener false
+                }
+                true
+            }
+        }
+        root.addView(bottomNavigation, LinearLayout.LayoutParams(MATCH, dp(80)))
+
+        setContentView(root)
+        appRoot = root
+    }
+
+    private fun buildNode(): FreedomNode = FreedomNode(
+        identity,
+        PeerTrustVerifier(SharedPreferencesPeerTrustStore(this)),
+        object : FreedomNode.Listener {
+            override fun onStatus(message: String) = ui {
+                if (currentScreen == Screen.CHAT) showMessage(message)
+            }
+
+            override fun onPeerVerificationRequired(
+                endpoint: String,
+                remoteFingerprint: String,
+                sessionId: String
+            ) = ui {
+                val known = contacts.findByFingerprint(remoteFingerprint)
+                val expected = currentContact
+                when {
+                    known != null -> {
+                        currentContact = known
+                        node.approvePendingPeer()
+                    }
+                    expected != null && expected.fingerprint.equals(remoteFingerprint, ignoreCase = true) -> {
+                        node.approvePendingPeer()
+                    }
+                    expected != null -> {
+                        node.rejectPendingPeer()
+                        MaterialAlertDialogBuilder(this@MainActivity)
+                            .setTitle(R.string.identity_mismatch_title)
+                            .setMessage(R.string.identity_mismatch_body)
+                            .setPositiveButton(android.R.string.ok, null)
+                            .show()
+                    }
+                    else -> confirmUnknownPeer(remoteFingerprint)
+                }
+            }
+
+            override fun onConnected(
+                endpoint: String,
+                remoteFingerprint: String,
+                sessionId: String
+            ) = ui {
+                activeRemoteFingerprint = remoteFingerprint
+                val contact = contacts.findByFingerprint(remoteFingerprint) ?: currentContact
+                currentContact = contact
+                connectedContactNumber = contact?.freedomNumber
+                chatStatusRes = R.string.chat_connected
+                if (currentScreen == Screen.CHAT && contact != null) renderChat(contact)
+                else showMessage(getString(R.string.chat_connected))
+            }
+
+            override fun onDisconnected(reason: String) = ui {
+                connectedContactNumber = null
+                activeRemoteFingerprint = null
+                chatStatusRes = R.string.chat_offline
+                currentContact?.let { if (currentScreen == Screen.CHAT) renderChat(it) }
+            }
+
+            override fun onMessageSent(messageId: String, text: String) = ui {
+                activeContactForMessage()?.let { contact ->
+                    chats.add(
+                        ChatMessage(
+                            messageId = messageId,
+                            contactNumber = contact.freedomNumber,
+                            text = text,
+                            outgoing = true,
+                            timestampMillis = System.currentTimeMillis()
+                        )
+                    )
+                    if (currentScreen == Screen.CHAT) renderChat(contact)
+                }
+            }
+
+            override fun onMessageReceived(messageId: String, text: String) = ui {
+                activeContactForMessage()?.let { contact ->
+                    chats.add(
+                        ChatMessage(
+                            messageId = messageId,
+                            contactNumber = contact.freedomNumber,
+                            text = text,
+                            outgoing = false,
+                            timestampMillis = System.currentTimeMillis()
+                        )
+                    )
+                    if (currentScreen == Screen.CHAT) renderChat(contact)
+                    else showMessage("${contact.displayName}: $text")
+                }
+            }
+
+            override fun onAck(messageId: String) = Unit
+
+            override fun onError(message: String) = ui { showMessage(message) }
+        }
+    )
+
+    private fun activeContactForMessage(): FreedomContact? =
+        activeRemoteFingerprint?.let(contacts::findByFingerprint) ?: currentContact
+
+    private fun startCommunicationOrRequestPermission() {
+        if (hasLocalNetworkPermission()) {
+            startCommunication()
+            return
+        }
+        showMessage(getString(R.string.local_permission_explanation))
         requestPermissions(arrayOf(LOCAL_NETWORK_PERMISSION), REQUEST_LOCAL_NETWORK)
     }
 
-    private fun startNode() {
-        if (nodeStarted) return
-        nodeStarted = true
-        connectButton.isEnabled = true
-        node.start()
+    private fun startCommunication() {
+        if (!communicationStarted) {
+            communicationStarted = true
+            node.start()
+        }
+        restartDirectory()
     }
 
-    private fun hasLocalNetworkPermission(): Boolean {
-        if (Build.VERSION.SDK_INT < 37) return true
-        return checkSelfPermission(LOCAL_NETWORK_PERMISSION) == PackageManager.PERMISSION_GRANTED
+    private fun restartDirectory() {
+        if (!hasLocalNetworkPermission()) return
+        directory?.close()
+        directory = LocalPeerDirectory(this, ownContact()) {
+            when (currentScreen) {
+                Screen.CHATS -> showChats()
+                Screen.CONTACTS -> showContacts()
+                else -> Unit
+            }
+        }.also(LocalPeerDirectory::start)
     }
 
-    private fun refreshLocalAddresses() {
-        val addresses = FreedomNode.localIpv4Addresses()
-        localAddressView.text = if (addresses.isEmpty()) {
-            getString(R.string.local_address_not_detected_format, FreedomNode.PORT)
-        } else {
-            getString(
-                R.string.local_address_format,
-                addresses.joinToString(", "),
-                FreedomNode.PORT
+    private fun hasLocalNetworkPermission(): Boolean =
+        Build.VERSION.SDK_INT < 37 ||
+            checkSelfPermission(LOCAL_NETWORK_PERMISSION) == PackageManager.PERMISSION_GRANTED
+
+    private fun showChats() {
+        currentScreen = Screen.CHATS
+        prepareTopLevel(
+            title = getString(R.string.home_title),
+            subtitle = getString(R.string.home_subtitle),
+            selectedItem = R.id.navigation_chats
+        )
+
+        val frame = FrameLayout(this)
+        val scroll = ScrollView(this).apply { clipToPadding = false }
+        val column = pageColumn(bottomPadding = 96)
+        scroll.addView(column)
+
+        column.addView(identitySummaryCard())
+        column.addView(sectionLabel(R.string.recent_conversations), margins(top = 28))
+
+        val contactList = contacts.all()
+        if (contactList.isEmpty()) {
+            column.addView(
+                emptyState(R.string.empty_chats_title, R.string.empty_chats_body),
+                margins(top = 12)
             )
+        } else {
+            contactList.forEach { contact -> column.addView(contactCard(contact)) }
+        }
+
+        frame.addView(scroll, FrameLayout.LayoutParams(MATCH, MATCH))
+        frame.addView(addContactFab(), FrameLayout.LayoutParams(dp(58), dp(58), Gravity.END or Gravity.BOTTOM).apply {
+            marginEnd = dp(20)
+            bottomMargin = dp(20)
+        })
+        setPage(frame)
+    }
+
+    private fun showContacts() {
+        currentScreen = Screen.CONTACTS
+        prepareTopLevel(
+            title = getString(R.string.contacts_title),
+            subtitle = getString(R.string.contacts_subtitle),
+            selectedItem = R.id.navigation_contacts
+        )
+
+        val frame = FrameLayout(this)
+        val scroll = ScrollView(this).apply { clipToPadding = false }
+        val column = pageColumn(bottomPadding = 96)
+        scroll.addView(column)
+
+        val share = actionCard(
+            title = getString(R.string.identity_title),
+            subtitle = FreedomNumber.format(ownContact().freedomNumber),
+            icon = R.drawable.ic_qr
+        ) { showIdentity() }
+        column.addView(share)
+
+        val contactList = contacts.all()
+        if (contactList.isEmpty()) {
+            column.addView(
+                emptyState(R.string.empty_contacts_title, R.string.empty_contacts_body),
+                margins(top = 20)
+            )
+        } else {
+            contactList.forEach { contact -> column.addView(contactCard(contact, allowDelete = true)) }
+        }
+
+        frame.addView(scroll, FrameLayout.LayoutParams(MATCH, MATCH))
+        frame.addView(addContactFab(), FrameLayout.LayoutParams(dp(58), dp(58), Gravity.END or Gravity.BOTTOM).apply {
+            marginEnd = dp(20)
+            bottomMargin = dp(20)
+        })
+        setPage(frame)
+    }
+
+    private fun showSettings() {
+        currentScreen = Screen.SETTINGS
+        prepareTopLevel(
+            title = getString(R.string.settings_title),
+            subtitle = getString(R.string.settings_subtitle),
+            selectedItem = R.id.navigation_settings
+        )
+
+        val scroll = ScrollView(this).apply { clipToPadding = false }
+        val column = pageColumn()
+        scroll.addView(column)
+
+        column.addView(sectionLabel(R.string.identity_network_section))
+        column.addView(networkCard(IdentityNetwork.NEAR_TESTNET, R.string.near_testnet_description))
+        column.addView(networkCard(IdentityNetwork.NEAR_MAINNET, R.string.near_mainnet_description))
+        column.addView(networkCard(IdentityNetwork.LOCAL, R.string.local_only_description))
+
+        column.addView(sectionLabel(R.string.chain_status_section), margins(top = 28))
+        column.addView(
+            informationCard(
+                title = getString(R.string.chain_not_connected),
+                body = getString(R.string.chain_not_connected_body),
+                accentColor = color(R.color.freedom_error)
+            )
+        )
+
+        column.addView(sectionLabel(R.string.network_costs_section), margins(top = 28))
+        column.addView(
+            informationCard(
+                title = getString(R.string.sponsored_fees),
+                body = getString(R.string.sponsored_fees_body),
+                badge = getString(R.string.recommended),
+                accentColor = color(R.color.freedom_success)
+            )
+        )
+        column.addView(
+            informationCard(
+                title = getString(R.string.personal_wallet),
+                body = getString(R.string.personal_wallet_body),
+                accentColor = color(R.color.freedom_outline)
+            )
+        )
+
+        column.addView(sectionLabel(R.string.security_section), margins(top = 28))
+        column.addView(
+            informationCard(
+                title = getString(R.string.app_name),
+                body = getString(R.string.security_body),
+                accentColor = color(R.color.freedom_primary)
+            )
+        )
+        setPage(scroll)
+    }
+
+    private fun showIdentity() {
+        currentScreen = Screen.IDENTITY
+        prepareDetail(title = getString(R.string.identity_title))
+        toolbar.menu.add(Menu.NONE, ACTION_SHARE, Menu.NONE, R.string.share_contact).apply {
+            setShowAsAction(android.view.MenuItem.SHOW_AS_ACTION_IF_ROOM)
+            setIcon(R.drawable.ic_send)
+            setOnMenuItemClickListener {
+                shareOwnContact()
+                true
+            }
+        }
+
+        val scroll = ScrollView(this).apply { clipToPadding = false }
+        val column = pageColumn().apply { gravity = Gravity.CENTER_HORIZONTAL }
+        scroll.addView(column)
+
+        column.addView(bodyText(R.string.identity_subtitle, centered = true), margins(bottom = 18))
+
+        val qrCard = MaterialCardView(this).apply {
+            radius = dp(28).toFloat()
+            cardElevation = dp(2).toFloat()
+            setCardBackgroundColor(android.graphics.Color.WHITE)
+            setContentPadding(dp(18), dp(18), dp(18), dp(18))
+        }
+        val qrValue = FreedomContactCodec.encode(ownContact())
+        qrCard.addView(ImageView(this).apply {
+            setImageBitmap(QrCodeRenderer.render(qrValue, 720))
+            contentDescription = getString(R.string.identity_title)
+            adjustViewBounds = true
+        }, ViewGroup.LayoutParams(dp(270), dp(270)))
+        column.addView(qrCard, centeredParams(dp(306), WRAP))
+
+        column.addView(sectionLabel(R.string.freedom_number_label), margins(top = 24))
+        column.addView(TextView(this).apply {
+            text = FreedomNumber.format(ownContact().freedomNumber)
+            textSize = 28f
+            typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
+            setTextColor(color(R.color.freedom_on_surface))
+            gravity = Gravity.CENTER
+            setTextIsSelectable(true)
+        }, margins(top = 8))
+        column.addView(TextView(this).apply {
+            text = getString(R.string.network_label_format, chainSettings.network.displayName)
+            textSize = 14f
+            setTextColor(color(R.color.freedom_on_surface_variant))
+            gravity = Gravity.CENTER
+        }, margins(top = 8, bottom = 20))
+
+        val buttons = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        buttons.addView(MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+            text = getString(R.string.copy_number)
+            setOnClickListener { copyOwnNumber() }
+        }, LinearLayout.LayoutParams(0, dp(52), 1f).apply { marginEnd = dp(6) })
+        buttons.addView(MaterialButton(this).apply {
+            text = getString(R.string.share_contact)
+            setOnClickListener { shareOwnContact() }
+        }, LinearLayout.LayoutParams(0, dp(52), 1f).apply { marginStart = dp(6) })
+        column.addView(buttons, LinearLayout.LayoutParams(MATCH, WRAP))
+        setPage(scroll)
+    }
+
+    private fun openChat(contact: FreedomContact) {
+        currentContact = contact
+        currentScreen = Screen.CHAT
+        chatStatusRes = if (connectedContactNumber == contact.freedomNumber) {
+            R.string.chat_connected
+        } else {
+            R.string.chat_connecting
+        }
+        renderChat(contact)
+
+        if (connectedContactNumber != null && connectedContactNumber != contact.freedomNumber) {
+            node.disconnect()
+            mainHandler.postDelayed({ connectToContact(contact) }, 250)
+        } else if (connectedContactNumber != contact.freedomNumber) {
+            connectToContact(contact)
         }
     }
 
-    private fun buildUi(): View {
-        val scroll = ScrollView(this)
+    private fun renderChat(contact: FreedomContact) {
+        currentScreen = Screen.CHAT
+        prepareDetail(title = contact.displayName, subtitle = getString(chatStatusRes))
+
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(18), dp(18), dp(18), dp(24))
+            setPadding(dp(16), dp(8), dp(16), dp(12))
         }
-        scroll.addView(root)
 
-        root.addView(TextView(this).apply {
-            text = getString(R.string.screen_title)
-            textSize = 27f
-            setTextColor(Color.rgb(20, 20, 20))
-        })
-
-        root.addView(TextView(this).apply {
-            text = getString(R.string.screen_subtitle)
-            textSize = 14f
-            setTextColor(Color.DKGRAY)
-            setPadding(0, dp(4), 0, dp(18))
-        })
-
-        root.addView(section(getString(R.string.section_local_identity)))
-        root.addView(TextView(this).apply {
-            text = getString(R.string.local_fingerprint_format, identity.fingerprint)
-            setTextIsSelectable(true)
-            textSize = 13f
-            setPadding(0, dp(6), 0, dp(10))
-        })
-
-        localAddressView = TextView(this).apply {
-            text = getString(R.string.local_address_detecting_format, FreedomNode.PORT)
-            setTextIsSelectable(true)
-            setPadding(0, 0, 0, dp(18))
+        val messageScroll = ScrollView(this).apply {
+            clipToPadding = false
+            isFillViewport = true
         }
-        root.addView(localAddressView)
-
-        root.addView(section(getString(R.string.section_connection)))
-        statusView = TextView(this).apply {
-            text = getString(R.string.status_initializing)
-            setPadding(0, dp(6), 0, dp(8))
+        val messagesColumn = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, dp(8), 0, dp(16))
         }
-        root.addView(statusView)
-
-        hostInput = EditText(this).apply {
-            hint = getString(R.string.host_hint)
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
-            setSingleLine(true)
+        val messages = chats.messages(contact.freedomNumber)
+        if (messages.isEmpty()) {
+            messagesColumn.addView(
+                emptyState(R.string.chat_waiting, R.string.empty_chats_body),
+                margins(top = 40)
+            )
+        } else {
+            messages.forEach { messagesColumn.addView(messageBubble(it)) }
         }
-        root.addView(hostInput, matchWidth())
+        messageScroll.addView(messagesColumn)
+        root.addView(messageScroll, LinearLayout.LayoutParams(MATCH, 0, 1f))
 
-        val connectionButtons = LinearLayout(this).apply {
+        if (connectedContactNumber != contact.freedomNumber) {
+            root.addView(MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+                text = getString(R.string.connect_contact)
+                setOnClickListener { connectToContact(contact) }
+            }, LinearLayout.LayoutParams(MATCH, dp(52)).apply { bottomMargin = dp(8) })
+        }
+
+        val composer = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
+            gravity = Gravity.BOTTOM
         }
-        connectButton = Button(this).apply {
-            text = getString(R.string.connect)
-            isEnabled = false
+        val inputLayout = TextInputLayout(this, null, com.google.android.material.R.attr.textInputFilledStyle).apply {
+            hint = getString(R.string.message_placeholder)
+            boxBackgroundMode = TextInputLayout.BOX_BACKGROUND_FILLED
+            boxBackgroundColor = color(R.color.freedom_surface_variant)
+        }
+        val input = TextInputEditText(inputLayout.context).apply {
+            maxLines = 4
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES or
+                InputType.TYPE_TEXT_FLAG_MULTI_LINE
+        }
+        inputLayout.addView(input, ViewGroup.LayoutParams(MATCH, WRAP))
+        composer.addView(inputLayout, LinearLayout.LayoutParams(0, WRAP, 1f).apply { marginEnd = dp(8) })
+        composer.addView(MaterialButton(this).apply {
+            text = ""
+            setIconResource(R.drawable.ic_send)
+            iconGravity = MaterialButton.ICON_GRAVITY_TEXT_START
+            isEnabled = connectedContactNumber == contact.freedomNumber
+            contentDescription = getString(R.string.send_e2ee)
+            insetTop = 0
+            insetBottom = 0
             setOnClickListener {
-                val host = hostInput.text.toString()
-                if (host.isBlank()) {
-                    node.connect(host)
+                val value = input.text?.toString().orEmpty().trim()
+                if (value.isNotEmpty()) node.sendText(value)
+            }
+        }, LinearLayout.LayoutParams(dp(56), dp(56)))
+        root.addView(composer, LinearLayout.LayoutParams(MATCH, WRAP))
+        setPage(root)
+
+        mainHandler.post { messageScroll.fullScroll(View.FOCUS_DOWN) }
+    }
+
+    private fun connectToContact(contact: FreedomContact) {
+        if (!hasLocalNetworkPermission()) {
+            startCommunicationOrRequestPermission()
+            return
+        }
+        currentContact = contact
+        chatStatusRes = R.string.chat_connecting
+        if (currentScreen == Screen.CHAT) renderChat(contact)
+        directory?.find(contact.freedomNumber) { presence ->
+            if (currentContact?.freedomNumber != contact.freedomNumber) return@find
+            if (presence == null) {
+                chatStatusRes = R.string.chat_offline
+                if (currentScreen == Screen.CHAT) renderChat(contact)
+                showMessage(getString(R.string.contact_not_found))
+                return@find
+            }
+            if (!presence.fingerprint.equals(contact.fingerprint, ignoreCase = true)) {
+                chatStatusRes = R.string.chat_offline
+                MaterialAlertDialogBuilder(this)
+                    .setTitle(R.string.identity_mismatch_title)
+                    .setMessage(R.string.identity_mismatch_body)
+                    .setPositiveButton(android.R.string.ok, null)
+                    .show()
+                return@find
+            }
+            node.connect(presence.host)
+        }
+    }
+
+    private fun showAddContactOptions() {
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.add_contact_title)
+            .setItems(arrayOf(getString(R.string.scan_qr), getString(R.string.enter_number))) { _, which ->
+                if (which == 0) scanContactQr() else showNumberEntry()
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun scanContactQr() {
+        val options = GmsBarcodeScannerOptions.Builder()
+            .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
+            .enableAutoZoom()
+            .build()
+        GmsBarcodeScanning.getClient(this, options)
+            .startScan()
+            .addOnSuccessListener { barcode ->
+                val contact = try {
+                    FreedomContactCodec.decode(barcode.rawValue.orEmpty())
+                } catch (_: Exception) {
+                    null
+                }
+                if (contact == null || contact.freedomNumber == ownContact().freedomNumber) {
+                    showMessage(getString(R.string.invalid_contact))
                 } else {
-                    isEnabled = false
-                    disconnectButton.isEnabled = true
-                    node.connect(host)
+                    confirmScannedContact(contact)
                 }
             }
-        }
-        disconnectButton = Button(this).apply {
-            text = getString(R.string.disconnect)
-            isEnabled = false
-            setOnClickListener { node.disconnect() }
-        }
-        connectionButtons.addView(connectButton, weighted())
-        connectionButtons.addView(disconnectButton, weighted())
-        root.addView(connectionButtons, matchWidth())
+            .addOnFailureListener { error ->
+                showMessage(
+                    getString(
+                        R.string.scanner_error_format,
+                        error.localizedMessage ?: error.javaClass.simpleName
+                    )
+                )
+            }
+    }
 
-        remoteView = TextView(this).apply {
-            text = getString(R.string.remote_peer_empty)
-            setTextIsSelectable(true)
-            setPadding(0, dp(10), 0, dp(6))
-        }
-        root.addView(remoteView)
+    private fun confirmScannedContact(scanned: FreedomContact) {
+        val nameInput = textInput(
+            hint = getString(R.string.contact_name_hint),
+            initialValue = scanned.displayName.ifBlank { getString(R.string.contact_default_name) }
+        )
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.contact_found)
+            .setMessage(FreedomNumber.format(scanned.freedomNumber))
+            .setView(nameInput.first)
+            .setPositiveButton(R.string.save) { _, _ ->
+                val saved = scanned.copy(
+                    displayName = nameInput.second.text?.toString()?.trim()
+                        .orEmpty()
+                        .ifBlank { getString(R.string.contact_default_name) }
+                        .take(48)
+                )
+                contacts.save(saved)
+                showMessage(getString(R.string.contact_saved_format, saved.displayName))
+                showContacts()
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
 
-        sessionView = TextView(this).apply {
-            text = getString(R.string.session_empty)
-            setTextIsSelectable(true)
-            setPadding(0, 0, 0, dp(18))
+    private fun showNumberEntry() {
+        val form = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(24), dp(6), dp(24), 0)
         }
-        root.addView(sessionView)
+        val nameInput = textInput(getString(R.string.contact_name_hint))
+        val numberInput = textInput(getString(R.string.freedom_number_hint), numeric = true)
+        form.addView(nameInput.first)
+        form.addView(numberInput.first, margins(top = 10))
 
-        val trustButtons = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
+        val dialog = MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.enter_number)
+            .setView(form)
+            .setPositiveButton(R.string.find_contact, null)
+            .setNegativeButton(R.string.cancel, null)
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val number = FreedomNumber.normalize(numberInput.second.text?.toString().orEmpty())
+                if (!FreedomNumber.isValid(number) || number == ownContact().freedomNumber) {
+                    numberInput.first.error = getString(R.string.invalid_number)
+                    return@setOnClickListener
+                }
+                val requestedName = nameInput.second.text?.toString()?.trim().orEmpty()
+                dialog.dismiss()
+                showMessage(getString(R.string.discovering_number_format, FreedomNumber.format(number)))
+                directory?.find(number) { presence ->
+                    if (presence == null) {
+                        showMessage(getString(R.string.contact_not_found))
+                    } else {
+                        savePresenceAsContact(presence, requestedName)
+                    }
+                } ?: showMessage(getString(R.string.contact_not_found))
+            }
         }
-        trustButton = Button(this).apply {
-            text = getString(R.string.trust_peer)
-            isEnabled = false
-            setOnClickListener {
-                isEnabled = false
-                rejectButton.isEnabled = false
+        dialog.show()
+    }
+
+    private fun savePresenceAsContact(presence: PeerPresence, requestedName: String) {
+        val contact = FreedomContact(
+            displayName = requestedName.ifBlank {
+                presence.displayName.ifBlank { getString(R.string.contact_default_name) }
+            }.take(48),
+            freedomNumber = presence.freedomNumber,
+            fingerprint = presence.fingerprint,
+            networkId = chainSettings.network.id
+        )
+        contacts.save(contact)
+        showMessage(getString(R.string.contact_saved_format, contact.displayName))
+        showContacts()
+    }
+
+    private fun confirmUnknownPeer(fingerprint: String) {
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.unknown_peer_title)
+            .setMessage(getString(R.string.unknown_peer_body_format, fingerprint))
+            .setPositiveButton(R.string.authorize) { _, _ ->
+                val number = try {
+                    FreedomNumber.fromFingerprint(fingerprint)
+                } catch (_: Exception) {
+                    node.rejectPendingPeer()
+                    return@setPositiveButton
+                }
+                val contact = FreedomContact(
+                    displayName = getString(R.string.contact_default_name),
+                    freedomNumber = number,
+                    fingerprint = fingerprint,
+                    networkId = chainSettings.network.id
+                )
+                contacts.save(contact)
+                currentContact = contact
                 node.approvePendingPeer()
             }
+            .setNegativeButton(R.string.reject) { _, _ -> node.rejectPendingPeer() }
+            .setOnCancelListener { node.rejectPendingPeer() }
+            .show()
+    }
+
+    private fun prepareTopLevel(title: String, subtitle: String, selectedItem: Int) {
+        bottomNavigation.visibility = View.VISIBLE
+        if (bottomNavigation.selectedItemId != selectedItem) {
+            bottomNavigation.menu.findItem(selectedItem).isChecked = true
         }
-        rejectButton = Button(this).apply {
-            text = getString(R.string.reject)
-            isEnabled = false
-            setOnClickListener {
-                isEnabled = false
-                trustButton.isEnabled = false
-                node.rejectPendingPeer()
+        toolbar.navigationIcon = null
+        toolbar.setNavigationOnClickListener(null)
+        toolbar.menu.clear()
+        toolbar.title = title
+        toolbar.subtitle = subtitle
+        toolbar.menu.add(Menu.NONE, ACTION_IDENTITY, Menu.NONE, R.string.my_identity_short).apply {
+            setShowAsAction(android.view.MenuItem.SHOW_AS_ACTION_IF_ROOM)
+            setIcon(R.drawable.ic_qr)
+            setOnMenuItemClickListener {
+                showIdentity()
+                true
             }
         }
-        trustButtons.addView(trustButton, weighted())
-        trustButtons.addView(rejectButton, weighted())
-        root.addView(trustButtons, matchWidth())
+    }
 
-        root.addView(section(getString(R.string.section_encrypted_messages)))
-        logView = TextView(this).apply {
-            text = getString(R.string.connection_instructions)
-            textSize = 15f
-            setTextIsSelectable(true)
-            setPadding(dp(10), dp(10), dp(10), dp(10))
-            setBackgroundColor(Color.rgb(244, 244, 244))
-            minHeight = dp(180)
+    private fun prepareDetail(title: String, subtitle: String? = null) {
+        bottomNavigation.visibility = View.GONE
+        toolbar.menu.clear()
+        toolbar.title = title
+        toolbar.subtitle = subtitle
+        toolbar.setNavigationIcon(R.drawable.ic_back)
+        toolbar.setNavigationOnClickListener { showChats() }
+    }
+
+    private fun identitySummaryCard(): View = MaterialCardView(this).apply {
+        radius = dp(26).toFloat()
+        cardElevation = 0f
+        setCardBackgroundColor(color(R.color.freedom_primary_container))
+        isClickable = true
+        isFocusable = true
+        setOnClickListener { showIdentity() }
+        val row = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(20), dp(18), dp(16), dp(18))
         }
-        root.addView(logView, matchWidth())
+        row.addView(ImageView(context).apply {
+            setImageResource(R.drawable.ic_qr)
+            setColorFilter(color(R.color.freedom_on_primary_container))
+            contentDescription = getString(R.string.my_identity_short)
+            background = circleDrawable(color(R.color.freedom_surface))
+            setPadding(dp(12), dp(12), dp(12), dp(12))
+        }, LinearLayout.LayoutParams(dp(52), dp(52)).apply { marginEnd = dp(16) })
+        val textColumn = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+        textColumn.addView(titleText(getString(R.string.my_identity_short)))
+        textColumn.addView(captionText(FreedomNumber.format(ownContact().freedomNumber)))
+        row.addView(textColumn, LinearLayout.LayoutParams(0, WRAP, 1f))
+        addView(row)
+    }
 
-        messageInput = EditText(this).apply {
-            hint = getString(R.string.message_hint)
-            maxLines = 4
-            setPadding(0, dp(12), 0, dp(4))
+    private fun addContactFab(): FloatingActionButton = FloatingActionButton(this).apply {
+        setImageResource(R.drawable.ic_add)
+        contentDescription = getString(R.string.add_contact)
+        setOnClickListener { showAddContactOptions() }
+    }
+
+    private fun contactCard(contact: FreedomContact, allowDelete: Boolean = false): View =
+        MaterialCardView(this).apply {
+            radius = dp(22).toFloat()
+            cardElevation = 0f
+            strokeWidth = dp(1)
+            strokeColor = color(R.color.freedom_outline)
+            setCardBackgroundColor(color(R.color.freedom_surface))
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { openChat(contact) }
+            if (allowDelete) setOnLongClickListener {
+                confirmDeleteContact(contact)
+                true
+            }
+
+            val row = LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(16), dp(14), dp(16), dp(14))
+            }
+            row.addView(avatar(contact.displayName), LinearLayout.LayoutParams(dp(52), dp(52)).apply {
+                marginEnd = dp(14)
+            })
+            val texts = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+            texts.addView(titleText(contact.displayName))
+            val last = chats.lastMessage(contact.freedomNumber)
+            texts.addView(captionText(last?.text ?: FreedomNumber.format(contact.freedomNumber), maxLines = 1))
+            val nearby = directory?.presence(contact.freedomNumber) != null
+            texts.addView(TextView(context).apply {
+                text = getString(if (nearby) R.string.online_nearby else R.string.offline_or_remote)
+                textSize = 12f
+                setTextColor(color(if (nearby) R.color.freedom_success else R.color.freedom_on_surface_variant))
+                setPadding(0, dp(3), 0, 0)
+            })
+            row.addView(texts, LinearLayout.LayoutParams(0, WRAP, 1f))
+            addView(row)
+            layoutParams = margins(top = 10)
         }
-        root.addView(messageInput, matchWidth())
 
-        sendButton = Button(this).apply {
-            text = getString(R.string.send_e2ee)
-            isEnabled = false
+    private fun confirmDeleteContact(contact: FreedomContact) {
+        MaterialAlertDialogBuilder(this)
+            .setTitle(getString(R.string.delete_contact_title, contact.displayName))
+            .setPositiveButton(R.string.delete) { _, _ ->
+                contacts.delete(contact.freedomNumber)
+                showContacts()
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun networkCard(network: IdentityNetwork, descriptionRes: Int): View {
+        val selected = chainSettings.network == network
+        return MaterialCardView(this).apply {
+            radius = dp(20).toFloat()
+            cardElevation = 0f
+            strokeWidth = dp(if (selected) 2 else 1)
+            strokeColor = color(if (selected) R.color.freedom_primary else R.color.freedom_outline)
+            setCardBackgroundColor(
+                color(if (selected) R.color.freedom_primary_container else R.color.freedom_surface)
+            )
+            isClickable = true
+            isFocusable = true
             setOnClickListener {
-                val text = messageInput.text.toString()
-                if (text.isNotBlank()) {
-                    node.sendText(text)
-                }
+                chainSettings.network = network
+                restartDirectory()
+                showMessage(getString(R.string.network_saved_format, network.displayName))
+                if (!network.chainOperational) showMessage(getString(R.string.network_unavailable))
+                showSettings()
+            }
+            val row = LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(18), dp(16), dp(18), dp(16))
+            }
+            val texts = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+            texts.addView(titleText(network.displayName))
+            texts.addView(captionText(getString(descriptionRes)))
+            row.addView(texts, LinearLayout.LayoutParams(0, WRAP, 1f))
+            if (selected) row.addView(badge(getString(R.string.selected_network)))
+            addView(row)
+            layoutParams = margins(top = 10)
+        }
+    }
+
+    private fun informationCard(
+        title: String,
+        body: String,
+        badge: String? = null,
+        accentColor: Int
+    ): View = MaterialCardView(this).apply {
+        radius = dp(20).toFloat()
+        cardElevation = 0f
+        strokeWidth = dp(1)
+        strokeColor = color(R.color.freedom_outline)
+        setCardBackgroundColor(color(R.color.freedom_surface))
+        val row = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(dp(16), dp(16), dp(16), dp(16))
+        }
+        row.addView(View(context).apply { background = circleDrawable(accentColor) },
+            LinearLayout.LayoutParams(dp(10), dp(10)).apply {
+                marginEnd = dp(12)
+                topMargin = dp(6)
+            })
+        val texts = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+        val titleRow = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        titleRow.addView(titleText(title), LinearLayout.LayoutParams(0, WRAP, 1f))
+        if (badge != null) titleRow.addView(badge(badge))
+        texts.addView(titleRow)
+        texts.addView(captionText(body, maxLines = 6), margins(top = 5))
+        row.addView(texts, LinearLayout.LayoutParams(0, WRAP, 1f))
+        addView(row)
+        layoutParams = margins(top = 10)
+    }
+
+    private fun actionCard(title: String, subtitle: String, icon: Int, action: () -> Unit): View =
+        MaterialCardView(this).apply {
+            radius = dp(22).toFloat()
+            cardElevation = 0f
+            setCardBackgroundColor(color(R.color.freedom_primary_container))
+            isClickable = true
+            setOnClickListener { action() }
+            val row = LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(18), dp(16), dp(18), dp(16))
+            }
+            row.addView(ImageView(context).apply {
+                setImageResource(icon)
+                setColorFilter(color(R.color.freedom_on_primary_container))
+            }, LinearLayout.LayoutParams(dp(36), dp(36)).apply { marginEnd = dp(14) })
+            val texts = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+            texts.addView(titleText(title))
+            texts.addView(captionText(subtitle))
+            row.addView(texts, LinearLayout.LayoutParams(0, WRAP, 1f))
+            addView(row)
+        }
+
+    private fun messageBubble(message: ChatMessage): View {
+        val wrapper = FrameLayout(this)
+        val bubble = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(14), dp(10), dp(14), dp(8))
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(18).toFloat()
+                setColor(
+                    color(
+                        if (message.outgoing) R.color.freedom_primary_container
+                        else R.color.freedom_surface_variant
+                    )
+                )
             }
         }
-        root.addView(sendButton, matchWidth())
-
-        root.addView(TextView(this).apply {
-            text = getString(R.string.spike_notice)
-            textSize = 12f
-            setTextColor(Color.DKGRAY)
-            setPadding(0, dp(18), 0, 0)
+        bubble.addView(TextView(this).apply {
+            text = message.text
+            textSize = 16f
+            setTextColor(color(R.color.freedom_on_surface))
         })
-
-        return scroll
+        bubble.addView(TextView(this).apply {
+            text = DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(message.timestampMillis))
+            textSize = 11f
+            gravity = Gravity.END
+            setTextColor(color(R.color.freedom_on_surface_variant))
+            setPadding(0, dp(3), 0, 0)
+        })
+        wrapper.addView(
+            bubble,
+            FrameLayout.LayoutParams(WRAP, WRAP, if (message.outgoing) Gravity.END else Gravity.START).apply {
+                marginStart = if (message.outgoing) dp(52) else 0
+                marginEnd = if (message.outgoing) 0 else dp(52)
+            }
+        )
+        wrapper.layoutParams = margins(top = 6)
+        return wrapper
     }
 
-    private fun section(text: String): TextView = TextView(this).apply {
-        this.text = text
+    private fun avatar(name: String): TextView = TextView(this).apply {
+        text = name.trim().firstOrNull()?.uppercase() ?: "F"
+        textSize = 20f
+        typeface = Typeface.DEFAULT_BOLD
+        gravity = Gravity.CENTER
+        setTextColor(color(R.color.freedom_on_primary_container))
+        background = circleDrawable(color(R.color.freedom_avatar_1))
+    }
+
+    private fun emptyState(titleRes: Int, bodyRes: Int): View = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        gravity = Gravity.CENTER
+        setPadding(dp(28), dp(34), dp(28), dp(34))
+        background = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = dp(24).toFloat()
+            setColor(color(R.color.freedom_surface_variant))
+        }
+        addView(titleText(getString(titleRes)).apply { gravity = Gravity.CENTER })
+        addView(captionText(getString(bodyRes), maxLines = 4).apply { gravity = Gravity.CENTER }, margins(top = 7))
+    }
+
+    private fun sectionLabel(resId: Int): TextView = TextView(this).apply {
+        text = getString(resId)
         textSize = 12f
-        setTextColor(Color.rgb(60, 60, 60))
+        typeface = Typeface.DEFAULT_BOLD
+        letterSpacing = 0.08f
+        setTextColor(color(R.color.freedom_on_surface_variant))
     }
 
-    private fun appendLog(line: String) {
-        logLines.addLast(line)
-        while (logLines.size > 60) logLines.removeFirst()
-        logView.text = logLines.joinToString("\n")
+    private fun titleText(value: String): TextView = TextView(this).apply {
+        text = value
+        textSize = 17f
+        typeface = Typeface.DEFAULT_BOLD
+        setTextColor(color(R.color.freedom_on_surface))
     }
 
-    private fun shortId(id: String): String = id.take(8)
-
-    private fun ui(block: () -> Unit) {
-        runOnUiThread { block() }
+    private fun captionText(value: String, maxLines: Int = 2): TextView = TextView(this).apply {
+        text = value
+        textSize = 14f
+        setTextColor(color(R.color.freedom_on_surface_variant))
+        this.maxLines = maxLines
+        setPadding(0, dp(3), 0, 0)
     }
 
-    private fun dp(value: Int): Int =
-        (value * resources.displayMetrics.density).toInt()
+    private fun bodyText(resId: Int, centered: Boolean = false): TextView = TextView(this).apply {
+        text = getString(resId)
+        textSize = 15f
+        setTextColor(color(R.color.freedom_on_surface_variant))
+        if (centered) gravity = Gravity.CENTER
+    }
 
-    private fun matchWidth() = LinearLayout.LayoutParams(
-        LinearLayout.LayoutParams.MATCH_PARENT,
-        LinearLayout.LayoutParams.WRAP_CONTENT
-    )
+    private fun badge(value: String): TextView = TextView(this).apply {
+        text = value
+        textSize = 11f
+        typeface = Typeface.DEFAULT_BOLD
+        setTextColor(color(R.color.freedom_on_primary_container))
+        background = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = dp(20).toFloat()
+            setColor(color(R.color.freedom_primary_container))
+        }
+        setPadding(dp(9), dp(5), dp(9), dp(5))
+    }
 
-    private fun weighted() = LinearLayout.LayoutParams(
-        0,
-        LinearLayout.LayoutParams.WRAP_CONTENT,
-        1f
-    )
+    private fun textInput(
+        hint: String,
+        initialValue: String = "",
+        numeric: Boolean = false
+    ): Pair<TextInputLayout, TextInputEditText> {
+        val layout = TextInputLayout(this, null, com.google.android.material.R.attr.textInputOutlinedStyle).apply {
+            this.hint = hint
+        }
+        val input = TextInputEditText(layout.context).apply {
+            setText(initialValue)
+            inputType = if (numeric) InputType.TYPE_CLASS_PHONE else
+                InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_WORDS
+            setSingleLine(true)
+        }
+        layout.addView(input, ViewGroup.LayoutParams(MATCH, WRAP))
+        return layout to input
+    }
 
-    companion object {
-        private const val LOCAL_NETWORK_PERMISSION = "android.permission.ACCESS_LOCAL_NETWORK"
-        private const val REQUEST_LOCAL_NETWORK = 1001
+    private fun copyOwnNumber() {
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText(getString(R.string.freedom_number_label), ownContact().freedomNumber))
+        showMessage(getString(R.string.copied))
+    }
+
+    private fun shareOwnContact() {
+        val contact = ownContact()
+        val uri = FreedomContactCodec.encode(contact)
+        startActivity(
+            Intent.createChooser(
+                Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(
+                        Intent.EXTRA_TEXT,
+                        getString(
+                            R.string.contact_share_text,
+                            FreedomNumber.format(contact.freedomNumber),
+                            uri
+                        )
+                    )
+                },
+                getString(R.string.share_contact)
+            )
+        )
+    }
+
+    private fun pageColumn(bottomPadding: Int = 28): LinearLayout = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(dp(18), dp(10), dp(18), dp(bottomPadding))
+    }
+
+    private fun setPage(view: View) {
+        content.removeAllViews()
+        content.addView(view, FrameLayout.LayoutParams(MATCH, MATCH))
+    }
+
+    private fun showMessage(message: String) {
+        Snackbar.make(appRoot, message, Snackbar.LENGTH_LONG).show()
+    }
+
+    private fun ui(block: () -> Unit) = runOnUiThread(block)
+
+    private fun color(resId: Int): Int = getColor(resId)
+
+    private fun circleDrawable(fillColor: Int): GradientDrawable = GradientDrawable().apply {
+        shape = GradientDrawable.OVAL
+        setColor(fillColor)
+    }
+
+    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+
+    private fun margins(
+        start: Int = 0,
+        top: Int = 0,
+        end: Int = 0,
+        bottom: Int = 0
+    ): LinearLayout.LayoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply {
+        marginStart = dp(start)
+        topMargin = dp(top)
+        marginEnd = dp(end)
+        bottomMargin = dp(bottom)
+    }
+
+    private fun centeredParams(width: Int, height: Int): LinearLayout.LayoutParams =
+        LinearLayout.LayoutParams(width, height).apply { gravity = Gravity.CENTER_HORIZONTAL }
+
+    private companion object {
+        const val MATCH = ViewGroup.LayoutParams.MATCH_PARENT
+        const val WRAP = ViewGroup.LayoutParams.WRAP_CONTENT
+        const val REQUEST_LOCAL_NETWORK = 2001
+        const val LOCAL_NETWORK_PERMISSION = "android.permission.ACCESS_LOCAL_NETWORK"
+        const val ACTION_IDENTITY = 3001
+        const val ACTION_SHARE = 3002
     }
 }

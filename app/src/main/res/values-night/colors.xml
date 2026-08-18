@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="freedom_primary">#B9C3FF</color>
+    <color name="freedom_on_primary">#14266F</color>
+    <color name="freedom_primary_container">#293D9C</color>
+    <color name="freedom_on_primary_container">#E2E7FF</color>
+    <color name="freedom_secondary">#87D8CC</color>
+    <color name="freedom_secondary_container">#075E56</color>
+    <color name="freedom_surface">#11131A</color>
+    <color name="freedom_surface_variant">#20232D</color>
+    <color name="freedom_on_surface">#E5E7F0</color>
+    <color name="freedom_on_surface_variant">#BEC2CF</color>
+    <color name="freedom_outline">#3E4350</color>
+    <color name="freedom_error">#FFB4AB</color>
+    <color name="freedom_success">#7ADCB6</color>
+    <color name="freedom_avatar_1">#293D70</color>
+</resources>

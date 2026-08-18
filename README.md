@@ -200,9 +200,11 @@ Freedom è un sistema di contatti espliciti tramite DeviceID/QR, non una random 
 
 ## Stato del codice Android
 
-Il codice Android presente nel repository è un **transport/crypto spike precedente alla specifica attuale**. Dimostra socket diretto, handshake cifrato e pinning esplicito del fingerprint al primo contatto, ma usa ancora IP manuale e non risolve l'identità tramite blockchain.
+Il client Android `0.2.0-alpha` include una prima esperienza da app di messaggistica: home, rubrica, chat, profilo condivisibile con QR e numero Freedom, scansione QR, persistenza locale e impostazioni della rete identità. Sulla stessa LAN i dispositivi si annunciano e si risolvono tramite Android NSD, quindi l'utente non inserisce né vede indirizzi IP.
 
-Non rappresenta più l'M1 canonico. Verrà rifattorizzato seguendo questa sequenza:
+Il numero Freedom è un identificatore umano con checksum derivato dall'identità pubblica. Diventerà canonico quando il registry on-chain ne garantirà unicità e stato. La connessione locale resta autenticata dal fingerprint scambiato nel QR e dall'handshake E2EE.
+
+Il contratto NEAR e `NearChainAdapter` non sono ancora implementati: la schermata impostazioni mostra questo stato esplicitamente e non simula una connessione blockchain. La sequenza ancora da completare è:
 
 ```text
 DeviceID
@@ -215,7 +217,7 @@ DeviceID
  -> E2EE messaging
 ```
 
-Lo spike rifiuta cambi di fingerprint già approvati, limita handshake/thread/queue e richiede conferma esplicita prima di rendere utilizzabile una nuova sessione. Queste protezioni servono al laboratorio TCP corrente; nel protocollo canonico il trust anchor sarà la chiave corrente risolta dal `DeviceID` tramite chain.
+Il transport rifiuta cambi di fingerprint già approvati, limita handshake/thread/queue e richiede un contatto verificato o una conferma esplicita prima di rendere utilizzabile una nuova sessione. Nel protocollo canonico il trust anchor sarà la chiave corrente risolta dal `DeviceID` tramite chain.
 
 ## Build e test Android
 

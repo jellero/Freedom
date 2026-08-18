@@ -1,3 +1,5 @@
+@file:Suppress("UseKtx")
+
 package dev.freedom.app.net
 
 import android.content.Context
