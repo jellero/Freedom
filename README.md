@@ -239,4 +239,8 @@ M8  iOS + platform wake integration
 M9  hardening, testing, interoperability
 ```
 
+## TODO
+
+- [ ] Brand client ufficiale: **Freedom Messenger** — *Powered by Freedom Protocol*.
+
 Freedom è definito dalle proprietà tecniche del protocollo: identità verificabile, comunicazione E2EE, routing distribuito, relay non fidati e minima dipendenza dalla blockchain durante una sessione attiva.
