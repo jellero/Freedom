@@ -81,6 +81,8 @@ epoch 3 -> PK3
 
 Una rotazione non cambia DeviceID.
 
+Il `key_epoch` appartiene allo stato dell'identità e serve a distinguere la chiave attualmente autorizzata. Non è una revisione del rendezvous.
+
 Il contratto deve impedire rollback non autorizzati a epoch precedenti.
 
 ## 6. Revocation
@@ -123,7 +125,7 @@ Il QR può fornire una capability casuale:
 rendezvous_capability = random(256 bit)
 ```
 
-Lo slot del primo contatto può essere derivato da capability + direzione + epoch.
+Lo slot del primo contatto può essere derivato da capability + direzione + contesto temporale/protocollare.
 
 Il formato deve evitare un mapping pubblico semplice del tipo:
 
@@ -147,21 +149,22 @@ PairRendezvousSecret = KDF(authenticated_session_material, context)
 
 Il secret viene memorizzato localmente e non pubblicato.
 
-Gli slot cambiano per epoch temporale/protocollare:
+Gli slot possono essere derivati in modo direzionale e rotante:
 
 ```text
-slot_A(epoch)
-slot_B(epoch)
+slot_A(context)
+slot_B(context)
 ```
 
-Questo evita un identificatore on-chain statico facilmente correlabile nel tempo.
+La derivazione dello slot deve permettere a ciascuna parte di sapere autonomamente dove leggere il record corrente senza conoscere o recuperare il record precedente.
 
-## 10. Record
+## 10. Record rendezvous: sempre autosufficiente
+
+Ogni rendezvous scritto sulla chain è un record indipendente. Dal punto di vista di chi lo legge è sempre equivalente a una **rev 0**: non richiede la conoscenza di una revisione precedente, di un contatore precedente o di uno storico locale.
 
 ```text
 RendezvousRecord {
     version
-    sequence
     expires_at
     ciphertext
 }
@@ -169,7 +172,19 @@ RendezvousRecord {
 
 Il contratto non ha bisogno di interpretare `ciphertext`.
 
-Il payload cifrato contiene i route candidate attuali e materiale effimero necessario a provare la connessione.
+Il payload cifrato contiene i route candidate attuali, un nonce casuale del rendezvous e il materiale effimero necessario a provare la connessione.
+
+```text
+RendezvousPayload {
+    rendezvous_nonce
+    route_candidates[]
+    relay_candidates[]
+    ephemeral_transport_public_key
+    ...
+}
+```
+
+Non esiste un `sequence` o un `revision` del rendezvous.
 
 ## 11. Read-before-write
 
@@ -193,15 +208,15 @@ WRITE(local_slot, current_offer)
 WAIT_AND_POLL(remote_slot)
 ```
 
-Un timeout di connessione non autorizza una nuova write immediata. Il client applica backoff e aggiorna soltanto quando il record locale è scaduto o le informazioni sono materialmente cambiate secondo policy.
+Un timeout di connessione non autorizza una nuova write immediata. Il client applica backoff e scrive nuovamente soltanto quando il record locale non è più utilizzabile, per esempio perché scaduto o perché il relativo slot non contiene più un'offerta valida.
 
 ## 12. Concorrenza
 
 Gli slot sono direzionali. Se A e B perdono il route nello stesso istante possono entrambi pubblicare una sola offerta nei rispettivi slot senza collisione.
 
-Al polling successivo ciascuno vede il record dell'altro e tenta il percorso.
+La regola resta sempre read-before-write: prima di pubblicare, ciascun endpoint verifica se esiste già informazione utile.
 
-Non serve eleggere un leader.
+Non serve eleggere un leader e non serve coordinare revisioni.
 
 ## 13. Expiration
 
@@ -215,17 +230,21 @@ Dopo la riconnessione non viene cancellato esplicitamente: la cancellazione cost
 
 I client ignorano record scaduti.
 
-## 14. Sequence
+Il record successivo, quando necessario, è un nuovo rendezvous autosufficiente e non una revisione incrementale del precedente.
 
-Per ogni direzione viene mantenuto un sequence monotono locale.
+## 14. Freshness senza revisioni
 
-Un client rifiuta:
+La validità di un rendezvous non dipende da uno storico locale.
 
-```text
-record.sequence <= lastAcceptedSequence
-```
+Il client controlla almeno:
 
-salvo regole esplicite di recovery ancora da definire.
+- che lo slot letto sia quello atteso;
+- che il record provenga da stato chain considerato sufficientemente finalizzato/verificato;
+- che `expires_at` non sia trascorso;
+- che il ciphertext sia autenticabile e decifrabile nel contesto atteso;
+- che il `rendezvous_nonce` e il materiale effimero siano validi per il tentativo corrente.
+
+Un vecchio record scaduto viene ignorato. Non esiste `lastAcceptedSequence` per il rendezvous.
 
 ## 15. Metadata minimization
 
@@ -299,7 +318,7 @@ Non implementare nel contratto:
 
 Il rendezvous deve avere una strategia bounded.
 
-Gli slot vengono sovrascritti/aggiornati e i record scaduti non devono produrre una crescita infinita dello stato logico per la stessa coppia/capability.
+Gli slot vengono riutilizzati/sovrascritti quando il record precedente non è più utilizzabile. Ogni nuovo contenuto è comunque un record indipendente, non una nuova revisione logica del precedente.
 
 La gestione fisica dello storage e dei depositi NEAR sarà definita nel contratto in modo da non permettere scritture gratuite illimitate.
 
@@ -313,7 +332,8 @@ Acceptance criteria del primo chain milestone:
 - key rotation cambia epoch senza cambiare DeviceID;
 - revocation viene osservata dal client;
 - QR produce una rendezvous capability;
-- A può pubblicare un record cifrato;
-- B può trovarlo e decifrarlo;
+- A può pubblicare un record cifrato autosufficiente;
+- B può trovarlo e decifrarlo senza conoscere alcun record precedente;
 - un secondo tentativo legge il record esistente e non genera una write inutile;
+- un nuovo rendezvous dopo scadenza non dipende da sequence/revision precedenti;
 - nessun message body compare in stato chain.
