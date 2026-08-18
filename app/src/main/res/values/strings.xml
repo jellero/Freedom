@@ -89,4 +89,15 @@
     <string name="online_nearby">Disponibile nelle vicinanze</string>
     <string name="offline_or_remote">Non rilevato sulla rete locale</string>
     <string name="send_e2ee">Invia E2EE</string>
+    <string name="diagnostics_section">DIAGNOSTICA</string>
+    <string name="diagnostic_log">Log diagnostico Freedom</string>
+    <string name="share_diagnostic_log">Condividi log diagnostico</string>
+    <string name="diagnostic_log_body">Esporta l’ultimo crash e i passaggi tecnici recenti. Non contiene chiavi, QR, messaggi o dati dei contatti.</string>
+    <string name="crash_report_title">Freedom si è chiusa inaspettatamente</string>
+    <string name="crash_report_body">Il log del crash è stato salvato. Copialo o condividilo in questa chat per individuare la causa esatta.</string>
+    <string name="share_log">Condividi log</string>
+    <string name="copy_log">Copia log</string>
+    <string name="close">Chiudi</string>
+    <string name="log_copied">Log copiato. Incollalo nella chat.</string>
+    <string name="share_log_fallback">Nessuna app disponibile: il log è stato copiato negli appunti.</string>
 </resources>

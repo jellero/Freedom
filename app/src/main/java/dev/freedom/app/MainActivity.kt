@@ -53,6 +53,7 @@ import dev.freedom.app.contact.FreedomContactCodec
 import dev.freedom.app.contact.FreedomNumber
 import dev.freedom.app.contact.QrCodeRenderer
 import dev.freedom.app.crypto.IdentityStore
+import dev.freedom.app.diagnostics.CrashReporter
 import dev.freedom.app.net.FreedomNode
 import dev.freedom.app.net.LocalPeerDirectory
 import dev.freedom.app.net.PeerPresence
@@ -93,6 +94,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        CrashReporter.record(this, "main_activity_on_create")
         identity = IdentityStore()
         contacts = ContactRepository(this)
         chats = ChatRepository(this)
@@ -114,6 +116,7 @@ class MainActivity : AppCompatActivity() {
         })
         showChats()
         startCommunicationOrRequestPermission()
+        mainHandler.postDelayed(::showCrashReportIfPresent, CRASH_REPORT_DELAY_MILLIS)
     }
 
     override fun onRequestPermissionsResult(
@@ -131,6 +134,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        CrashReporter.record(this, "main_activity_on_destroy")
         directory?.close()
         if (::node.isInitialized) node.close()
         chainExecutor.shutdownNow()
@@ -506,6 +510,16 @@ class MainActivity : AppCompatActivity() {
                 accentColor = color(R.color.freedom_primary)
             )
         )
+
+        column.addView(sectionLabel(R.string.diagnostics_section), margins(top = 28))
+        column.addView(
+            actionCard(
+                title = getString(R.string.share_diagnostic_log),
+                subtitle = getString(R.string.diagnostic_log_body),
+                icon = R.drawable.ic_send
+            ) { shareDiagnosticLog() },
+            margins(top = 10)
+        )
         setPage(scroll)
         refreshChainHealthIfNeeded()
     }
@@ -705,11 +719,18 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showAddContactOptions() {
+        CrashReporter.record(this, "contacts_add_options_open")
         safelyRunContactAction {
             MaterialAlertDialogBuilder(this)
                 .setTitle(R.string.add_contact_title)
                 .setItems(arrayOf(getString(R.string.scan_qr), getString(R.string.enter_number))) { _, which ->
-                    if (which == 0) scanContactQr() else showNumberEntry()
+                    if (which == 0) {
+                        CrashReporter.record(this, "contacts_scan_selected")
+                        scanContactQr()
+                    } else {
+                        CrashReporter.record(this, "contacts_manual_selected")
+                        showNumberEntry()
+                    }
                 }
                 .setNegativeButton(R.string.cancel, null)
                 .show()
@@ -717,6 +738,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun scanContactQr() {
+        CrashReporter.record(this, "contacts_scanner_start")
         try {
             val options = GmsBarcodeScannerOptions.Builder()
                 .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
@@ -725,6 +747,7 @@ class MainActivity : AppCompatActivity() {
             GmsBarcodeScanning.getClient(this, options)
                 .startScan()
                 .addOnSuccessListener(this) { barcode ->
+                    CrashReporter.record(this, "contacts_scanner_result_received")
                     val contact = try {
                         FreedomContactCodec.decode(barcode.rawValue.orEmpty())
                     } catch (_: Exception) {
@@ -746,6 +769,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun handleScannerFailure(error: Throwable) {
         Log.e(TAG, "Unable to start or complete the QR scanner", error)
+        CrashReporter.record(this, "contacts_scanner_error:${error.javaClass.simpleName}")
+        CrashReporter.recordHandledError(this, "contacts_scanner", error)
         if (!canShowUi()) return
         showMessage(
             getString(
@@ -757,6 +782,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun confirmScannedContact(scanned: FreedomContact) {
+        CrashReporter.record(this, "contacts_scanned_confirm_open")
         val nameInput = textInput(
             hint = getString(R.string.contact_name_hint),
             initialValue = scanned.displayName.ifBlank { getString(R.string.contact_default_name) }
@@ -779,6 +805,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showNumberEntry() {
+        CrashReporter.record(this, "contacts_manual_form_open")
         val form = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(24), dp(6), dp(24), 0)
@@ -803,6 +830,7 @@ class MainActivity : AppCompatActivity() {
                 }
                 val requestedName = nameInput.second.text?.toString()?.trim().orEmpty()
                 dialog.dismiss()
+                CrashReporter.record(this, "contacts_manual_lookup_started")
                 showMessage(getString(R.string.discovering_number_format, FreedomNumber.format(number)))
                 directory?.find(number) { presence ->
                     if (presence == null) {
@@ -829,13 +857,17 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun saveContact(contact: FreedomContact) {
+        CrashReporter.record(this, "contacts_save_started")
         safelyRunContactAction {
             if (!contacts.save(contact)) {
+                CrashReporter.record(this, "contacts_save_storage_rejected")
                 showMessage(getString(R.string.contact_save_error))
                 return@safelyRunContactAction
             }
+            CrashReporter.record(this, "contacts_save_success_render_started")
             showMessage(getString(R.string.contact_saved_format, contact.displayName))
             showContacts()
+            CrashReporter.record(this, "contacts_save_success_render_completed")
         }
     }
 
@@ -1222,6 +1254,46 @@ class MainActivity : AppCompatActivity() {
         )
     }
 
+    private fun showCrashReportIfPresent() {
+        if (!canShowUi() || !CrashReporter.hasUnseenCrash(this)) return
+        CrashReporter.markCrashSeen(this)
+        CrashReporter.record(this, "diagnostic_crash_prompt_shown")
+        android.app.AlertDialog.Builder(this)
+            .setTitle(R.string.crash_report_title)
+            .setMessage(R.string.crash_report_body)
+            .setPositiveButton(R.string.share_log) { _, _ -> shareDiagnosticLog() }
+            .setNeutralButton(R.string.copy_log) { _, _ -> copyDiagnosticLog() }
+            .setNegativeButton(R.string.close, null)
+            .show()
+    }
+
+    private fun copyDiagnosticLog() {
+        val report = CrashReporter.reportForSharing(this)
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText(getString(R.string.diagnostic_log), report))
+        showMessage(getString(R.string.log_copied))
+    }
+
+    private fun shareDiagnosticLog() {
+        CrashReporter.record(this, "diagnostic_log_share_requested")
+        val report = CrashReporter.reportForSharing(this)
+        runCatching {
+            startActivity(
+                Intent.createChooser(
+                    Intent(Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(Intent.EXTRA_SUBJECT, getString(R.string.diagnostic_log))
+                        putExtra(Intent.EXTRA_TEXT, report)
+                    },
+                    getString(R.string.share_log)
+                )
+            )
+        }.onFailure {
+            copyDiagnosticLog()
+            showMessage(getString(R.string.share_log_fallback))
+        }
+    }
+
     private fun pageColumn(bottomPadding: Int = 28): LinearLayout = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
         setPadding(dp(18), dp(10), dp(18), dp(bottomPadding))
@@ -1245,9 +1317,13 @@ class MainActivity : AppCompatActivity() {
             action()
         } catch (error: RuntimeException) {
             Log.e(TAG, "Contact action failed", error)
+            CrashReporter.record(this, "contacts_action_error:${error.javaClass.simpleName}")
+            CrashReporter.recordHandledError(this, "contacts_action", error)
             showMessage(getString(R.string.contact_action_error))
         } catch (error: LinkageError) {
             Log.e(TAG, "Contact action failed because an Android component is unavailable", error)
+            CrashReporter.record(this, "contacts_linkage_error:${error.javaClass.simpleName}")
+            CrashReporter.recordHandledError(this, "contacts_linkage", error)
             showMessage(getString(R.string.contact_action_error))
         }
     }
@@ -1286,5 +1362,6 @@ class MainActivity : AppCompatActivity() {
         const val ACTION_IDENTITY = 3001
         const val ACTION_SHARE = 3002
         const val TAG = "FreedomContacts"
+        const val CRASH_REPORT_DELAY_MILLIS = 700L
     }
 }
