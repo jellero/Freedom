@@ -41,7 +41,9 @@ import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
 import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
 import dev.freedom.app.chain.ChainSettings
+import dev.freedom.app.chain.ChainHealth
 import dev.freedom.app.chain.IdentityNetwork
+import dev.freedom.app.chain.NearChainAdapter
 import dev.freedom.app.chat.ChatMessage
 import dev.freedom.app.chat.ChatRepository
 import dev.freedom.app.contact.ContactRepository
@@ -57,6 +59,7 @@ import dev.freedom.app.net.PeerTrustVerifier
 import dev.freedom.app.net.SharedPreferencesPeerTrustStore
 import java.text.DateFormat
 import java.util.Date
+import java.util.concurrent.Executors
 
 class MainActivity : AppCompatActivity() {
     private enum class Screen { CHATS, CONTACTS, SETTINGS, IDENTITY, CHAT }
@@ -65,6 +68,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var contacts: ContactRepository
     private lateinit var chats: ChatRepository
     private lateinit var chainSettings: ChainSettings
+    private lateinit var nearChain: NearChainAdapter
     private lateinit var node: FreedomNode
 
     private lateinit var toolbar: MaterialToolbar
@@ -79,8 +83,12 @@ class MainActivity : AppCompatActivity() {
     private var activeRemoteFingerprint: String? = null
     private var communicationStarted = false
     private var chatStatusRes = R.string.chat_waiting
+    private var chainHealth: ChainHealth? = null
+    private var chainHealthError: String? = null
+    private var chainHealthLoading = false
 
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val chainExecutor = Executors.newSingleThreadExecutor()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -88,6 +96,7 @@ class MainActivity : AppCompatActivity() {
         contacts = ContactRepository(this)
         chats = ChatRepository(this)
         chainSettings = ChainSettings(this)
+        nearChain = NearChainAdapter()
 
         buildChrome()
         node = buildNode()
@@ -123,6 +132,7 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         directory?.close()
         if (::node.isInitialized) node.close()
+        chainExecutor.shutdownNow()
         super.onDestroy()
     }
 
@@ -426,11 +436,47 @@ class MainActivity : AppCompatActivity() {
         column.addView(networkCard(IdentityNetwork.LOCAL, R.string.local_only_description))
 
         column.addView(sectionLabel(R.string.chain_status_section), margins(top = 28))
+        val currentHealth = chainHealth
+        val statusTitle: String
+        val statusBody: String
+        val statusColor: Int
+        when {
+            chainSettings.network == IdentityNetwork.LOCAL -> {
+                statusTitle = getString(R.string.chain_local_mode)
+                statusBody = getString(R.string.chain_local_mode_body)
+                statusColor = color(R.color.freedom_outline)
+            }
+            chainSettings.network == IdentityNetwork.NEAR_MAINNET -> {
+                statusTitle = getString(R.string.chain_not_connected)
+                statusBody = getString(R.string.chain_mainnet_unavailable)
+                statusColor = color(R.color.freedom_error)
+            }
+            currentHealth != null -> {
+                statusTitle = getString(R.string.chain_connected)
+                statusBody = getString(
+                    R.string.chain_connected_body,
+                    currentHealth.contractId,
+                    currentHealth.contractVersion,
+                    currentHealth.blockHeight
+                )
+                statusColor = color(R.color.freedom_success)
+            }
+            chainHealthError != null -> {
+                statusTitle = getString(R.string.chain_connection_error)
+                statusBody = getString(R.string.chain_connection_error_body)
+                statusColor = color(R.color.freedom_error)
+            }
+            else -> {
+                statusTitle = getString(R.string.chain_checking)
+                statusBody = getString(R.string.chain_checking_body)
+                statusColor = color(R.color.freedom_primary)
+            }
+        }
         column.addView(
             informationCard(
-                title = getString(R.string.chain_not_connected),
-                body = getString(R.string.chain_not_connected_body),
-                accentColor = color(R.color.freedom_error)
+                title = statusTitle,
+                body = statusBody,
+                accentColor = statusColor
             )
         )
 
@@ -460,6 +506,22 @@ class MainActivity : AppCompatActivity() {
             )
         )
         setPage(scroll)
+        refreshChainHealthIfNeeded()
+    }
+
+    private fun refreshChainHealthIfNeeded() {
+        if (chainSettings.network != IdentityNetwork.NEAR_TESTNET) return
+        if (chainHealth != null || chainHealthError != null || chainHealthLoading) return
+        chainHealthLoading = true
+        chainExecutor.execute {
+            val result = nearChain.checkHealth()
+            ui {
+                chainHealthLoading = false
+                chainHealth = result.getOrNull()
+                chainHealthError = result.exceptionOrNull()?.message
+                if (currentScreen == Screen.SETTINGS) showSettings()
+            }
+        }
     }
 
     private fun showIdentity() {
@@ -907,6 +969,8 @@ class MainActivity : AppCompatActivity() {
             isFocusable = true
             setOnClickListener {
                 chainSettings.network = network
+                chainHealth = null
+                chainHealthError = null
                 restartDirectory()
                 showMessage(getString(R.string.network_saved_format, network.displayName))
                 if (!network.chainOperational) showMessage(getString(R.string.network_unavailable))

@@ -204,10 +204,13 @@ Il client Android `0.2.0-alpha` include una prima esperienza da app di messaggis
 
 Il numero Freedom è un identificatore umano con checksum derivato dall'identità pubblica. Diventerà canonico quando il registry on-chain ne garantirà unicità e stato. La connessione locale resta autenticata dal fingerprint scambiato nel QR e dall'handshake E2EE.
 
-Il contratto NEAR e `NearChainAdapter` non sono ancora implementati: la schermata impostazioni mostra questo stato esplicitamente e non simula una connessione blockchain. La sequenza ancora da completare è:
+Il registro Freedom `0.1.0` è distribuito su NEAR Testnet all'account `freedom-registry-jellero.testnet`. Il client interroga lo stato finalizzato tramite `NearChainAdapter`, verifica versione del protocollo e curva P-256 e usa fallback RPC. Registrazione e scritture passeranno attraverso un relayer separato: nessuna chiave NEAR viene incorporata nell'APK.
+
+La sequenza ancora da completare è:
 
 ```text
-DeviceID
+DeviceID + firma Android Keystore
+ -> relayer fee-sponsorizzato
  -> NEAR Testnet identity
  -> QR contact
  -> chain verification

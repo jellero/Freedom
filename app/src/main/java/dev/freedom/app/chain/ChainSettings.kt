@@ -9,7 +9,7 @@ enum class IdentityNetwork(
     val displayName: String,
     val chainOperational: Boolean
 ) {
-    NEAR_TESTNET("near-testnet", "NEAR Testnet", false),
+    NEAR_TESTNET("near-testnet", "NEAR Testnet", true),
     NEAR_MAINNET("near-mainnet", "NEAR Mainnet", false),
     LOCAL("local", "Solo rete locale", true);
 

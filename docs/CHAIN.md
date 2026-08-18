@@ -326,6 +326,17 @@ La gestione fisica dello storage e dei depositi NEAR sarà definita nel contratt
 
 ## 20. Testnet milestone
 
+Contratto corrente:
+
+```text
+account: freedom-registry-jellero.testnet
+version: 0.1.0
+curve: P-256
+protocol: 1
+```
+
+Il deploy iniziale è stato confermato nella transazione `ExXqfngxKUcvuXocK51s1m9ba6KXUqNgTw8U4VwVuSCq`. Le chiavi del contratto non sono presenti nel client Android.
+
 Acceptance criteria del primo chain milestone:
 
 - due Android generano DeviceID distinti;
