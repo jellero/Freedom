@@ -13,6 +13,7 @@ import android.widget.ScrollView
 import android.widget.TextView
 import dev.freedom.app.crypto.IdentityStore
 import dev.freedom.app.net.FreedomNode
+import java.util.ArrayDeque
 
 class MainActivity : Activity() {
     private lateinit var identity: IdentityStore
@@ -228,7 +229,7 @@ class MainActivity : Activity() {
     private fun shortId(id: String): String = id.take(8)
 
     private fun ui(block: () -> Unit) {
-        runOnUiThread(block)
+        runOnUiThread { block() }
     }
 
     private fun dp(value: Int): Int =
