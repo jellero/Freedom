@@ -16,6 +16,7 @@ This is the first executable Freedom client. It is intentionally narrow: two And
 - Encrypted message ACKs.
 - Fresh session ID and keys after reconnect.
 - Manual remote fingerprint comparison for M1 identity bootstrap.
+- Android 17 local-network runtime permission handling.
 
 ## Not implemented yet
 
@@ -25,24 +26,30 @@ The public identity key exchanged during M1 is authenticated cryptographically i
 
 ## Build
 
+The project currently targets Android API 37 and uses Android Gradle Plugin 9.3.1.
+
 Requirements:
 
-- Android Studio with JDK 17 support.
+- Android Studio / JDK 17.
 - Android SDK 37 installed.
+- Gradle 9.5.0 when building from the command line without a wrapper.
 - Android device or emulator with API 26+.
 
 Open the repository root in Android Studio, sync Gradle, and run the `app` configuration.
 
+A Gradle Wrapper binary is not committed yet. Generate it from a trusted local Gradle 9.5.0 installation before relying on `./gradlew`.
+
 ## Two-phone test
 
 1. Install and open Freedom on phone A and phone B.
-2. Connect both devices to a network where they can address each other directly (for example the same Wi-Fi without client isolation).
-3. Each phone displays one or more local IPv4 addresses and listens on TCP port `45731`.
-4. On phone A, enter phone B's displayed IPv4 address and tap **Connetti**.
-5. After the handshake, compare the remote fingerprint shown on A with B's local fingerprint, and vice versa.
-6. Send messages in both directions.
-7. Verify that every delivered text message results in an `ACK` entry.
-8. Disconnect and reconnect. The displayed session ID must change because fresh ephemeral ECDH keys are generated for every connection.
+2. On Android 17, grant Freedom access to the local network when Android asks for it.
+3. Connect both devices to a network where they can address each other directly (for example the same Wi-Fi without client isolation).
+4. Each phone displays one or more local IPv4 addresses and listens on TCP port `45731`.
+5. On phone A, enter phone B's displayed IPv4 address and tap **Connetti**.
+6. After the handshake, compare the remote fingerprint shown on A with B's local fingerprint, and vice versa.
+7. Send messages in both directions.
+8. Verify that every delivered text message results in an `ACK` entry.
+9. Disconnect and reconnect. The displayed session ID must change because fresh ephemeral ECDH keys are generated for every connection.
 
 ## Network notes
 
