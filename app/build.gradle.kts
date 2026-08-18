@@ -10,8 +10,8 @@ android {
         applicationId = "dev.freedom.app"
         minSdk = 26
         targetSdk = 37
-        versionCode = 9
-        versionName = "0.4.1-alpha"
+        versionCode = 10
+        versionName = "0.4.2-alpha"
     }
 
     buildTypes {

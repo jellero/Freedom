@@ -753,10 +753,13 @@ class MainActivity : AppCompatActivity() {
             if (result.isSuccess) runCatching { nearCredentialStore.save(credentials) }
                 .onFailure { failure ->
                     ui {
+                        CrashReporter.record(this, "near_key_save_failed:${failure.javaClass.simpleName}")
+                        CrashReporter.recordHandledError(this, "near_key_save", failure)
                         nearOperationInProgress = false
                         nearKeyState = NearKeyState.INVALID
                         nearKeyStateDetail = failure.message
                         nearOperationStatus = failure.message
+                        showMessage(failure.message ?: getString(R.string.invalid_near_key))
                         if (currentScreen == Screen.SETTINGS) showSettings()
                     }
                 }
@@ -835,7 +838,9 @@ class MainActivity : AppCompatActivity() {
     private fun activateOwnDeviceOnChain() {
         if (nearOperationInProgress) return
         val credentials = nearCredentialStore.load().getOrElse {
-            showMessage(getString(R.string.invalid_near_key))
+            CrashReporter.record(this, "near_key_load_failed:${it.javaClass.simpleName}")
+            CrashReporter.recordHandledError(this, "near_key_load", it)
+            showMessage(it.message ?: getString(R.string.invalid_near_key))
             return
         }
         nearOperationInProgress = true
@@ -918,7 +923,9 @@ class MainActivity : AppCompatActivity() {
     private fun runNearSelfTest() {
         if (nearSelfTestInProgress || nearOperationInProgress) return
         val credentials = nearCredentialStore.load().getOrElse {
-            showMessage(getString(R.string.invalid_near_key))
+            CrashReporter.record(this, "near_key_load_failed:${it.javaClass.simpleName}")
+            CrashReporter.recordHandledError(this, "near_key_load", it)
+            showMessage(it.message ?: getString(R.string.invalid_near_key))
             return
         }
         nearSelfTestInProgress = true

@@ -6,7 +6,6 @@ import android.security.keystore.KeyProperties
 import org.json.JSONObject
 import java.nio.charset.StandardCharsets
 import java.security.KeyStore
-import java.security.SecureRandom
 import java.util.Base64
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
@@ -16,7 +15,6 @@ import javax.crypto.spec.GCMParameterSpec
 class NearCredentialStore(context: Context) {
     private val preferences = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
     private val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
-    private val random = SecureRandom()
 
     fun hasCredentials(): Boolean = preferences.contains(KEY_CIPHERTEXT)
 
@@ -49,17 +47,22 @@ class NearCredentialStore(context: Context) {
             .toString()
             .toByteArray(StandardCharsets.UTF_8)
         try {
-            val iv = ByteArray(12).also(random::nextBytes)
             val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-            cipher.init(Cipher.ENCRYPT_MODE, encryptionKey(), GCMParameterSpec(128, iv))
+            cipher.init(Cipher.ENCRYPT_MODE, encryptionKey())
             cipher.updateAAD(AAD)
             val ciphertext = cipher.doFinal(plaintext)
+            val iv = cipher.iv
+            require(iv.size == 12) { "IV AES-GCM Android non valido" }
             check(
                 preferences.edit()
                     .putString(KEY_IV, Base64.getEncoder().encodeToString(iv))
                     .putString(KEY_CIPHERTEXT, Base64.getEncoder().encodeToString(ciphertext))
                     .commit()
             ) { "Impossibile salvare la chiave NEAR" }
+            val restored = load().getOrThrow()
+            require(restored.accountId == credentials.accountId &&
+                restored.publicKey.contentEquals(credentials.publicKey)
+            ) { "Verifica della chiave NEAR salvata non riuscita" }
         } finally {
             plaintext.fill(0)
         }
