@@ -301,7 +301,8 @@ M9  hardening, censorship resistance, testing, interoperability
 
 - [ ] Brand client ufficiale: **Freedom Messenger** — *Powered by Freedom Protocol*.
 - [ ] **Censorship resistance / path diversity:** nessun singolo server, relay, RPC endpoint, provider blockchain, fee relayer, IP o percorso di rete deve costituire un punto unico di controllo o interruzione.
-- [ ] **Network privacy:** evitare identificatori di rete stabili; supportare policy senza direct path e percorsi relay/shielded quando l'utente non vuole esporre il proprio endpoint al peer.
+- [ ] **Network privacy / metadata resistance:** evitare identificatori di rete stabili e correlabili; supportare alias/session identifiers pairwise o temporanei e percorsi relay/shielded quando l'utente non vuole esporre il proprio endpoint, minimizzando il più possibile latenza e overhead.
+- [ ] **Resilient bootstrap / rendezvous:** bootstrap, discovery, RPC e rendezvous devono avere fonti multiple, intercambiabili e verificabili; la perdita, censura o compromissione di una singola fonte non deve impedire a due peer autorizzati di ritrovarsi quando esiste almeno un percorso disponibile.
 - [ ] **Transport diversity:** consentire transport alternativi/sostituibili per ridurre la dipendenza da una singola firma di rete o classe di endpoint.
 - [ ] **Monetizzazione:** mantenere core interoperabile gratuito e monetizzare capacità relay/privacy gestita, funzioni Plus e servizi Business senza monetizzare contenuti o metadati di conversazione.
 
