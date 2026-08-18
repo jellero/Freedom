@@ -1,7 +1,9 @@
 package dev.freedom.app
 
 import android.app.Activity
+import android.content.pm.PackageManager
 import android.graphics.Color
+import android.os.Build
 import android.os.Bundle
 import android.text.InputType
 import android.view.Gravity
@@ -20,6 +22,7 @@ class MainActivity : Activity() {
     private lateinit var node: FreedomNode
 
     private lateinit var statusView: TextView
+    private lateinit var localAddressView: TextView
     private lateinit var remoteView: TextView
     private lateinit var sessionView: TextView
     private lateinit var hostInput: EditText
@@ -30,6 +33,7 @@ class MainActivity : Activity() {
     private lateinit var sendButton: Button
 
     private val logLines = ArrayDeque<String>()
+    private var nodeStarted = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -57,7 +61,7 @@ class MainActivity : Activity() {
                 statusView.text = "Stato: $reason"
                 remoteView.text = "Peer remoto: —"
                 sessionView.text = "Sessione: —"
-                connectButton.isEnabled = true
+                connectButton.isEnabled = hasLocalNetworkPermission()
                 disconnectButton.isEnabled = false
                 sendButton.isEnabled = false
                 appendLog("× $reason")
@@ -80,12 +84,67 @@ class MainActivity : Activity() {
                 appendLog("⚠ $message")
             }
         })
-        node.start()
+
+        startNodeOrRequestPermission()
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != REQUEST_LOCAL_NETWORK) return
+
+        if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
+            appendLog("✓ Accesso alla rete locale autorizzato")
+            refreshLocalAddresses()
+            startNode()
+        } else {
+            statusView.text = "Stato: accesso alla rete locale negato"
+            localAddressView.text = "IP locale: permesso rete locale necessario\nPorta: ${FreedomNode.PORT}"
+            connectButton.isEnabled = false
+            appendLog("⚠ Freedom M1 richiede l'accesso alla rete locale per collegarsi direttamente agli altri peer")
+        }
     }
 
     override fun onDestroy() {
         if (::node.isInitialized) node.close()
         super.onDestroy()
+    }
+
+    private fun startNodeOrRequestPermission() {
+        if (hasLocalNetworkPermission()) {
+            refreshLocalAddresses()
+            startNode()
+            return
+        }
+
+        connectButton.isEnabled = false
+        statusView.text = "Stato: autorizzazione rete locale richiesta"
+        appendLog("• Autorizza la rete locale per permettere connessioni P2P dirette")
+        requestPermissions(arrayOf(LOCAL_NETWORK_PERMISSION), REQUEST_LOCAL_NETWORK)
+    }
+
+    private fun startNode() {
+        if (nodeStarted) return
+        nodeStarted = true
+        connectButton.isEnabled = true
+        node.start()
+    }
+
+    private fun hasLocalNetworkPermission(): Boolean {
+        if (Build.VERSION.SDK_INT < 37) return true
+        return checkSelfPermission(LOCAL_NETWORK_PERMISSION) == PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun refreshLocalAddresses() {
+        val addresses = FreedomNode.localIpv4Addresses()
+        localAddressView.text = if (addresses.isEmpty()) {
+            "IP locale: non rilevato\nPorta: ${FreedomNode.PORT}"
+        } else {
+            "IP locale: ${addresses.joinToString(", ")}\nPorta: ${FreedomNode.PORT}"
+        }
     }
 
     private fun buildUi(): View {
@@ -117,20 +176,16 @@ class MainActivity : Activity() {
             setPadding(0, dp(6), 0, dp(10))
         })
 
-        val addresses = FreedomNode.localIpv4Addresses()
-        root.addView(TextView(this).apply {
-            text = if (addresses.isEmpty()) {
-                "IP locale: non rilevato\nPorta: ${FreedomNode.PORT}"
-            } else {
-                "IP locale: ${addresses.joinToString(", ")}\nPorta: ${FreedomNode.PORT}"
-            }
+        localAddressView = TextView(this).apply {
+            text = "IP locale: rilevamento…\nPorta: ${FreedomNode.PORT}"
             setTextIsSelectable(true)
             setPadding(0, 0, 0, dp(18))
-        })
+        }
+        root.addView(localAddressView)
 
         root.addView(section("CONNESSIONE"))
         statusView = TextView(this).apply {
-            text = "Stato: avvio listener…"
+            text = "Stato: inizializzazione…"
             setPadding(0, dp(6), 0, dp(8))
         }
         root.addView(statusView)
@@ -148,6 +203,7 @@ class MainActivity : Activity() {
         }
         connectButton = Button(this).apply {
             text = "Connetti"
+            isEnabled = false
             setOnClickListener { node.connect(hostInput.text.toString()) }
         }
         disconnectButton = Button(this).apply {
@@ -245,4 +301,9 @@ class MainActivity : Activity() {
         LinearLayout.LayoutParams.WRAP_CONTENT,
         1f
     )
+
+    companion object {
+        private const val LOCAL_NETWORK_PERMISSION = "android.permission.ACCESS_LOCAL_NETWORK"
+        private const val REQUEST_LOCAL_NETWORK = 1001
+    }
 }
