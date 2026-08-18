@@ -229,6 +229,50 @@ Un IP, dominio o endpoint specifico non deve essere requisito permanente del pro
 
 Freedom non può garantire disponibilità se il dispositivo perde ogni forma di connettività, né anonimato assoluto contro un avversario globale capace di osservare l'intera rete.
 
+### 11.1 Adaptive recovery control-plane
+
+Il registro/rendezvous può essere usato come **control-plane di emergenza** quando il data-plane non passa.
+
+Freedom non pubblica una presenza globale continua. Dopo la perdita completa del path, A e B possono pubblicare negli slot pairwise opachi un `RecoveryBeacon` cifrato e a TTL breve:
+
+```text
+RecoveryBeacon {
+    version
+    issued_at
+    expires_at
+    recovery_nonce
+    route_generation
+    state
+    candidate_hints[]?
+}
+```
+
+Un beacon valido prova attività recente, non presenza assoluta in tempo reale.
+
+Se:
+
+```text
+A control-plane reachable        yes
+B beacon recent                  yes
+current A<->B data path          fail
+```
+
+A può classificare il caso come `INTERFERENCE_OR_ROUTE_FAILURE_SUSPECTED` e attivare route/relay/transport alternativi. B applica la stessa logica.
+
+Il recovery può anche coordinare candidate alternativi attraverso il payload cifrato del rendezvous.
+
+Vincoli:
+
+- nessun heartbeat on-chain continuo durante una sessione valida;
+- slot pairwise opachi e rotanti;
+- payload cifrato;
+- TTL breve;
+- backoff e rate limit;
+- stop delle write appena una sessione viene ristabilita;
+- nessun claim che il sistema abbia rilevato sorveglianza passiva.
+
+Dettagli: [`ADAPTIVE_DEFENSE.md`](ADAPTIVE_DEFENSE.md).
+
 ## 12. Relay architecture
 
 Un relay Freedom è un endpoint di forwarding transitivo.
@@ -354,6 +398,8 @@ Un fee relayer:
 
 La private key di un fee relayer non deve mai essere incorporata nel client distribuito.
 
+Recovery beacon e coordinamento anti-failure possono produrre write aggiuntive solo quando il data-plane è perso o una policy di resilienza le richiede; non devono diventare heartbeat continui.
+
 ## 19. Bootstrap della rete
 
 Freedom distingue bootstrap dalla fiducia.
@@ -381,9 +427,9 @@ Il registro distribuito non è nel packet hot path.
 
 ## 21. Monetizzazione e indipendenza
 
-I servizi commerciali ufficiali possono offrire capacità relay gestita, percorsi privacy, funzionalità Plus, SDK, deployment e supporto Business.
+I servizi commerciali ufficiali possono offrire capacità relay gestita, percorsi privacy, Freedom Shield/Maximum Resilience, funzionalità Plus, SDK, deployment e supporto Business.
 
-Questi servizi non devono diventare requisiti del protocollo. Un client compatibile deve poter continuare a stabilire sessioni Freedom anche se l'infrastruttura commerciale ufficiale non è disponibile.
+Questi servizi non devono diventare requisiti del protocollo. Un client compatibile deve poter continuare a stabilire e recuperare sessioni Freedom anche se l'infrastruttura commerciale ufficiale non è disponibile, quando esiste un percorso compatibile.
 
 Vedi [`MONETIZATION.md`](MONETIZATION.md).
 
@@ -400,4 +446,5 @@ Freedom mira a mantenere queste invarianti:
 - relay incapace di leggere il contenuto;
 - direct path non obbligatorio;
 - componenti di bootstrap, RPC, relay e fee relayer sostituibili;
-- scritture on-chain proporzionali agli eventi di identità e ai casi di perdita completa del route, non al volume della comunicazione.
+- recovery beacon pairwise e temporanei, non presenza globale continua;
+- scritture on-chain proporzionali agli eventi di identità e ai casi di perdita completa del route/recovery, non al volume della comunicazione.
