@@ -15,9 +15,16 @@ semplicità di onboarding
  -> chiamata audio
  -> videochiamata
  -> modalità Live
+ -> trasparenza sullo stato di rete quando serve
 ```
 
 Una feature non deve entrare nel launch scope se aumenta in modo rilevante complessità, superficie d'attacco o instabilità senza rafforzare direttamente questa esperienza.
+
+Principio UX:
+
+> **Semplice quando tutto funziona. Trasparente quando qualcosa cerca di impedirti di comunicare.**
+
+Freedom non deve necessariamente nascondere ogni dettaglio di rete per assomigliare a un messenger generalista. È un prodotto anche per utenti che hanno bisogno di capire quando la propria capacità di comunicare viene limitata.
 
 ---
 
@@ -41,6 +48,8 @@ La prima versione destinata a Founder Cohort, reviewer, creator e successivament
 - route selection coerente con la privacy policy scelta;
 - possibilità di evitare il direct path quando la protezione dell'endpoint è prioritaria;
 - rilevamento base di route failure e fallback tra percorsi/provider disponibili;
+- **Freedom Network Indicator** sempre accessibile;
+- apertura automatica del pannello Network quando viene rilevata un'anomalia significativa;
 - blocco contatto e funzioni minime richieste dai client ufficiali/store.
 
 ### 2.2 Esperienza target
@@ -68,6 +77,8 @@ L'utente non deve essere obbligato a comprendere:
 - blockchain adapter.
 
 Questi sono dettagli del protocollo/control plane e devono rimanere invisibili nell'uso normale.
+
+Quando però si verifica un problema di rete, Freedom deve poter spiegare in modo leggibile i fatti osservati e le contromisure attivate.
 
 ---
 
@@ -205,7 +216,35 @@ Il client può quindi mostrare:
 
 Non deve mostrare claim come "sei sorvegliato" o attribuire il blocco a un soggetto specifico senza evidenza.
 
-### 7.1 Core gratuito
+### 7.1 Freedom Network Indicator
+
+Il client deve mostrare un indicatore di rete piccolo, sempre accessibile e cliccabile.
+
+Stati concettuali:
+
+```text
+NORMAL
+SHIELDED
+DEGRADED
+SUSPECTED
+UNAVAILABLE
+```
+
+Una UI può rappresentarli con un pallino multicolore, ma colore, testo e icona devono comunicare insieme lo stato.
+
+Quando lo stato passa a `SUSPECTED` o `UNAVAILABLE`, il pannello Network può aprirsi automaticamente una volta per incidente e mostrare:
+
+- attività recente del peer;
+- stato del registry/control-plane;
+- classe di route corrente;
+- failure osservate;
+- fallback attivo o tentato;
+- livello di protezione;
+- distinzione tra fatto osservato e inferenza.
+
+Dettagli: [`NETWORK_STATUS_UI.md`](NETWORK_STATUS_UI.md).
+
+### 7.2 Core gratuito
 
 La resilienza minima resta nel core:
 
@@ -214,9 +253,15 @@ La resilienza minima resta nel core:
 - relay/path fallback;
 - recovery rendezvous;
 - rilevamento `peer recently active + data path unavailable`;
-- route switch automatico quando esiste un'alternativa.
+- route switch automatico quando esiste un'alternativa;
+- stesso stato di rete significativo mostrato agli utenti Free e Pro;
+- quota limitata di **Emergency Shield** gestito quando necessaria per superare un blocco e quando disponibile.
 
-### 7.2 Freedom Pro — Shield
+Freedom non deve rilevare una probabile censura e lasciare intenzionalmente l'utente offline per creare un paywall.
+
+La quota gratuita può essere rappresentata nell'UX come messaggi/sessioni di emergenza, ma il limite interno deve essere progettato in base ai costi reali di banda, relay, voce/video e abuso. Il numero definitivo non va fissato prima delle misurazioni.
+
+### 7.3 Freedom Pro — Shield
 
 Il piano Pro può offrire capacità più costose:
 
@@ -229,11 +274,14 @@ Il piano Pro può offrire capacità più costose:
 - transport rotation più aggressiva;
 - pool bridge/non-public quando disponibile;
 - padding/metadata protection opzionale;
-- **Maximum Resilience** con più percorsi indipendenti pronti prima del failure.
+- **Maximum Resilience** con più percorsi indipendenti pronti prima del failure;
+- budget Shield gestito molto superiore al Free.
 
-La sicurezza crittografica di base non deve dipendere dal piano Pro.
+La sicurezza crittografica di base, la classificazione tecnica degli eventi e la spiegazione all'utente non devono dipendere dal piano Pro.
 
-Dettagli: [`ADAPTIVE_DEFENSE.md`](ADAPTIVE_DEFENSE.md).
+Il client non deve usare paura o falsi positivi per spingere l'upgrade.
+
+Dettagli: [`ADAPTIVE_DEFENSE.md`](ADAPTIVE_DEFENSE.md) e [`NETWORK_STATUS_UI.md`](NETWORK_STATUS_UI.md).
 
 ---
 
@@ -251,6 +299,7 @@ V1 — Launch
   automatic identity/bootstrap
   route/privacy policy
   basic route failure detection/fallback
+  Freedom Network Indicator
 
 V1.5 — Live Groups
   small group text
@@ -288,6 +337,7 @@ Blocker:
 - perdita/corruzione identità;
 - chiamate 1:1 non sufficientemente stabili per una demo reale;
 - differenza poco chiara tra online, sessione attiva e non raggiungibile;
+- Network Indicator che genera falsi allarmi sistematici;
 - privacy claim non ancora implementati;
 - dipendenza hardcoded da credenziali personali o singola infrastruttura non sostituibile.
 
@@ -302,3 +352,5 @@ Freedom deve resistere alla tentazione di diventare un messenger generalista pri
 Priorità:
 
 > **prima rendere impeccabile una comunicazione privata live tra due persone; poi estendere la stessa semantica a più persone e rafforzare progressivamente la resilienza di rete.**
+
+Freedom deve essere semplice nell'uso quotidiano senza nascondere agli utenti che ne hanno bisogno informazioni importanti sulla salute e sulle interferenze della rete.
