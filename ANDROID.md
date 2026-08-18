@@ -128,6 +128,8 @@ check local current rendezvous
   empty -> publish one offer
 ```
 
+Ogni rendezvous letto è autosufficiente: il client non mantiene una revisione precedente e non deve conoscere uno storico per interpretarlo. Un nuovo rendezvous viene creato da zero con nuovo nonce/materiale effimero.
+
 La UI normale non deve mostrare transazioni o dettagli chain salvo errore.
 
 La modalità debug mostra:
@@ -135,11 +137,12 @@ La modalità debug mostra:
 ```text
 remote slot
 local slot
-rendezvous sequence
 expires_at
 chain tx id
 candidate count
 ```
+
+Non esiste un `rendezvous sequence` o `revision`.
 
 ## M3 — Secure session
 
@@ -183,6 +186,8 @@ RouteUpdate -> E2EE session
 ```
 
 Nessuna write blockchain.
+
+I sequence number eventualmente usati nei `RouteUpdate` o nei frame cifrati appartengono esclusivamente alla sessione attiva per ordinamento/anti-replay e non sono revisioni del rendezvous blockchain.
 
 ## NAT traversal
 
@@ -334,6 +339,8 @@ Session ID
 TX/RX sequence
 RTT
 ```
+
+`TX/RX sequence` riguarda la sessione cifrata, non il rendezvous on-chain.
 
 Non mostrare private/session/rendezvous secrets in chiaro.
 
