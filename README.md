@@ -4,44 +4,55 @@
 
 Freedom è un protocollo decentralizzato di comunicazione che permette a dispositivi identificati crittograficamente di stabilire sessioni sicure senza dipendere da un server centrale di messaggistica.
 
-La blockchain non trasporta messaggi, file, audio o video. Viene usata come registro verificabile delle identità dei dispositivi e come meccanismo di rendezvous di fallback quando due dispositivi online non dispongono più di un percorso valido per raggiungersi.
+La blockchain non trasporta messaggi, file, audio o video. Viene usata come prima implementazione di un **registro distribuito e verificabile** per identità, key rotation/revocation e rendezvous di fallback quando due dispositivi online non dispongono più di un percorso valido per raggiungersi.
 
 Il traffico applicativo viaggia fuori dalla blockchain, direttamente tra endpoint oppure attraverso relay transitivi che inoltrano ciphertext senza possedere le chiavi della conversazione.
 
-> Principio operativo: **identity on-chain, communication off-chain, rendezvous on-chain only when needed.**
+> Principio operativo: **verifiable identity, off-chain communication, distributed rendezvous only when needed.**
 
 ## Obiettivi
 
 - identità dei dispositivi verificabili crittograficamente;
 - cifratura end-to-end obbligatoria;
 - nessun server centrale di messaggistica necessario;
-- comunicazione diretta quando il percorso di rete lo consente;
-- NAT traversal e relay come percorsi alternativi;
+- comunicazione **sincrona by design**: nessuna mailbox o coda di consegna offline nel protocollo base;
+- modalità Live/effimera nei client compatibili;
+- comunicazione diretta quando il percorso di rete e la policy privacy lo consentono;
+- NAT traversal, relay e percorsi alternativi;
 - aggiornamenti di route scambiati direttamente durante una sessione attiva;
 - scritture blockchain ridotte al minimo tramite read-before-write;
 - nessun messaggio persistito nella rete Freedom;
 - nessun messaggio o media memorizzato sulla blockchain;
 - relay `forward-only`, con buffer limitati e temporanei;
-- protocollo indipendente da Android, iOS e dagli store;
+- nessun singolo server, relay, RPC, provider, IP o percorso deve essere requisito permanente per il funzionamento del protocollo;
+- protocollo indipendente da Android, iOS, store e servizi commerciali ufficiali;
 - possibilità di sostituire la blockchain tramite un adapter senza cambiare il protocollo applicativo.
 
 ## Architettura
 
 ![Architettura del sistema Freedom](docs/assets/freedom-architecture.svg)
 
-Per la consegna di un messaggio applicativo entrambi gli endpoint devono essere online. Se il destinatario non è raggiungibile, il messaggio resta sul dispositivo mittente e non viene disseminato automaticamente nella rete.
+Per la consegna di un messaggio applicativo deve esistere una sessione autenticata attiva tra gli endpoint. Se il destinatario non è raggiungibile, il protocollo base **non accoda il messaggio per una consegna futura** e non lo dissemina nella rete.
 
 ## Architettura in una frase
 
 ```text
-DeviceID -> blockchain identity -> rendezvous fallback -> route -> authenticated E2EE session -> messages/media
+DeviceID -> verifiable registry -> rendezvous fallback -> route -> authenticated E2EE live session -> messages/media
 ```
 
-## Blockchain iniziale
+## Registro distribuito e blockchain
+
+Freedom necessita della **funzione** di un registro distribuito e verificabile per:
+
+- risolvere `DeviceID -> identity_public_key`;
+- verificare key rotation e revocation;
+- pubblicare/leggere rendezvous di fallback quando tutte le route note sono perse.
+
+Questa funzione è fondamentale per il trust model attuale. **NEAR non è fondamentale come tecnologia specifica.**
 
 La prima implementazione usa **NEAR Testnet** attraverso un'interfaccia `ChainAdapter`.
 
-NEAR non fa parte del wire protocol Freedom: è la prima implementazione del registro decentralizzato. Il core deve poter supportare in futuro adapter differenti senza cambiare DeviceID, session protocol o formato dei messaggi.
+NEAR non fa parte del wire protocol Freedom: è la prima implementazione del registro decentralizzato. Il core deve poter supportare adapter differenti senza cambiare DeviceID, session protocol o formato dei messaggi.
 
 ```text
 ChainAdapter
@@ -49,9 +60,9 @@ ChainAdapter
   |- ...                   <- future implementazioni
 ```
 
-## Ruolo della blockchain
+Durante una sessione attiva il registro non è nel packet hot path e non viene interrogato o scritto per ogni messaggio.
 
-La chain mantiene solo stato minimo e verificabile.
+## Ruolo del registro
 
 ### Device identity
 
@@ -69,7 +80,7 @@ Il `DeviceID` è stabile e non coincide con l'hash della chiave pubblica, così 
 
 ### Rendezvous
 
-La blockchain viene usata per ristabilire un percorso solo quando non esiste più alcun route Freedom valido tra due endpoint online.
+Il registro viene usato per ristabilire un percorso solo quando non esiste più alcuna route Freedom valida tra due endpoint online.
 
 Regola fondamentale:
 
@@ -85,8 +96,6 @@ Appena viene ristabilita una sessione, gli aggiornamenti di endpoint, NAT candid
 
 Un contatto Freedom viene scambiato intenzionalmente tramite QR, link, NFC o copia/incolla.
 
-Il QR può contenere:
-
 ```text
 FreedomContact {
     network
@@ -100,7 +109,7 @@ FreedomContact {
 
 Dopo il primo handshake autenticato, i due endpoint derivano un `PairRendezvousSecret` locale usato per generare slot on-chain opachi e rotanti per le riconnessioni successive.
 
-## Routing e NAT
+## Routing, privacy di rete e censura
 
 Freedom distingue identità e raggiungibilità.
 
@@ -122,16 +131,29 @@ RouteCandidate {
 }
 ```
 
-Non basta monitorare l'IP: sotto NAT possono cambiare porta pubblica, mapping e percorso anche con lo stesso indirizzo esterno.
+Un indirizzo IP non è un'identità Freedom e non deve diventare un identificatore stabile del device.
 
-Ordine preferito di connessione:
+La comunicazione diretta è efficiente ma espone necessariamente gli endpoint di rete ai peer. Per questo Freedom deve permettere policy in cui il direct path sia disabilitato e il traffico passi attraverso relay o percorsi schermati quando la privacy di rete è prioritaria.
+
+Ordine di tentativo e policy non sono fissi universalmente: il client può scegliere tra direct, NAT traversal, relay e percorsi privacy in base a disponibilità, rischio e preferenze dell'utente.
+
+Se tutte le route conosciute falliscono, il rendezvous distribuito viene usato per recuperare nuovi candidate.
+
+## Censorship resistance / path diversity
+
+Freedom non promette invisibilità assoluta o disponibilità contro un avversario capace di interrompere completamente la connettività. L'obiettivo è evitare **single points of control**.
+
+Il protocollo deve poter degradare e cambiare percorso quando tecnicamente possibile:
 
 ```text
-1. percorso diretto già noto
-2. NAT traversal / hole punching
-3. relay Freedom
-4. rendezvous blockchain se tutti i percorsi sono persi
+direct path blocked     -> altro route
+relay A blocked         -> relay B / altro path
+RPC A blocked           -> RPC B
+provider unavailable    -> provider alternativo
+transport filtrato      -> transport alternativo
 ```
+
+Bootstrap, RPC, relay, fee relayer e provider devono essere multipli e sostituibili. Nessuno deve autenticare un DeviceID solo perché controlla il percorso di rete.
 
 ## Relay
 
@@ -156,7 +178,7 @@ Principio: **forward, not store**.
 
 Una route non autentica un peer. Dopo aver trovato un percorso, gli endpoint eseguono un handshake autenticato bilateralmente.
 
-La chiave pubblica attesa viene risolta dal `DeviceID` tramite blockchain. Entrambe le parti devono dimostrare il possesso della private key corrispondente.
+La chiave pubblica attesa viene risolta dal `DeviceID` tramite `ChainAdapter`. Entrambe le parti devono dimostrare il possesso della private key corrispondente.
 
 Il transcript dell'handshake deve legare almeno:
 
@@ -170,7 +192,7 @@ Il transcript dell'handshake deve legare almeno:
 
 Il progetto deve usare primitive e protocolli crittografici standard, non crittografia proprietaria.
 
-## Messaggistica
+## Messaggistica sincrona
 
 Una volta stabilita la sessione:
 
@@ -181,7 +203,42 @@ Alice <============================> Bob
 
 Messaggi, ACK, file metadata, signaling chiamate e route update vengono trasportati nel canale sicuro.
 
-Se Bob va offline e non esiste alcun percorso, Alice non deposita automaticamente il messaggio sulla blockchain o sui relay: resta pending localmente.
+Se non esiste una sessione autenticata attiva o il peer non è raggiungibile, il protocollo base non deposita il messaggio sulla blockchain, sui relay o in una coda locale per consegna futura.
+
+I client possono offrire una modalità **Live** in cui la cronologia della sessione non viene persistita e lo stato locale della conversazione viene eliminato alla chiusura/uscita secondo la policy del client.
+
+## Gas e fee relayer
+
+Le rare operazioni on-chain possono richiedere fee della chain. Freedom può supportare **fee relayer indipendenti** che sponsorizzano il gas senza possedere l'identità dell'utente.
+
+Requisiti:
+
+- la private identity key resta sul device;
+- nessuna private key del relayer dentro l'APK/client;
+- un relayer non può firmare come DeviceID;
+- più relayer devono poter coesistere;
+- il blocco di un singolo relayer non deve bloccare il protocollo;
+- messaggi, ACK, file, audio, video e route update in-session non generano transazioni on-chain.
+
+## Monetizzazione
+
+Freedom non deve monetizzare il contenuto delle conversazioni o richiedere storage centrale dei messaggi.
+
+Principio economico:
+
+> **monetizzare capacità, comodità e servizi professionali; non la conversazione.**
+
+Possibili linee:
+
+- core messaging/live E2EE gratuito;
+- **Freedom Plus** per capacità relay gestita, percorsi privacy/multi-hop, limiti superiori e funzioni client avanzate;
+- **Freedom Business** per SDK, deployment, relay dedicati, supporto e SLA;
+- relay community/best-effort e relay gestiti a pagamento opzionale;
+- fee relayer per gas sostituibili e non autoritativi.
+
+La monetizzazione non deve trasformare Freedom in un servizio dipendente da un singolo soggetto commerciale.
+
+Dettagli: [`docs/MONETIZATION.md`](docs/MONETIZATION.md).
 
 ## Store
 
@@ -221,6 +278,7 @@ DeviceID
 - [`docs/PROTOCOL.md`](docs/PROTOCOL.md) — oggetti e flussi del protocollo.
 - [`docs/CHAIN.md`](docs/CHAIN.md) — NEAR, Device Registry e rendezvous.
 - [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md) — modello di sicurezza.
+- [`docs/MONETIZATION.md`](docs/MONETIZATION.md) — principi economici e servizi opzionali.
 - [`docs/STORE_COMPLIANCE.md`](docs/STORE_COMPLIANCE.md) — separazione protocollo/client e vincoli store.
 - [`ANDROID.md`](ANDROID.md) — roadmap Android.
 
@@ -236,12 +294,15 @@ M5  relay forward-only
 M6  messaging + attachments
 M7  voice/video
 M8  iOS + platform wake integration
-M9  hardening, testing, interoperability
+M9  hardening, censorship resistance, testing, interoperability
 ```
 
 ## TODO
 
 - [ ] Brand client ufficiale: **Freedom Messenger** — *Powered by Freedom Protocol*.
-- [ ] **Censorship resistance / path diversity:** nessun singolo server, relay, RPC endpoint, provider blockchain o percorso di rete deve costituire un punto unico di controllo o interruzione. Freedom deve poter cambiare route e continuare a funzionare, quando tecnicamente possibile, se singoli relay, endpoint RPC o percorsi vengono bloccati, rimossi o compromessi.
+- [ ] **Censorship resistance / path diversity:** nessun singolo server, relay, RPC endpoint, provider blockchain, fee relayer, IP o percorso di rete deve costituire un punto unico di controllo o interruzione.
+- [ ] **Network privacy:** evitare identificatori di rete stabili; supportare policy senza direct path e percorsi relay/shielded quando l'utente non vuole esporre il proprio endpoint al peer.
+- [ ] **Transport diversity:** consentire transport alternativi/sostituibili per ridurre la dipendenza da una singola firma di rete o classe di endpoint.
+- [ ] **Monetizzazione:** mantenere core interoperabile gratuito e monetizzare capacità relay/privacy gestita, funzioni Plus e servizi Business senza monetizzare contenuti o metadati di conversazione.
 
-Freedom è definito dalle proprietà tecniche del protocollo: identità verificabile, comunicazione E2EE, routing distribuito, relay non fidati e minima dipendenza dalla blockchain durante una sessione attiva.
+Freedom è definito dalle proprietà tecniche del protocollo: identità verificabile, comunicazione E2EE sincrona, routing distribuito, relay non fidati, path diversity e minima dipendenza dal registro distribuito durante una sessione attiva.
