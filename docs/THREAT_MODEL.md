@@ -71,10 +71,11 @@ Livelli di replay:
 
 Mitigato da:
 
-- `sequence`;
 - `expires_at`;
 - slot rotanti;
-- nonce nel payload.
+- nonce nuovo nel payload;
+- verifica dello slot e dello stato chain attesi;
+- autenticazione del payload.
 
 ### Session frames
 
@@ -91,7 +92,7 @@ Un record vecchio ma autentico può indicare un route non più valido.
 Difese:
 
 - TTL corto;
-- sequence;
+- record autosufficienti con nonce nuovo;
 - candidate expiration;
 - preferenza per route update ricevuti in-session;
 - chain usata solo dopo fallimento dei percorsi locali.

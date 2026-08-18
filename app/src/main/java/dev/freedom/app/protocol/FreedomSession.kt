@@ -1,7 +1,7 @@
 package dev.freedom.app.protocol
 
 import dev.freedom.app.crypto.Crypto
-import dev.freedom.app.crypto.IdentityStore
+import dev.freedom.app.crypto.DeviceIdentity
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.Closeable
@@ -99,17 +99,17 @@ class FreedomSession private constructor(
         private const val RESPONDER_TO_INITIATOR = 2
         private const val MAX_HANDSHAKE_BLOB = 16 * 1024
         private const val MAX_FRAME_BYTES = 256 * 1024
-        private const val MAX_TEXT_BYTES = 64 * 1024
+        const val MAX_TEXT_BYTES = 64 * 1024
 
-        fun initiate(socket: Socket, identity: IdentityStore): FreedomSession =
+        fun initiate(socket: Socket, identity: DeviceIdentity): FreedomSession =
             handshake(socket, identity, initiator = true)
 
-        fun accept(socket: Socket, identity: IdentityStore): FreedomSession =
+        fun accept(socket: Socket, identity: DeviceIdentity): FreedomSession =
             handshake(socket, identity, initiator = false)
 
         private fun handshake(
             socket: Socket,
-            identity: IdentityStore,
+            identity: DeviceIdentity,
             initiator: Boolean
         ): FreedomSession {
             socket.tcpNoDelay = true

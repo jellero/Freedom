@@ -8,7 +8,7 @@ import java.security.PrivateKey
 import java.security.PublicKey
 import java.security.spec.ECGenParameterSpec
 
-class IdentityStore {
+class IdentityStore : DeviceIdentity {
     private val alias = "freedom.identity.m1"
     private val keyStore: KeyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
 
@@ -16,13 +16,13 @@ class IdentityStore {
         ensureIdentity()
     }
 
-    val privateKey: PrivateKey
+    override val privateKey: PrivateKey
         get() = keyStore.getKey(alias, null) as PrivateKey
 
-    val publicKey: PublicKey
+    override val publicKey: PublicKey
         get() = keyStore.getCertificate(alias).publicKey
 
-    val fingerprint: String
+    override val fingerprint: String
         get() = Crypto.fingerprint(publicKey)
 
     private fun ensureIdentity() {

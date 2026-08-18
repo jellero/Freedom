@@ -200,7 +200,7 @@ Freedom è un sistema di contatti espliciti tramite DeviceID/QR, non una random 
 
 ## Stato del codice Android
 
-Il codice Android presente nel repository è un **transport/crypto spike precedente alla specifica attuale**. Dimostra socket diretto e handshake cifrato, ma usa ancora IP manuale e fingerprint/TOFU.
+Il codice Android presente nel repository è un **transport/crypto spike precedente alla specifica attuale**. Dimostra socket diretto, handshake cifrato e pinning esplicito del fingerprint al primo contatto, ma usa ancora IP manuale e non risolve l'identità tramite blockchain.
 
 Non rappresenta più l'M1 canonico. Verrà rifattorizzato seguendo questa sequenza:
 
@@ -214,6 +214,18 @@ DeviceID
  -> mutual authentication
  -> E2EE messaging
 ```
+
+Lo spike rifiuta cambi di fingerprint già approvati, limita handshake/thread/queue e richiede conferma esplicita prima di rendere utilizzabile una nuova sessione. Queste protezioni servono al laboratorio TCP corrente; nel protocollo canonico il trust anchor sarà la chiave corrente risolta dal `DeviceID` tramite chain.
+
+## Build e test Android
+
+Il repository include Gradle Wrapper 9.7 e richiede JDK 17 e Android SDK 37.
+
+```text
+./gradlew testDebugUnitTest assembleDebug lintDebug
+```
+
+La CI esegue gli stessi controlli su ogni push e pull request.
 
 ## Documentazione
 

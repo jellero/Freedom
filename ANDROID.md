@@ -4,7 +4,7 @@
 
 Android è la prima piattaforma di implementazione.
 
-Il codice attualmente presente sotto `app/` è un **transport/crypto spike** sviluppato prima della specifica corrente. Dimostra una connessione TCP diretta, un handshake autenticato e messaggi cifrati, ma usa ancora IP manuale e fingerprint/TOFU.
+Il codice attualmente presente sotto `app/` è un **transport/crypto spike** sviluppato prima della specifica corrente. Dimostra una connessione TCP diretta, un handshake autenticato, messaggi cifrati e pinning esplicito del fingerprint approvato, ma usa ancora IP manuale.
 
 Questa parte resta utile come laboratorio di trasporto, ma **non è più l'M1 canonico**.
 
@@ -165,7 +165,7 @@ Identity verified
 End-to-end encrypted
 ```
 
-Il fingerprint manuale/TOFU del vecchio spike viene rimosso dal normale flusso.
+Il pinning manuale del vecchio spike viene sostituito nel normale flusso dalla verifica della chiave corrente risolta tramite `DeviceID` e chain.
 
 ## M4 — Route maintenance
 
@@ -346,7 +346,7 @@ Non mostrare private/session/rendezvous secrets in chiaro.
 
 ## Build
 
-Il progetto Android esistente usa attualmente Android Gradle Plugin 9.3.x e API 37. Prima di investire nella UI definitiva va completato il refactor architetturale e aggiunta una pipeline CI che esegua almeno:
+Il progetto Android esistente usa Android Gradle Plugin 9.3.x, Gradle Wrapper 9.7 e API 37. La pipeline CI esegue:
 
 ```text
 assembleDebug

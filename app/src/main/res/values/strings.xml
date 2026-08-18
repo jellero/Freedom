@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Freedom M1</string>
+    <string name="status_format">Stato: %1$s</string>
+    <string name="status_verification_required">Stato: verifica identità richiesta</string>
+    <string name="peer_to_verify_format">Peer da verificare (%1$s):\n%2$s\n\nConfronta questa impronta sull\'altro dispositivo. Autorizza il peer solo se coincide: verrà memorizzata e controllata nelle connessioni future.</string>
+    <string name="session_pending_format">Sessione in attesa: %1$s…</string>
+    <string name="status_connected_format">Stato: connesso a %1$s</string>
+    <string name="peer_verified_format">Peer remoto verificato:\n%1$s</string>
+    <string name="session_ephemeral_format">Sessione effimera: %1$s…</string>
+    <string name="remote_peer_empty">Peer remoto: —</string>
+    <string name="session_empty">Sessione: —</string>
+    <string name="status_local_network_denied">Stato: accesso alla rete locale negato</string>
+    <string name="local_network_permission_required_format">IP locale: permesso rete locale necessario\nPorta: %1$d</string>
+    <string name="status_local_network_requested">Stato: autorizzazione rete locale richiesta</string>
+    <string name="local_address_not_detected_format">IP locale: non rilevato\nPorta: %1$d</string>
+    <string name="local_address_format">IP locale: %1$s\nPorta: %2$d</string>
+    <string name="screen_title">Freedom · Android M1</string>
+    <string name="screen_subtitle">P2P E2EE test client · nessun server di messaggistica</string>
+    <string name="section_local_identity">IDENTITÀ LOCALE</string>
+    <string name="local_fingerprint_format">Fingerprint dispositivo:\n%1$s</string>
+    <string name="local_address_detecting_format">IP locale: rilevamento…\nPorta: %1$d</string>
+    <string name="section_connection">CONNESSIONE</string>
+    <string name="status_initializing">Stato: inizializzazione…</string>
+    <string name="host_hint">IP peer, es. 192.168.1.42</string>
+    <string name="connect">Connetti</string>
+    <string name="disconnect">Disconnetti</string>
+    <string name="trust_peer">Autorizza peer</string>
+    <string name="reject">Rifiuta</string>
+    <string name="section_encrypted_messages">MESSAGGI CIFRATI</string>
+    <string name="connection_instructions">Avvia Freedom su due telefoni collegati alla stessa rete Wi-Fi.\nSul telefono A inserisci l\'IP mostrato dal telefono B.</string>
+    <string name="message_hint">Messaggio</string>
+    <string name="send_e2ee">Invia E2EE</string>
+    <string name="spike_notice">Lo spike usa IP esplicito e pinning del fingerprint approvato al primo contatto. Blockchain, DHT, relay, media e discovery automatico arrivano nei milestone successivi.</string>
+</resources>

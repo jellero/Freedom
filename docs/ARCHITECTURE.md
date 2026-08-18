@@ -130,7 +130,6 @@ Il record esterno deve rivelare il minimo indispensabile.
 RendezvousRecord {
     version
     opaque_slot
-    sequence
     expires_at
     ciphertext
 }
@@ -149,7 +148,7 @@ RendezvousPayload {
 }
 ```
 
-Il record ha TTL breve e sequence monotono. Non viene cancellato dopo l'uso: scade naturalmente, evitando una scrittura aggiuntiva.
+Il record ha TTL breve, nonce nuovo e contenuto autosufficiente. Non usa sequence o revisioni storiche e non viene cancellato dopo l'uso: scade naturalmente, evitando una scrittura aggiuntiva. Freshness e anti-replay derivano dallo slot atteso, dallo stato chain verificato, da `expires_at` e dall'autenticazione del payload.
 
 ## 8. Route candidates
 
