@@ -32,7 +32,7 @@
     <string name="cancel">Annulla</string>
     <string name="save">Salva</string>
     <string name="contact_found">Contatto trovato</string>
-    <string name="contact_not_found">Numero non trovato sulla rete locale. Il rendezvous blockchain non è ancora disponibile.</string>
+    <string name="contact_not_found">Contatto non raggiungibile sulla rete locale. Il relay remoto non è configurato in questa build.</string>
     <string name="invalid_contact">Il QR non contiene un contatto Freedom valido.</string>
     <string name="invalid_number">Inserisci un numero Freedom valido di 12 cifre.</string>
     <string name="scanner_error_format">Scanner non disponibile: %1$s</string>

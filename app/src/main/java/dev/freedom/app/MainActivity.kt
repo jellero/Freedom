@@ -88,6 +88,8 @@ class MainActivity : AppCompatActivity() {
     private var chainHealth: ChainHealth? = null
     private var chainHealthError: String? = null
     private var chainHealthLoading = false
+    private var systemBottomInset = 0
+    private var imeBottomInset = 0
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private val chainExecutor = Executors.newSingleThreadExecutor()
@@ -192,6 +194,9 @@ class MainActivity : AppCompatActivity() {
 
         ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
             val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
+            systemBottomInset = systemBars.bottom
+            imeBottomInset = ime.bottom
 
             toolbar.setPadding(
                 toolbar.paddingLeft,
@@ -213,6 +218,17 @@ class MainActivity : AppCompatActivity() {
                 (bottomNavigation.layoutParams as LinearLayout.LayoutParams).apply {
                     height = navigationHeight + systemBars.bottom
                 }
+
+            content.setPadding(
+                content.paddingLeft,
+                content.paddingTop,
+                content.paddingRight,
+                if (bottomNavigation.visibility == View.GONE) {
+                    maxOf(systemBars.bottom, ime.bottom)
+                } else {
+                    0
+                }
+            )
 
             WindowInsetsCompat.CONSUMED
         }
@@ -903,6 +919,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun prepareTopLevel(title: String, subtitle: String, selectedItem: Int) {
         bottomNavigation.visibility = View.VISIBLE
+        ViewCompat.requestApplyInsets(appRoot)
         if (bottomNavigation.selectedItemId != selectedItem) {
             bottomNavigation.menu.findItem(selectedItem).isChecked = true
         }
@@ -923,6 +940,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun prepareDetail(title: String, subtitle: String? = null) {
         bottomNavigation.visibility = View.GONE
+        ViewCompat.requestApplyInsets(appRoot)
         toolbar.menu.clear()
         toolbar.title = title
         toolbar.subtitle = subtitle
@@ -1302,11 +1320,26 @@ class MainActivity : AppCompatActivity() {
     private fun setPage(view: View) {
         content.removeAllViews()
         content.addView(view, FrameLayout.LayoutParams(MATCH, MATCH))
+        ViewCompat.requestApplyInsets(appRoot)
     }
 
     private fun showMessage(message: String) {
         if (!canShowUi() || !::appRoot.isInitialized || !appRoot.isAttachedToWindow) return
-        runCatching { Snackbar.make(appRoot, message, Snackbar.LENGTH_LONG).show() }
+        runCatching {
+            Snackbar.make(appRoot, message, Snackbar.LENGTH_LONG).apply {
+                val layout = view.layoutParams as? ViewGroup.MarginLayoutParams
+                if (layout != null) {
+                    val navigationOffset = if (bottomNavigation.visibility == View.VISIBLE) {
+                        bottomNavigation.height
+                    } else {
+                        maxOf(systemBottomInset, imeBottomInset)
+                    }
+                    layout.bottomMargin = navigationOffset + dp(8)
+                    view.layoutParams = layout
+                }
+                show()
+            }
+        }
     }
 
     private fun ui(block: () -> Unit) = runOnUiThread(block)
