@@ -27,6 +27,8 @@ Il traffico applicativo viaggia fuori dalla blockchain, direttamente tra endpoin
 - nessun singolo server, relay, RPC, provider, IP o percorso deve essere requisito permanente per il funzionamento del protocollo;
 - rilevamento di route failure/interferenza probabile attraverso segnali indipendenti, incluso il caso **peer recentemente attivo sul control-plane ma data-plane indisponibile**;
 - recovery automatico attraverso route/relay/transport alternativi quando disponibili;
+- indicatore di rete visibile e cliccabile che spiega agli utenti Free e Pro cosa Freedom ha osservato e quali contromisure sta applicando;
+- quota limitata di Emergency Shield anche per il tier Free quando l'infrastruttura gestita è necessaria e disponibile;
 - protocollo indipendente da Android, iOS, store e servizi commerciali ufficiali;
 - possibilità di sostituire la blockchain tramite un adapter senza cambiare il protocollo applicativo.
 
@@ -118,6 +120,32 @@ alternate route / relay / transport
 Il sistema non deve dichiarare di aver rilevato sorveglianza passiva: un osservatore può monitorare senza lasciare segnali osservabili.
 
 Dettagli: [`docs/ADAPTIVE_DEFENSE.md`](docs/ADAPTIVE_DEFENSE.md).
+
+## Network status UX
+
+Freedom non deve nascondere completamente lo stato della rete come un messenger generalista.
+
+Principio UX:
+
+> **Semplice quando tutto funziona. Trasparente quando qualcosa cerca di impedirti di comunicare.**
+
+Il client ufficiale prevede un **Freedom Network Indicator** piccolo, sempre accessibile e cliccabile. Una possibile rappresentazione usa un pallino multicolore accompagnato sempre da testo/icona accessibili.
+
+Stati concettuali:
+
+```text
+NORMAL       percorso funzionante
+SHIELDED     percorso protetto attivo
+DEGRADED     degradazione o fallback
+SUSPECTED    probabile filtraggio/interferenza o route failure selettiva
+UNAVAILABLE  peer recentemente attivo ma nessun percorso valido trovato
+```
+
+In caso di `SUSPECTED` o `UNAVAILABLE` il pannello può aprirsi automaticamente una volta per incidente e mostrare fatti osservati, inferenza, route fallita, fallback e livello di protezione.
+
+Free e Pro devono ricevere la stessa diagnosi tecnica. Freedom non deve usare falsi allarmi o paura per vendere Shield.
+
+Dettagli: [`docs/NETWORK_STATUS_UI.md`](docs/NETWORK_STATUS_UI.md).
 
 ## Primo contatto
 
@@ -238,7 +266,7 @@ I client possono offrire una modalità **Live** in cui la cronologia della sessi
 
 ## Scope prodotto
 
-Il primo lancio di Freedom Messenger è deliberatamente focalizzato sul **1:1**. Il V1 deve rendere estremamente affidabili onboarding, contatto, sessione, messaggi, media, messaggi vocali, chiamata audio, videochiamata e modalità Live prima di ampliare il prodotto.
+Il primo lancio di Freedom Messenger è deliberatamente focalizzato sul **1:1**. Il V1 deve rendere estremamente affidabili onboarding, contatto, sessione, messaggi, media, messaggi vocali, chiamata audio, videochiamata, modalità Live e Network Indicator prima di ampliare il prodotto.
 
 I gruppi non sono un blocker del lancio. Arrivano successivamente come **Live Groups / Live Rooms**: sessioni multi-party sincrone, senza mailbox condivisa e senza consegna automatica della cronologia agli utenti assenti.
 
@@ -268,16 +296,23 @@ Principio economico:
 
 > **monetizzare capacità, comodità e servizi professionali; non la conversazione.**
 
+Principio commerciale aggiuntivo:
+
+> **la censura non deve diventare un paywall.**
+
 Possibili linee:
 
 - core messaging/live E2EE gratuito;
-- resilienza base e route fallback nel core gratuito;
-- **Freedom Plus / Shield** per capacità relay gestita, Always-Shielded, percorsi privacy/multi-hop, path diversity più ampia, candidate pre-warmed, failover parallelo e **Maximum Resilience**;
+- resilienza base, Network Indicator e route fallback nel core gratuito;
+- **Emergency Shield Free** con capacità gestita limitata quando necessaria per tentare il bypass di un blocco;
+- **Freedom Plus / Shield** per capacità relay gestita superiore, Always-Shielded, percorsi privacy/multi-hop, path diversity più ampia, candidate pre-warmed, failover parallelo e **Maximum Resilience**;
 - **Freedom Business** per SDK, deployment, relay dedicati, supporto e SLA;
 - relay community/best-effort e relay gestiti a pagamento opzionale;
 - fee relayer per gas sostituibili e non autoritativi.
 
-La monetizzazione non deve trasformare Freedom in un servizio dipendente da un singolo soggetto commerciale e il piano Pro non deve comprare una cifratura più forte.
+La monetizzazione non deve trasformare Freedom in un servizio dipendente da un singolo soggetto commerciale. Il piano Pro non deve comprare una cifratura più forte, una diagnosi tecnica più onesta o il diritto esclusivo al recovery di base.
+
+La quota Emergency Shield definitiva deve essere determinata dopo misure reali di costo/banda/abuso; non va fissato un numero arbitrario di messaggi prima dei test.
 
 Dettagli: [`docs/MONETIZATION.md`](docs/MONETIZATION.md).
 
@@ -320,6 +355,7 @@ DeviceID
 - [`docs/CHAIN.md`](docs/CHAIN.md) — NEAR, Device Registry e rendezvous.
 - [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md) — modello di sicurezza.
 - [`docs/ADAPTIVE_DEFENSE.md`](docs/ADAPTIVE_DEFENSE.md) — liveness/recovery pairwise, rilevamento interferenza e Freedom Shield.
+- [`docs/NETWORK_STATUS_UI.md`](docs/NETWORK_STATUS_UI.md) — indicatore multistato, apertura automatica, trasparenza e Emergency Shield Free.
 - [`docs/PRODUCT_SCOPE.md`](docs/PRODUCT_SCOPE.md) — scope V1, Live Groups/Rooms e roadmap multi-party.
 - [`docs/MONETIZATION.md`](docs/MONETIZATION.md) — principi economici e servizi opzionali.
 - [`docs/LAUNCH_PLAN.md`](docs/LAUNCH_PLAN.md) — piano dettagliato di validazione, creator program e lancio.
@@ -335,10 +371,10 @@ M2  rendezvous read-before-write
 M3  authenticated secure session
 M4  NAT traversal + route updates
 M5  relay forward-only
-M6  V1: 1:1 messaging + media + voice/video + Live mode
+M6  V1: 1:1 messaging + media + voice/video + Live mode + Network Indicator
 M7  V1.5: Live Groups / Live Rooms
 M8  V2: group voice/video + media forwarding scalabile
-M9  adaptive recovery + Freedom Shield hardening
+M9  adaptive recovery + Emergency Shield + Freedom Shield hardening
 M10 iOS + platform wake integration
 M11 hardening, censorship resistance, testing, interoperability
 ```
@@ -348,13 +384,15 @@ M11 hardening, censorship resistance, testing, interoperability
 - [ ] Brand client ufficiale: **Freedom Messenger** — *Powered by Freedom Protocol*.
 - [ ] **Censorship resistance / path diversity:** nessun singolo server, relay, RPC endpoint, provider blockchain, fee relayer, IP o percorso di rete deve costituire un punto unico di controllo o interruzione.
 - [ ] **Adaptive Defense:** implementare recovery beacon pairwise, temporanei e cifrati per distinguere peer recentemente attivo da peer offline quando il data-plane fallisce; usare più segnali prima di classificare una probabile interferenza e attivare route/relay/transport alternativi.
+- [ ] **Freedom Network Indicator:** indicatore sempre accessibile, multistato e cliccabile; apertura automatica una volta per incidente in caso di `SUSPECTED`/`UNAVAILABLE`; distinguere fatti osservati da inferenze e non dichiarare sorveglianza passiva non rilevabile.
+- [ ] **Emergency Shield Free:** fornire una quota limitata di capacità gestita per tentare il bypass anche agli utenti Free; dimensionare la quota dopo misure reali e non trasformare la censura in un paywall.
 - [ ] **Freedom Shield / Pro:** Always-Shielded, relay gestiti multipli, multi-hop, pre-warming, failover parallelo e Maximum Resilience senza rendere il piano Pro un requisito del protocollo base.
 - [ ] **Network privacy / metadata resistance:** evitare identificatori di rete stabili e correlabili; supportare alias/session identifiers pairwise o temporanei e percorsi relay/shielded quando l'utente non vuole esporre il proprio endpoint, minimizzando il più possibile latenza e overhead.
 - [ ] **Resilient bootstrap / rendezvous:** bootstrap, discovery, RPC e rendezvous devono avere fonti multiple, intercambiabili e verificabili; la perdita, censura o compromissione di una singola fonte non deve impedire a due peer autorizzati di ritrovarsi quando esiste almeno un percorso disponibile.
 - [ ] **Transport diversity:** consentire transport alternativi/sostituibili per ridurre la dipendenza da una singola firma di rete o classe di endpoint.
-- [ ] **V1 product:** completare 1:1 text/media/file, voice messages, audio call, video call, Live mode e onboarding senza configurazione tecnica manuale; i gruppi non devono bloccare il lancio.
+- [ ] **V1 product:** completare 1:1 text/media/file, voice messages, audio call, video call, Live mode, Network Indicator e onboarding senza configurazione tecnica manuale; i gruppi non devono bloccare il lancio.
 - [ ] **Live Rooms:** introdurre successivamente gruppi sincroni/effimeri senza mailbox condivisa o consegna offline automatica; progettare separatamente voce/video multi-party e forwarding media scalabile.
-- [ ] **Monetizzazione:** mantenere core interoperabile gratuito e monetizzare capacità relay/privacy gestita, funzioni Plus/Shield e servizi Business senza monetizzare contenuti o metadati di conversazione.
+- [ ] **Monetizzazione:** mantenere core interoperabile gratuito e monetizzare capacità relay/privacy gestita, funzioni Plus/Shield e servizi Business senza monetizzare contenuti o metadati di conversazione e senza creare dark pattern durante gli incidenti di rete.
 - [ ] **Launch:** completare Founder Cohort, security/privacy review, Creator Pilot e criteri Go/No-Go definiti in [`docs/LAUNCH_PLAN.md`](docs/LAUNCH_PLAN.md) prima di scalare la promozione pubblica.
 
-Freedom è definito dalle proprietà tecniche del protocollo: identità verificabile, comunicazione E2EE sincrona, routing distribuito, relay non fidati, path diversity, adaptive recovery e minima dipendenza dal registro distribuito durante una sessione attiva.
+Freedom è definito dalle proprietà tecniche del protocollo: identità verificabile, comunicazione E2EE sincrona, routing distribuito, relay non fidati, path diversity, adaptive recovery, trasparenza sullo stato di rete e minima dipendenza dal registro distribuito durante una sessione attiva.
