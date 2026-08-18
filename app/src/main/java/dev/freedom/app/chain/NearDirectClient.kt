@@ -190,13 +190,8 @@ class NearDirectClient(
     companion object {
         val REQUIRED_METHODS = setOf(
             "register_device",
-            "rotate_device_key",
-            "revoke_device",
             "publish_contact",
-            "send_message",
-            "remove_expired_message",
-            "put_rendezvous",
-            "remove_expired_rendezvous"
+            "send_message"
         )
         private const val DEFAULT_GAS = 30_000_000_000_000L
         private const val MAX_GAS = 300_000_000_000_000L
