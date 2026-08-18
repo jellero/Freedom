@@ -242,5 +242,6 @@ M9  hardening, testing, interoperability
 ## TODO
 
 - [ ] Brand client ufficiale: **Freedom Messenger** — *Powered by Freedom Protocol*.
+- [ ] **Censorship resistance / path diversity:** nessun singolo server, relay, RPC endpoint, provider blockchain o percorso di rete deve costituire un punto unico di controllo o interruzione. Freedom deve poter cambiare route e continuare a funzionare, quando tecnicamente possibile, se singoli relay, endpoint RPC o percorsi vengono bloccati, rimossi o compromessi.
 
 Freedom è definito dalle proprietà tecniche del protocollo: identità verificabile, comunicazione E2EE, routing distribuito, relay non fidati e minima dipendenza dalla blockchain durante una sessione attiva.
