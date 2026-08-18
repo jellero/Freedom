@@ -11,7 +11,8 @@ Questa specifica descrive gli oggetti logici e i flussi minimi del protocollo. G
 - le informazioni di routing non autenticano l'identità;
 - la blockchain non trasporta contenuti applicativi;
 - i relay inoltrano, non archiviano;
-- se il destinatario è offline non esiste consegna distribuita automatica;
+- i contenuti applicativi vengono inviati soltanto dentro una sessione autenticata attiva;
+- se il destinatario non è raggiungibile o non esiste una sessione attiva, il messaggio non viene accodato per consegna futura e viene scartato;
 - read-before-write è obbligatorio per il rendezvous;
 - ogni rendezvous on-chain è autosufficiente e non dipende da revisioni precedenti;
 - una sessione attiva gestisce direttamente i propri route update.
@@ -314,7 +315,7 @@ ChatMessage {
 }
 ```
 
-Il messaggio è valido solo dentro una sessione autenticata.
+Il messaggio è valido solo dentro una sessione autenticata attiva. Un tentativo di invio senza sessione attiva deve fallire e il payload non deve essere inserito in una coda di retry/offline delivery.
 
 ## 17. Delivery ACK
 
@@ -331,23 +332,42 @@ ACK iniziali:
 
 ```text
 RECEIVED
-PERSISTED
 READ   // opzionale
 ```
 
-## 18. Offline behavior
+`RECEIVED` conferma la ricezione durante la sessione attiva; non implica persistenza su disco.
 
-Freedom non implementa un global offline store.
+## 18. Synchronous / offline behavior
 
-Se non esiste alcuna sessione e il remote device non è raggiungibile:
+Freedom è sincrono by design e non implementa un global offline store né una mailbox locale di consegna futura.
+
+Se non esiste una sessione autenticata attiva o il remote device non è raggiungibile:
 
 ```text
-OutgoingMessage.status = WAITING_FOR_PEER
+SEND
+  |
+  +-- active authenticated session? -- no --> DISCARD
+  |
+  +-- yes --> transmit --> ACK / session result
 ```
 
-Il plaintext o ciphertext resta esclusivamente nello storage locale del mittente finché il peer torna raggiungibile o l'utente lo elimina.
+Il messaggio non viene depositato sulla blockchain, sui relay o in una coda locale in attesa che il peer torni online.
 
-Relay e blockchain non ricevono il messaggio applicativo.
+La perdita della sessione durante un invio può causare la perdita del messaggio in-flight. Un eventuale nuovo invio richiede un'azione esplicita dell'utente o una semantica applicativa definita sopra il protocollo base; non esiste retry asincrono implicito.
+
+### 18.1 Live / ephemeral mode
+
+I client Freedom possono offrire una modalità **Live** in cui la conversazione locale esiste soltanto durante la presenza attiva dell'utente nella chat/sessione.
+
+In modalità Live:
+
+- i messaggi della sessione non vengono aggiunti alla cronologia persistente;
+- nessun contenuto della conversazione viene incluso in backup automatici;
+- uscendo dalla chat, chiudendo l'app o terminando la sessione, il client elimina lo stato locale della conversazione Live;
+- le chiavi di sessione effimere vengono distrutte quando la sessione termina;
+- notifiche e preview non devono introdurre copie persistenti del plaintext.
+
+Questa proprietà riguarda il comportamento del client Freedom locale. Non può impedire a un peer remoto, a un sistema operativo compromesso o a un dispositivo di acquisire autonomamente screenshot, registrazioni o copie del contenuto ricevuto.
 
 ## 19. Relay packet
 
@@ -376,7 +396,7 @@ Un relay può mantenere soltanto buffer necessari al forwarding immediato.
 
 Non esiste una `StoreRequest` nel protocollo base.
 
-La perdita del relay può causare perdita dei pacchetti in volo; il livello endpoint gestisce retry all'interno dei limiti della sessione.
+La perdita del relay può causare perdita dei pacchetti in volo; il livello endpoint può segnalare il fallimento all'interno della sessione, ma non crea una coda di consegna asincrona.
 
 ## 21. Attachment
 
@@ -464,8 +484,8 @@ Ogni implementazione deve avere limiti espliciti per:
 - relay buffer;
 - connessioni simultanee;
 - write frequency on-chain;
-- retry/backoff;
-- message local queue.
+- retry/backoff del rendezvous e della creazione route;
+- buffer bounded dei soli messaggi in-flight durante una sessione attiva.
 
 ## 26. Chain abstraction
 
@@ -512,6 +532,7 @@ La prima implementazione usa NEAR Testnet.
 - encrypted text;
 - ACK;
 - replay rejection;
+- nessuna coda offline;
 - fresh session on reconnect.
 
 ### M4 — network paths
