@@ -333,9 +333,12 @@ account: freedom-registry-jellero.testnet
 version: 0.1.0
 curve: P-256
 protocol: 1
+relayer account: freedom-relayer-jellero.testnet
 ```
 
 Il deploy iniziale è stato confermato nella transazione `ExXqfngxKUcvuXocK51s1m9ba6KXUqNgTw8U4VwVuSCq`. Le chiavi del contratto non sono presenti nel client Android.
+
+La verifica integrata P-256 su Testnet è stata completata con una registrazione firmata dal device e pagata dall'account relayer nella transazione `BQY3wkQyiWdDpLEGg3ygvtvYa5KV6QKSxGBbUk7Miv3Z`. L'identità usata dal test era effimera, priva di PII e la relativa private key è stata scartata.
 
 Acceptance criteria del primo chain milestone:
 

@@ -40,7 +40,8 @@ class NearChainAdapter(
 ) : ChainAdapter {
     override fun checkHealth(): Result<ChainHealth> = runCatching {
         val response = callView("get_config", JSONObject())
-        val config = response.value
+        val config = response.value as? JSONObject
+            ?: throw IllegalStateException("Risposta get_config NEAR non valida")
         require(config.getInt("protocol_version") == PROTOCOL_VERSION) {
             "Versione protocollo NEAR non compatibile"
         }
