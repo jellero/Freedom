@@ -1,8 +1,8 @@
-use near_sdk::json_types::{Base64VecU8, U64};
+use near_sdk::json_types::{Base64VecU8, U128, U64};
 use near_sdk::store::LookupMap;
-use near_sdk::{env, near, require, AccountId, Promise};
+use near_sdk::{assert_one_yocto, env, near, require, AccountId, NearToken, Promise};
 
-const CONTRACT_VERSION: &str = "0.1.0";
+const CONTRACT_VERSION: &str = "0.2.0";
 const PROTOCOL_VERSION: u16 = 1;
 const DEVICE_ID_BYTES: usize = 32;
 const P256_PUBLIC_KEY_BYTES: usize = 33;
@@ -77,10 +77,23 @@ pub struct RegistryConfig {
     pub max_rendezvous_ttl_seconds: u32,
 }
 
+#[near(serializers = [json])]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StorageBalance {
+    pub available: U128,
+}
+
+#[near(serializers = [borsh])]
+struct FreedomRegistryV1 {
+    devices: LookupMap<String, StoredDeviceRecord>,
+    rendezvous: LookupMap<String, StoredRendezvousRecord>,
+}
+
 #[near(contract_state)]
 pub struct FreedomRegistry {
     devices: LookupMap<String, StoredDeviceRecord>,
     rendezvous: LookupMap<String, StoredRendezvousRecord>,
+    storage_balances: LookupMap<AccountId, u128>,
 }
 
 impl Default for FreedomRegistry {
@@ -88,12 +101,24 @@ impl Default for FreedomRegistry {
         Self {
             devices: LookupMap::new(b"d"),
             rendezvous: LookupMap::new(b"r"),
+            storage_balances: LookupMap::new(b"s"),
         }
     }
 }
 
 #[near]
 impl FreedomRegistry {
+    #[init(ignore_state)]
+    pub fn migrate() -> Self {
+        let old: FreedomRegistryV1 =
+            env::state_read().unwrap_or_else(|| env::panic_str("Legacy state is unavailable"));
+        Self {
+            devices: old.devices,
+            rendezvous: old.rendezvous,
+            storage_balances: LookupMap::new(b"s"),
+        }
+    }
+
     pub fn get_config(&self) -> RegistryConfig {
         RegistryConfig {
             contract_version: CONTRACT_VERSION.to_string(),
@@ -110,6 +135,60 @@ impl FreedomRegistry {
         self.devices
             .get(&device_id)
             .map(|record| device_view(device_id, record))
+    }
+
+    pub fn storage_balance_of(&self, account_id: AccountId) -> StorageBalance {
+        StorageBalance {
+            available: U128(self.storage_balances.get(&account_id).copied().unwrap_or(0)),
+        }
+    }
+
+    #[payable]
+    pub fn storage_deposit(&mut self) -> StorageBalance {
+        let payer = env::predecessor_account_id();
+        let deposit = env::attached_deposit().as_yoctonear();
+        require!(deposit > 0, "Storage deposit must be positive");
+
+        let storage_before = env::storage_usage();
+        let previous = self.storage_balances.get(&payer).copied().unwrap_or(0);
+        let provisional = previous
+            .checked_add(deposit)
+            .unwrap_or_else(|| env::panic_str("Storage balance overflow"));
+        self.storage_balances.insert(payer.clone(), provisional);
+        self.storage_balances.flush();
+
+        let added_bytes = env::storage_usage().saturating_sub(storage_before) as u128;
+        let entry_cost = env::storage_byte_cost()
+            .saturating_mul(added_bytes)
+            .as_yoctonear();
+        require!(deposit > entry_cost, "Storage deposit is too small");
+        let available = provisional.saturating_sub(entry_cost);
+        self.storage_balances.insert(payer, available);
+        self.storage_balances.flush();
+        StorageBalance {
+            available: U128(available),
+        }
+    }
+
+    #[payable]
+    pub fn storage_withdraw(&mut self, amount: Option<U128>) -> StorageBalance {
+        assert_one_yocto();
+        let payer = env::predecessor_account_id();
+        let available = self.storage_balances.get(&payer).copied().unwrap_or(0);
+        let requested = amount.map(|value| value.0).unwrap_or(available);
+        require!(requested <= available, "Insufficient available storage balance");
+
+        let remaining = available - requested;
+        self.storage_balances.insert(payer.clone(), remaining);
+        self.storage_balances.flush();
+        if requested > 0 {
+            Promise::new(payer)
+                .transfer(NearToken::from_yoctonear(requested))
+                .detach();
+        }
+        StorageBalance {
+            available: U128(remaining),
+        }
     }
 
     #[payable]
@@ -154,7 +233,7 @@ impl FreedomRegistry {
         };
         self.devices.insert(device_id.clone(), record.clone());
         self.devices.flush();
-        settle_storage(storage_before, env::predecessor_account_id());
+        self.settle_storage(storage_before, env::predecessor_account_id());
         device_view(device_id, &record)
     }
 
@@ -202,7 +281,7 @@ impl FreedomRegistry {
         record.updated_at_ns = env::block_timestamp();
         self.devices.insert(device_id.clone(), record.clone());
         self.devices.flush();
-        settle_storage(storage_before, env::predecessor_account_id());
+        self.settle_storage(storage_before, env::predecessor_account_id());
         device_view(device_id, &record)
     }
 
@@ -242,7 +321,7 @@ impl FreedomRegistry {
         record.updated_at_ns = env::block_timestamp();
         self.devices.insert(device_id.clone(), record.clone());
         self.devices.flush();
-        settle_storage(storage_before, env::predecessor_account_id());
+        self.settle_storage(storage_before, env::predecessor_account_id());
         device_view(device_id, &record)
     }
 
@@ -290,7 +369,7 @@ impl FreedomRegistry {
         };
         self.rendezvous.insert(slot, record.clone());
         self.rendezvous.flush();
-        settle_storage(storage_before, env::predecessor_account_id());
+        self.settle_storage(storage_before, env::predecessor_account_id());
         rendezvous_view(&record)
     }
 
@@ -311,9 +390,38 @@ impl FreedomRegistry {
         let released_bytes = storage_before.saturating_sub(storage_after) as u128;
         let refund = env::storage_byte_cost().saturating_mul(released_bytes);
         if !refund.is_zero() {
-            Promise::new(record.storage_payer).transfer(refund).detach();
+            self.credit_storage(record.storage_payer, refund.as_yoctonear());
         }
         true
+    }
+
+    fn settle_storage(&mut self, storage_before: u64, payer: AccountId) {
+        let attached = env::attached_deposit().as_yoctonear();
+        if attached > 0 {
+            self.credit_storage(payer.clone(), attached);
+        }
+
+        let storage_after = env::storage_usage();
+        let added_bytes = storage_after.saturating_sub(storage_before) as u128;
+        let required = env::storage_byte_cost()
+            .saturating_mul(added_bytes)
+            .as_yoctonear();
+        let available = self.storage_balances.get(&payer).copied().unwrap_or(0);
+        require!(available >= required, "Insufficient prepaid storage balance");
+        self.storage_balances.insert(payer, available - required);
+        self.storage_balances.flush();
+    }
+
+    fn credit_storage(&mut self, payer: AccountId, amount: u128) {
+        if amount == 0 {
+            return;
+        }
+        let available = self.storage_balances.get(&payer).copied().unwrap_or(0);
+        let updated = available
+            .checked_add(amount)
+            .unwrap_or_else(|| env::panic_str("Storage balance overflow"));
+        self.storage_balances.insert(payer, updated);
+        self.storage_balances.flush();
     }
 }
 
@@ -393,18 +501,6 @@ fn authorization_message(
     message
 }
 
-fn settle_storage(storage_before: u64, recipient: AccountId) {
-    let storage_after = env::storage_usage();
-    let added_bytes = storage_after.saturating_sub(storage_before) as u128;
-    let required = env::storage_byte_cost().saturating_mul(added_bytes);
-    let attached = env::attached_deposit();
-    require!(attached >= required, "Insufficient deposit for contract storage");
-    let refund = attached.saturating_sub(required);
-    if !refund.is_zero() {
-        Promise::new(recipient).transfer(refund).detach();
-    }
-}
-
 fn device_view(device_id: String, record: &StoredDeviceRecord) -> DeviceRecord {
     DeviceRecord {
         version: record.version,
@@ -438,15 +534,19 @@ mod tests {
     const CONTRACT: &str = "freedom-registry.testnet";
     const RELAYER: &str = "relayer.testnet";
 
-    fn context(timestamp_ns: u64) {
+    fn context_with_deposit(timestamp_ns: u64, deposit: NearToken) {
         let mut builder = VMContextBuilder::new();
         builder
             .current_account_id(CONTRACT.parse().unwrap())
             .signer_account_id(RELAYER.parse().unwrap())
             .predecessor_account_id(RELAYER.parse().unwrap())
             .block_timestamp(timestamp_ns)
-            .attached_deposit(NearToken::from_near(2));
+            .attached_deposit(deposit);
         testing_env!(builder.build());
+    }
+
+    fn context(timestamp_ns: u64) {
+        context_with_deposit(timestamp_ns, NearToken::from_near(2));
     }
 
     fn key(seed: u8) -> SigningKey {
@@ -581,5 +681,56 @@ mod tests {
         assert!(contract.get_rendezvous(slot.clone()).is_none());
         assert!(contract.remove_expired_rendezvous(slot.clone()));
         assert!(!contract.remove_expired_rendezvous(slot));
+    }
+
+    #[test]
+    fn prepaid_storage_allows_zero_deposit_function_calls() {
+        let now = 2_000_000_000;
+        context_with_deposit(now, NearToken::from_near(1));
+        let mut contract = FreedomRegistry::default();
+        let funded = contract.storage_deposit().available.0;
+        assert!(funded > 0);
+
+        context_with_deposit(now, NearToken::from_yoctonear(0));
+        let identity = key(12);
+        let device_id = "44".repeat(DEVICE_ID_BYTES);
+        register(&mut contract, &identity, &device_id);
+        let after_registration = contract
+            .storage_balance_of(RELAYER.parse().unwrap())
+            .available
+            .0;
+        assert!(after_registration < funded);
+
+        let slot = "55".repeat(SLOT_BYTES);
+        contract.put_rendezvous(
+            slot.clone(),
+            U64(now + MIN_RENDEZVOUS_TTL_NS),
+            Base64VecU8(vec![8; 64]),
+        );
+        assert!(contract.get_rendezvous(slot).is_some());
+        let after_rendezvous = contract
+            .storage_balance_of(RELAYER.parse().unwrap())
+            .available
+            .0;
+        assert!(after_rendezvous < after_registration);
+    }
+
+    #[test]
+    fn migrates_v1_state_without_changing_registry_prefixes() {
+        context(3_000_000_000);
+        let old = FreedomRegistryV1 {
+            devices: LookupMap::new(b"d"),
+            rendezvous: LookupMap::new(b"r"),
+        };
+        env::state_write(&old);
+
+        let migrated = FreedomRegistry::migrate();
+        assert_eq!(
+            migrated
+                .storage_balance_of(RELAYER.parse().unwrap())
+                .available
+                .0,
+            0
+        );
     }
 }
