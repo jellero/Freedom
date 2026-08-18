@@ -279,6 +279,7 @@ DeviceID
 - [`docs/CHAIN.md`](docs/CHAIN.md) — NEAR, Device Registry e rendezvous.
 - [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md) — modello di sicurezza.
 - [`docs/MONETIZATION.md`](docs/MONETIZATION.md) — principi economici e servizi opzionali.
+- [`docs/LAUNCH_PLAN.md`](docs/LAUNCH_PLAN.md) — piano dettagliato di validazione, creator program e lancio.
 - [`docs/STORE_COMPLIANCE.md`](docs/STORE_COMPLIANCE.md) — separazione protocollo/client e vincoli store.
 - [`ANDROID.md`](ANDROID.md) — roadmap Android.
 
@@ -305,5 +306,6 @@ M9  hardening, censorship resistance, testing, interoperability
 - [ ] **Resilient bootstrap / rendezvous:** bootstrap, discovery, RPC e rendezvous devono avere fonti multiple, intercambiabili e verificabili; la perdita, censura o compromissione di una singola fonte non deve impedire a due peer autorizzati di ritrovarsi quando esiste almeno un percorso disponibile.
 - [ ] **Transport diversity:** consentire transport alternativi/sostituibili per ridurre la dipendenza da una singola firma di rete o classe di endpoint.
 - [ ] **Monetizzazione:** mantenere core interoperabile gratuito e monetizzare capacità relay/privacy gestita, funzioni Plus e servizi Business senza monetizzare contenuti o metadati di conversazione.
+- [ ] **Launch:** completare Founder Cohort, security/privacy review, Creator Pilot e criteri Go/No-Go definiti in [`docs/LAUNCH_PLAN.md`](docs/LAUNCH_PLAN.md) prima di scalare la promozione pubblica.
 
 Freedom è definito dalle proprietà tecniche del protocollo: identità verificabile, comunicazione E2EE sincrona, routing distribuito, relay non fidati, path diversity e minima dipendenza dal registro distribuito durante una sessione attiva.
