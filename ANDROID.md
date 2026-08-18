@@ -1,81 +1,370 @@
-# Freedom Android — M1 test client
+# Freedom Android
 
-This is the first executable Freedom client. It is intentionally narrow: two Android devices communicate directly over a TCP socket on the same reachable IP network, establish a fresh authenticated encrypted session, exchange text messages, and return encrypted acknowledgements.
+## Stato
 
-## What M1 implements
+Android è la prima piattaforma di implementazione.
 
-- Android device identity persisted in Android Keystore.
-- P-256 ECDSA identity signatures.
-- Ephemeral P-256 ECDH on every connection.
-- Transcript-bound authenticated handshake.
-- HKDF-SHA-256 session key derivation.
-- AES-256-GCM encrypted frames.
-- Independent keys for initiator -> responder and responder -> initiator.
-- Monotonic sequence numbers and replay rejection.
-- Bidirectional UTF-8 text messages.
-- Encrypted message ACKs.
-- Fresh session ID and keys after reconnect.
-- Manual remote fingerprint comparison for M1 identity bootstrap.
-- Android 17 local-network runtime permission handling.
+Il codice attualmente presente sotto `app/` è un **transport/crypto spike** sviluppato prima della specifica corrente. Dimostra una connessione TCP diretta, un handshake autenticato e messaggi cifrati, ma usa ancora IP manuale e fingerprint/TOFU.
 
-## Not implemented yet
+Questa parte resta utile come laboratorio di trasporto, ma **non è più l'M1 canonico**.
 
-M1 deliberately does **not** implement blockchain identity, DHT discovery, NAT traversal, decentralized relays, offline queues, attachments, groups, calls, or video calls. Those layers come after the direct encrypted path is proven.
+La nuova implementazione deve partire da DeviceID + NEAR Testnet.
 
-The public identity key exchanged during M1 is authenticated cryptographically inside the handshake, but it is not yet bound to a blockchain identity. Therefore the first connection uses manual fingerprint comparison / TOFU. Compare the fingerprint shown on each phone before treating a new peer as trusted.
+## Obiettivo UX iniziale
+
+Il primo client deve essere estremamente semplice.
+
+Schermate:
+
+```text
+Home
+My Identity
+Add Contact / Scan QR
+Contacts
+Conversation
+Network Debug
+Settings
+Blocked Devices
+```
+
+## M1 — Device identity
+
+### Primo avvio
+
+```text
+Install Freedom
+      |
+Generate DeviceID
+      |
+Generate identity key
+      |
+Private key -> Android Keystore
+      |
+Register DeviceID + public key on NEAR Testnet
+      |
+READY
+```
+
+La schermata `My Identity` mostra:
+
+```text
+Freedom Device ID
+network: NEAR Testnet
+key epoch
+status
+QR
+```
+
+La raw private key non viene mai mostrata.
+
+## M1 — QR
+
+Il QR contiene un `FreedomContact`:
+
+```text
+version
+network_id
+device_id
+rendezvous_capability
+expires_at?
+```
+
+La capability viene generata con SecureRandom e deve poter essere ruotata.
+
+Azioni:
+
+```text
+[Show QR]
+[Share contact]
+[Rotate contact QR]
+```
+
+## Add Contact
+
+```text
+[ Scan QR ]
+
+oppure
+
+Paste Freedom contact
+```
+
+Dopo il parse:
+
+```text
+DeviceID
+   |
+NearChainAdapter.resolveDevice
+   |
+public key + key epoch + status
+   |
+CONTACT VERIFIED
+```
+
+La UI deve distinguere:
+
+```text
+Identity found
+Identity verified
+Identity revoked
+Network unavailable
+```
+
+## M2 — Rendezvous
+
+Quando A vuole aprire una conversazione con B:
+
+```text
+known route?
+  yes -> connect
+  no
+
+read remote rendezvous
+  found -> try it, no write
+  empty
+
+check local current rendezvous
+  already valid -> wait/poll
+  empty -> publish one offer
+```
+
+La UI normale non deve mostrare transazioni o dettagli chain salvo errore.
+
+La modalità debug mostra:
+
+```text
+remote slot
+local slot
+rendezvous sequence
+expires_at
+chain tx id
+candidate count
+```
+
+## M3 — Secure session
+
+Dopo aver trovato un percorso:
+
+```text
+resolve current remote DeviceRecord
+       |
+mutual authenticated handshake
+       |
+fresh session keys
+       |
+E2EE ACTIVE
+```
+
+La UI mostra semplicemente:
+
+```text
+Identity verified
+End-to-end encrypted
+```
+
+Il fingerprint manuale/TOFU del vecchio spike viene rimosso dal normale flusso.
+
+## M4 — Route maintenance
+
+Durante la sessione Android monitora il percorso e condivide route update direttamente con il peer.
+
+Eventi rilevanti:
+
+- cambio Wi-Fi/mobile;
+- cambio endpoint osservato;
+- perdita candidate;
+- nuovo candidate;
+- relay disponibile/non disponibile.
+
+Se almeno un route rimane valido:
+
+```text
+RouteUpdate -> E2EE session
+```
+
+Nessuna write blockchain.
+
+## NAT traversal
+
+Il progetto deve supportare progressivamente:
+
+```text
+direct
+observed candidate
+UDP hole punching
+relay
+```
+
+Per il debugging iniziale può esistere un campo IP/porta manuale, ma deve essere marcato `Developer / Debug` e non rappresentare l'identità del contatto.
+
+## Endpoint observation
+
+Un device dietro NAT potrebbe non conoscere autonomamente l'endpoint pubblico effettivo.
+
+L'architettura deve quindi supportare endpoint osservati da peer/relay indipendenti.
+
+Un observer non autentica il device: fornisce soltanto una candidate di rete. La successiva connessione viene sempre autenticata usando DeviceID + blockchain identity.
+
+## Relay mode
+
+In una milestone successiva Android può offrire relay mode opt-in.
+
+UI prevista:
+
+```text
+Relay mode: OFF/ON
+Wi-Fi only
+Max bandwidth
+Max concurrent circuits
+Battery constraints
+```
+
+Relay mode non salva conversazioni.
+
+## Messaging
+
+La prima conversation screen implementa:
+
+```text
+text
+sent
+received ACK
+pending peer offline
+retry when peer reachable
+```
+
+Se il peer è offline:
+
+```text
+Waiting for peer
+```
+
+Il messaggio rimane nel database locale.
+
+Nessun upload su chain/relay.
+
+## Attachments
+
+Solo dopo il text messaging stabile.
+
+Trasferimento:
+
+```text
+active secure session
+ -> encrypted chunks
+ -> direct/relay transport
+ -> receiver endpoint
+```
+
+Se il route cade, il trasferimento può essere ripreso quando la sessione viene ristabilita, nei limiti del protocollo definito.
+
+## Voice/video
+
+Dopo il signaling E2EE stabile:
+
+```text
+CallInvite
+CallAccept
+CallCandidate
+CallEnd
+```
+
+Il media transport usa chiavi separate e può viaggiare direct o tramite relay compatibile.
+
+## Chain module Android
+
+Struttura target:
+
+```text
+app/
+core/
+  identity/
+  protocol/
+  session/
+  routing/
+chain/
+  ChainAdapter
+  near/
+transport/
+  direct/
+  nat/
+  relay/
+platform-android/
+```
+
+La separazione può inizialmente vivere come package/module graduali, senza sovra-ingegnerizzare la prima build.
+
+## Secure storage
+
+Android Keystore viene usato per le identity key quando supportato.
+
+Il database locale deve separare:
+
+- identity metadata;
+- contacts;
+- pair rendezvous secrets;
+- conversation data;
+- network cache.
+
+I pair secret e materiale sensibile devono essere protetti a riposo secondo le primitive Android disponibili.
+
+## Android 17 / local network
+
+Il manifest e runtime flow devono gestire i permessi di rete locale richiesti dalla versione Android target.
+
+La UI deve spiegare il permesso in relazione alla funzionalità di comunicazione sulla rete locale.
+
+## Debug screen
+
+Durante lo sviluppo:
+
+```text
+DeviceID
+Key epoch
+Chain state/finality
+RPC endpoint selected
+Remote DeviceID
+Rendezvous slot hash
+Rendezvous TTL
+Known route candidates
+Current path
+Public/observed endpoint
+Relay
+Session ID
+TX/RX sequence
+RTT
+```
+
+Non mostrare private/session/rendezvous secrets in chiaro.
 
 ## Build
 
-The project currently targets Android API 37 and uses Android Gradle Plugin 9.3.1.
-
-Requirements:
-
-- Android Studio / JDK 17.
-- Android SDK 37 installed.
-- Gradle 9.5.0 when building from the command line without a wrapper.
-- Android device or emulator with API 26+.
-
-Open the repository root in Android Studio, sync Gradle, and run the `app` configuration.
-
-A Gradle Wrapper binary is not committed yet. Generate it from a trusted local Gradle 9.5.0 installation before relying on `./gradlew`.
-
-## Two-phone test
-
-1. Install and open Freedom on phone A and phone B.
-2. On Android 17, grant Freedom access to the local network when Android asks for it.
-3. Connect both devices to a network where they can address each other directly (for example the same Wi-Fi without client isolation).
-4. Each phone displays one or more local IPv4 addresses and listens on TCP port `45731`.
-5. On phone A, enter phone B's displayed IPv4 address and tap **Connetti**.
-6. After the handshake, compare the remote fingerprint shown on A with B's local fingerprint, and vice versa.
-7. Send messages in both directions.
-8. Verify that every delivered text message results in an `ACK` entry.
-9. Disconnect and reconnect. The displayed session ID must change because fresh ephemeral ECDH keys are generated for every connection.
-
-## Network notes
-
-If the phones cannot connect even on the same Wi-Fi, check whether the access point enables client/AP isolation. Mobile carrier networks also commonly prevent direct inbound connections; NAT traversal and relays are future milestones.
-
-## M1 wire shape
+Il progetto Android esistente usa attualmente Android Gradle Plugin 9.3.x e API 37. Prima di investire nella UI definitiva va completato il refactor architetturale e aggiunta una pipeline CI che esegua almeno:
 
 ```text
-Phone A (initiator)                  Phone B (responder)
-        |                                     |
-        | ClientHello                         |
-        | identity pub + ephemeral pub + nonce|
-        |------------------------------------>|
-        |                                     |
-        | ServerHello + identity signature    |
-        |<------------------------------------|
-        |                                     |
-        | Client identity signature           |
-        |------------------------------------>|
-        |                                     |
-        |   ECDH + HKDF => fresh tx/rx keys   |
-        |                                     |
-        | AES-GCM encrypted text frame        |
-        |====================================>|
-        | encrypted ACK                       |
-        |<====================================|
+assembleDebug
+unit tests
+protocol serialization tests
+crypto vectors
+lint
 ```
 
-Handshake public keys and nonces are visible by design; application plaintext and session keys are not transmitted. Later identity milestones replace manual fingerprint comparison with blockchain-backed authorization and peer records.
+## Roadmap Android
+
+```text
+A1  refactor identity layer
+A2  NearChainAdapter Testnet
+A3  DeviceID registration
+A4  QR contact
+A5  identity resolve/verify
+A6  rendezvous capability + slots
+A7  read-before-write flow
+A8  mutual authenticated session
+A9  text + ACK
+A10 route update
+A11 NAT traversal
+A12 relay
+A13 attachments
+A14 voice/video
+A15 store compliance polish
+```

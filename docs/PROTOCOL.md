@@ -1,35 +1,21 @@
-# Freedom Protocol — Initial Specification
+# Freedom — Protocol Specification
 
 Status: **design draft**
 
-This document defines protocol objects and flows without selecting a final programming language, blockchain, serialization format or cryptographic suite.
+Questa specifica descrive gli oggetti logici e i flussi minimi del protocollo. Gli encoding binari definitivi e le primitive crittografiche concrete verranno fissati prima dell'interoperabilità pubblica.
 
-## 1. Protocol layers
+## 1. Principi
 
-```text
-Application
-  messages / groups / calls / attachments
-        |
-Secure session
-  authentication / key schedule / replay protection
-        |
-Freedom transport
-  envelopes / streams / relay / store-forward
-        |
-P2P overlay
-  discovery / DHT / path selection
-        |
-Network transports
-  direct datagram/stream / browser transport / relayed path
-```
+- ogni oggetto parsabile è versionato;
+- gli oggetti di identità vengono verificati contro la blockchain;
+- le informazioni di routing non autenticano l'identità;
+- la blockchain non trasporta contenuti applicativi;
+- i relay inoltrano, non archiviano;
+- se il destinatario è offline non esiste consegna distribuita automatica;
+- read-before-write è obbligatorio per il rendezvous;
+- una sessione attiva gestisce direttamente i propri route update.
 
-Blockchain verification is consumed by the identity layer and is not inserted in the packet hot path.
-
-## 2. Versioning
-
-Every independently parsed protocol object begins with a version and type discriminator.
-
-Conceptually:
+## 2. Header
 
 ```text
 Header {
@@ -38,167 +24,265 @@ Header {
 }
 ```
 
-Unknown mandatory versions must fail closed. Optional capabilities are negotiated separately so peers do not need to pretend support for features they do not implement.
+Versioni obbligatorie sconosciute devono fallire closed.
 
-## 3. Cryptographic abstraction
+## 3. DeviceID
 
-Before concrete algorithms are selected, the protocol requires these primitives:
+`DeviceID` è un identificatore stabile a 256 bit generato con entropia crittografica.
 
-- digital signature;
-- authenticated key agreement / handshake;
-- cryptographic hash;
-- KDF;
-- AEAD encryption;
-- secure random generation.
-
-The wire format must identify the selected suite so future migration is possible. Algorithm agility must not allow downgrade to an insecure suite.
-
-## 4. Stable identity record
-
-The durable identity state is represented conceptually as:
+Non contiene PII e non è derivato direttamente dalla chiave pubblica corrente.
 
 ```text
-IdentityRecord {
+DeviceRecord {
     version
-    user_id
-    root_public_key
-    identity_sequence
-    devices[]
-    revoked_devices[]
-    capabilities
+    device_id
+    identity_public_key
+    key_epoch
+    status
+    protocol_version
     updated_at
 }
 ```
 
-The canonical or committed representation of this state is blockchain-specific and therefore deliberately left outside the base wire protocol.
-
-## 5. Device authorization
+## 4. Key rotation
 
 ```text
-DeviceAuthorization {
-    user_id
+RotateDeviceKey {
     device_id
-    device_public_key
-    not_before
-    expires_at?
-    capabilities
-    sequence
-    root_signature
+    old_epoch
+    new_epoch
+    new_public_key
+    authorization_proof
 }
 ```
 
-The root signature proves that the device is authorized by the user identity.
+Una rotazione valida incrementa l'epoch. La specifica della prova dipende dal modello del contratto chain, ma il client deve sempre poter determinare la chiave corrente e lo stato di revoca.
 
-Revocation must take precedence over an older authorization.
-
-## 6. Peer record
-
-A device advertises a short-lived network record:
+## 5. Contact descriptor
 
 ```text
-PeerRecord {
+FreedomContact {
     version
-    user_id
+    network_id
     device_id
-    peer_id
-    transport_public_key
-    addresses[]
-    relay_hints[]
-    capabilities[]
+    rendezvous_capability
+    expires_at?
+}
+```
+
+La capability non è una identity key e non consente impersonation. È una capability di bootstrap/rendezvous.
+
+Il QR è solo una rappresentazione del descriptor.
+
+## 6. Pair rendezvous state
+
+Dopo il primo handshake i peer derivano:
+
+```text
+PairRendezvousState {
+    peer_device_id
+    rendezvous_secret
+    local_sequence
+    remote_sequence
+}
+```
+
+Il segreto non viene scritto on-chain.
+
+Gli slot sono derivati in modo direzionale e rotante:
+
+```text
+slot_local(epoch)
+slot_remote(epoch)
+```
+
+Il formato concreto della KDF viene fissato con la crypto suite.
+
+## 7. Rendezvous record
+
+```text
+RendezvousRecord {
+    version
     sequence
+    expires_at
+    ciphertext
+}
+```
+
+Il key/slot blockchain è opaco e derivato da capability o pair secret.
+
+Il ciphertext protegge:
+
+```text
+RendezvousPayload {
+    sender_device_id
+    sender_key_epoch
+    rendezvous_nonce
+    route_candidates[]
+    relay_candidates[]
+    ephemeral_transport_public_key
+}
+```
+
+Il payload deve essere autenticato e cifrato.
+
+## 8. Read-before-write
+
+Algoritmo normativo per A che deve raggiungere B dopo aver perso tutti i route:
+
+```text
+remote = chain.readRendezvous(remote_slot)
+
+if remote.valid && !remote.expired && remote.sequence > stored_remote_sequence:
+    try(remote.route_candidates)
+    DO_NOT_WRITE
+else:
+    if local slot does not already contain a valid current record:
+        chain.writeRendezvous(local_slot, local_record)
+```
+
+Il client non deve riscrivere un record soltanto perché non ha ancora ricevuto risposta. Deve rispettare TTL, sequence e backoff.
+
+## 9. Route candidate
+
+```text
+RouteCandidate {
+    transport
+    endpoint
+    candidate_type
+    priority
+    observed_at
+    expires_at
+}
+```
+
+L'endpoint è una struttura trasporto-specifica. Per UDP/TCP può comprendere IP e porta.
+
+Candidate type iniziali:
+
+```text
+LOCAL
+OBSERVED
+DIRECT
+RELAY
+```
+
+## 10. Relay candidate
+
+```text
+RelayCandidate {
+    relay_id
+    endpoint
+    transport
+    capability_token?
+    expires_at
+}
+```
+
+Un relay candidate non implica fiducia nel relay.
+
+## 11. Route update in-session
+
+```text
+RouteUpdate {
+    sequence
+    candidates[]
+    relay_candidates[]
     issued_at
     expires_at
-    signature
 }
 ```
 
-Validation steps:
+Questo oggetto viaggia dentro la sessione autenticata.
 
-1. parse using the declared protocol version;
-2. reject expired records;
-3. verify record signature;
-4. resolve the corresponding user/device authorization;
-5. reject revoked devices;
-6. reject a record sequence older than the newest valid record already observed;
-7. apply local network-address policy before dialing.
+Finché almeno un percorso valido permette di scambiare `RouteUpdate`, non si usa la blockchain per aggiornare il routing della coppia.
 
-Peer records belong to the P2P discovery layer and should not be permanent chain entries.
+## 12. Handshake
 
-## 7. Session establishment
-
-A successful session handshake yields a `SessionContext`:
+L'handshake produce:
 
 ```text
 SessionContext {
     session_id
-    local_user_id
     local_device_id
-    remote_user_id
     remote_device_id
+    local_key_epoch
+    remote_key_epoch
     negotiated_version
     negotiated_crypto_suite
     tx_keys
     rx_keys
     created_at
-    rekey_state
 }
 ```
 
-The handshake transcript must bind:
+Il transcript deve includere:
 
-- both peer identities;
-- device identities;
-- ephemeral handshake keys;
-- negotiated protocol version;
-- negotiated cipher suite;
-- session identifier.
+```text
+network_id
+protocol_version
+A_device_id
+B_device_id
+A_key_epoch
+B_key_epoch
+A_ephemeral_key
+B_ephemeral_key
+A_nonce
+B_nonce
+crypto_suite
+session_id
+```
 
-An active attacker must not be able to alter these fields without handshake failure.
+Entrambi gli endpoint verificano la controparte usando la current public key risolta tramite `ChainAdapter`.
 
-## 8. Encrypted frame
+## 13. Blockchain freshness durante l'handshake
 
-Once a session exists, transport frames are encrypted.
+Prima del primo handshake con un DeviceID sconosciuto, il client deve risolvere il record chain.
 
-The external framing should expose only what a forwarding hop requires.
+Per contatti già noti può usare cache verificata entro una policy di freshness, ma deve rivalidare quando:
 
-Conceptually:
+- l'epoch remoto cambia;
+- una firma non verifica;
+- riceve un'indicazione di key rotation;
+- la cache supera il limite previsto;
+- la sessione viene ristabilita dopo un periodo lungo.
+
+La policy concreta verrà definita con il chain adapter.
+
+## 14. Encrypted frame
 
 ```text
 EncryptedFrame {
     version
-    routing_class
-    opaque_destination?
-    session_hint?
+    session_hint
+    sequence
     ciphertext
 }
 ```
 
-The authenticated encrypted content contains:
+L'inner frame autenticato contiene:
 
 ```text
 InnerFrame {
     frame_type
     session_id
     sequence
-    timestamp_or_logical_time
     payload
 }
 ```
 
-The exact split between visible and encrypted fields must be driven by metadata-minimization analysis.
+Il sequence è monotono per direzione e protetto dall'AEAD.
 
-## 9. Replay protection
+## 15. Replay protection
 
-Each secure session maintains a monotonic receive window or equivalent anti-replay structure.
+Requisiti:
 
-Requirements:
+- reject dei sequence già accettati;
+- finestra limitata se il trasporto ammette reorder;
+- memoria bounded;
+- nessun reset senza transizione autenticata di sessione.
 
-- reject an already accepted sequence value;
-- tolerate bounded out-of-order arrival;
-- prevent unbounded memory growth from forged sequence numbers;
-- reset state only through an authenticated session transition.
-
-## 10. Text message object
+## 16. Text message
 
 ```text
 ChatMessage {
@@ -207,18 +291,14 @@ ChatMessage {
     sender_device_id
     logical_sequence
     sent_at
-    content_type
     body
     reply_to?
-    attachment_manifests[]
 }
 ```
 
-This entire object is protected inside the end-to-end encrypted session/message layer.
+Il messaggio è valido solo dentro una sessione autenticata.
 
-`message_id` must be unpredictable or collision-resistant enough to avoid ambiguity across devices.
-
-## 11. Delivery acknowledgement
+## 17. Delivery ACK
 
 ```text
 MessageAck {
@@ -229,132 +309,90 @@ MessageAck {
 }
 ```
 
-Possible semantic classes:
+ACK iniziali:
 
-- received by endpoint;
-- persisted by endpoint;
-- displayed/read, if the user enables that feature.
+```text
+RECEIVED
+PERSISTED
+READ   // opzionale
+```
 
-Read state is application metadata and must never require blockchain publication.
+## 18. Offline behavior
 
-## 12. Attachment manifest
+Freedom non implementa un global offline store.
+
+Se non esiste alcuna sessione e il remote device non è raggiungibile:
+
+```text
+OutgoingMessage.status = WAITING_FOR_PEER
+```
+
+Il plaintext o ciphertext resta esclusivamente nello storage locale del mittente finché il peer torna raggiungibile o l'utente lo elimina.
+
+Relay e blockchain non ricevono il messaggio applicativo.
+
+## 19. Relay packet
+
+```text
+RelayPacket {
+    version
+    packet_id
+    next_hop_token
+    hop_limit
+    expires_at
+    ciphertext
+}
+```
+
+Il relay deve rigettare:
+
+- packet troppo grandi;
+- TTL scaduti;
+- hop limit esaurito;
+- quota superata;
+- token/capability non validi quando richiesti.
+
+## 20. Relay storage semantics
+
+Un relay può mantenere soltanto buffer necessari al forwarding immediato.
+
+Non esiste una `StoreRequest` nel protocollo base.
+
+La perdita del relay può causare perdita dei pacchetti in volo; il livello endpoint gestisce retry all'interno dei limiti della sessione.
+
+## 21. Attachment
 
 ```text
 AttachmentManifest {
     attachment_id
     media_type
     plaintext_size
-    encrypted_size
     chunk_size
     chunks[]
-    encryption_parameters
-    content_integrity
-    expires_at?
+    integrity
 }
 ```
 
-Each chunk descriptor contains an opaque retrieval identifier and integrity commitment.
+Gli attachment vengono trasferiti soltanto quando esiste una sessione/route attiva. Nessun chunk viene depositato automaticamente sulla blockchain o su relay persistenti.
 
-Attachment encryption keys are carried only inside E2EE application data.
-
-## 13. Relay forwarding
-
-A forwarding relay receives an opaque packet with a next-hop or retrieval token that is sufficient for forwarding but insufficient for application decryption.
-
-```text
-RelayPacket {
-    version
-    relay_mode
-    next_hop_token
-    ttl_or_hop_limit
-    packet_id
-    ciphertext
-    relay_auth?
-}
-```
-
-Relay nodes must enforce local resource limits before allocating memory, disk or bandwidth.
-
-## 14. Offline store-and-forward
-
-### Store request
-
-```text
-StoreRequest {
-    storage_token
-    object_id
-    expires_at
-    encrypted_object
-    resource_proof?
-}
-```
-
-### Fetch request
-
-```text
-FetchRequest {
-    retrieval_token
-    cursor?
-    authorization_proof?
-}
-```
-
-### Fetch response
-
-```text
-FetchResponse {
-    objects[]
-    next_cursor?
-}
-```
-
-`storage_token` and `retrieval_token` must not trivially reveal a stable user identifier.
-
-The sender should replicate important offline objects across more than one independently selected relay.
-
-## 15. Contact establishment
-
-The first contact between two users needs an authenticated identity bootstrap.
-
-Candidate mechanisms include:
-
-- QR code containing a signed contact descriptor;
-- direct link containing a public identity descriptor;
-- lookup through an optional naming layer whose result is verified against chain state;
-- out-of-band fingerprint comparison.
-
-The protocol must distinguish "identifier found" from "identity verified".
-
-## 16. Presence
-
-Presence is ephemeral and must remain off-chain.
-
-A presence announcement can be a short-lived signed or session-authenticated object with states such as reachable/unreachable plus capability hints.
-
-The system should avoid globally broadcasting a user's precise online state unless explicitly required.
-
-## 17. Call signaling
-
-Call control runs over the encrypted messaging/session channel.
+## 22. Call signaling
 
 ```text
 CallInvite {
     call_id
     media_capabilities
     transport_capabilities
-    ephemeral_call_key_material
 }
 
 CallAccept {
     call_id
     selected_capabilities
-    path_candidates[]
+    candidates[]
 }
 
 CallCandidate {
     call_id
     candidate
-    priority
 }
 
 CallEnd {
@@ -363,120 +401,103 @@ CallEnd {
 }
 ```
 
-These are logical objects; exact transport candidate syntax is not fixed yet.
+Il signaling viaggia E2EE. Le media key sono separate dalle message key.
 
-## 18. Media encryption boundary
+## 23. Presence
 
-Media confidentiality must terminate only at participant endpoints.
-
-If a packet relay or group forwarding node is used, that node must be able to route or selectively forward encoded frames without obtaining the media decryption key.
-
-Call key material must be distinct from ordinary chat/session traffic keys.
-
-## 19. Routing resolution flow
-
-A sender resolving a remote user follows this logical path:
+Presence è off-chain e opportunistica.
 
 ```text
-UserID
-  |
-  +--> blockchain/light-client verification
-  |       -> valid DeviceIDs / device public keys
-  |
-  +--> overlay lookup
-          -> candidate signed PeerRecords
-                 |
-                 +--> validate device authorization
-                 +--> validate expiry + sequence
-                 +--> dial best viable path
+Presence {
+    state
+    capabilities
+    expires_at
+}
 ```
 
-A DHT result alone never authenticates a user.
+Non deve generare scritture chain continue.
 
-## 20. Path selection
+## 24. Errors
 
-Candidate paths can be scored locally using:
-
-- directness;
-- measured RTT;
-- transport compatibility;
-- recent success rate;
-- relay independence/diversity;
-- relay policy/cost;
-- privacy preference.
-
-No globally trusted path-selection authority is required.
-
-## 21. Resource and spam controls
-
-A completely permissionless message store is vulnerable to storage and bandwidth exhaustion.
-
-The protocol therefore needs pluggable admission controls for expensive operations. Candidate mechanisms can include:
-
-- sender authorization/contact state;
-- per-peer quotas;
-- computational proof;
-- stake/reputation;
-- micropayment/accounting;
-- recipient-issued mailbox capability tokens.
-
-No mechanism is selected yet. Security, privacy and denial-of-service tradeoffs must be evaluated before implementation.
-
-## 22. Error handling
-
-Protocol errors should distinguish at least:
-
-- malformed object;
-- unsupported version;
-- authentication failure;
-- expired record;
-- revoked device;
-- replay detected;
-- route unavailable;
-- relay refused/resource exhausted;
-- storage object expired;
-- session rekey required.
-
-Remote error text must never be trusted as safe UI content.
-
-## 23. Privacy rules for logs
-
-Production clients and nodes must not log by default:
-
-- message plaintext;
-- attachment keys;
-- session keys;
-- private keys;
-- complete contact graphs;
-- stable identity + IP correlations unless explicitly enabled for debugging.
-
-Debug builds must clearly separate sensitive trace logging from normal operation.
-
-## 24. First executable protocol milestone
-
-The smallest useful implementation is deliberately narrow:
+Classi minime:
 
 ```text
-Peer A                         Peer B
-  |                              |
-  | explicit address            |
-  |----------------------------->|
-  | authenticated handshake     |
-  |<============================>|
-  | encrypted text frame        |
-  |----------------------------->|
-  | authenticated ACK           |
-  |<-----------------------------|
+MALFORMED
+UNSUPPORTED_VERSION
+CHAIN_IDENTITY_NOT_FOUND
+CHAIN_IDENTITY_REVOKED
+KEY_EPOCH_MISMATCH
+AUTHENTICATION_FAILED
+REPLAY_DETECTED
+ROUTE_UNAVAILABLE
+RENDEZVOUS_EXPIRED
+RELAY_REFUSED
+PEER_OFFLINE
+SESSION_REKEY_REQUIRED
 ```
 
-M1 acceptance criteria:
+## 25. Resource limits
 
-- two independently generated device identities;
-- authenticated encrypted connection;
-- bidirectional text messages;
-- tampering causes rejection;
-- replayed frames are rejected;
-- reconnect creates a fresh secure session;
-- no plaintext is observable on the network path.
+Ogni implementazione deve avere limiti espliciti per:
 
-Blockchain identity, DHT routing, relays, media and groups are intentionally subsequent milestones.
+- frame size;
+- handshake object size;
+- route candidates per record;
+- relay buffer;
+- connessioni simultanee;
+- write frequency on-chain;
+- retry/backoff;
+- message local queue.
+
+## 26. Chain abstraction
+
+Interfaccia concettuale:
+
+```text
+ChainAdapter {
+    registerDevice
+    resolveDevice
+    rotateDeviceKey
+    revokeDevice
+    readRendezvous
+    writeRendezvous
+    verifyState
+}
+```
+
+La prima implementazione usa NEAR Testnet.
+
+## 27. First executable milestones
+
+### M1 — identity
+
+- generazione DeviceID;
+- identity key nel keystore;
+- registrazione su NEAR Testnet;
+- resolve DeviceID;
+- QR contact descriptor;
+- key rotation/revocation di test.
+
+### M2 — rendezvous
+
+- capability bootstrap;
+- opaque slots;
+- read-before-write;
+- TTL/sequence;
+- route payload cifrato.
+
+### M3 — secure communication
+
+- mutual authentication;
+- direct debug route;
+- encrypted text;
+- ACK;
+- replay rejection;
+- fresh session on reconnect.
+
+### M4 — network paths
+
+- candidate observation;
+- NAT traversal;
+- route update in-session;
+- relay forward-only.

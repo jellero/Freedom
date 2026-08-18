@@ -1,326 +1,311 @@
-# Freedom Threat Model
+# Freedom — Threat Model
 
-Status: **initial design draft**
+## 1. Assunzioni
 
-Freedom aims to provide private, authenticated communications over an untrusted decentralized network. This document defines what the system assumes, what it protects, and where availability or metadata privacy can still fail.
+Freedom assume una rete non fidata.
 
-## 1. Security objectives
+Un avversario può:
 
-Freedom should provide:
+- osservare traffico;
+- controllare alcuni peer o relay;
+- restituire informazioni di routing false;
+- bloccare, ritardare, duplicare o riordinare pacchetti;
+- tentare impersonation;
+- tentare replay;
+- creare molti nodi;
+- controllare uno o più endpoint RPC;
+- tentare di saturare relay, chain writes o risorse locali.
 
-- end-to-end confidentiality for messages, attachments, voice and video;
-- endpoint authentication;
-- forward secrecy for established conversations where the selected cryptographic construction supports it;
-- replay resistance;
-- integrity and origin authentication of protocol objects;
-- independent device revocation;
-- resistance to malicious relays altering content undetected;
-- minimal permanent metadata exposure;
-- no requirement to trust a single routing, relay, storage or blockchain-RPC operator.
+Freedom non assume che relay, NAT observer, bootstrap node o RPC siano fidati per autenticare un DeviceID.
 
-## 2. Assets
+## 2. Trust anchors
 
-Protected assets include:
+Le radici di fiducia sono limitate a:
 
-- root identity private keys;
-- device private keys;
-- session keys;
-- message plaintext;
-- attachment plaintext and keys;
-- voice/video media plaintext;
-- contact graph;
-- conversation membership;
-- online/offline presence;
-- IP/network location;
-- message timing and volume metadata;
-- blockchain identity state.
+- private key locale del device;
+- stato blockchain verificato del `DeviceID`;
+- primitive crittografiche standard;
+- stato locale autenticato derivato da sessioni precedenti.
 
-Not all metadata can be hidden from every network observer. Where confidentiality cannot be guaranteed, the protocol should minimize collection, permanence and linkability.
+Un IP, un relay o un risultato di discovery non è un trust anchor.
 
-## 3. Adversaries
+## 3. Device impersonation
 
-### A1 — Malicious network peer
+Attacco:
 
-Can join the public network, create connections, send malformed packets, lie about capabilities and disappear at any time.
+```text
+Mallory afferma di essere DeviceID_B
+```
 
-### A2 — Malicious relay
+Difesa:
 
-Can observe packet timing/size for traffic it forwards, drop packets, delay them, reorder them, duplicate them, selectively refuse storage and return stale data.
+1. A risolve `DeviceID_B` tramite chain;
+2. ottiene la current public key e key epoch;
+3. l'handshake richiede una prova firmata/derivata dal possesso della private key;
+4. il transcript lega DeviceID, epoch ed ephemeral keys.
 
-It must not be able to decrypt end-to-end payloads or impersonate endpoints solely by being a relay.
+Senza la private key corrente B, Mallory non deve poter completare l'handshake.
 
-### A3 — Malicious storage peer
+## 4. Man-in-the-middle
 
-Can inspect opaque stored objects, delete them early, refuse retrieval, duplicate them or claim capacity it does not actually provide.
+La semplice cifratura ECDH non basta se l'ephemeral exchange non è autenticato.
 
-### A4 — Routing attacker
+Il transcript deve includere entrambe le identità e le chiavi effimere ed essere autenticato bilateralmente.
 
-Attempts eclipse attacks, route poisoning, stale-record replay, selective isolation or DHT manipulation.
+Qualsiasi sostituzione di:
 
-### A5 — Sybil attacker
+- DeviceID;
+- key epoch;
+- ephemeral key;
+- nonce;
+- version;
+- suite;
 
-Creates many identities or peers to dominate routing tables, relay selection or reputation mechanisms.
+fa fallire l'handshake.
 
-### A6 — Passive network observer
+## 5. Replay
 
-Can observe network endpoints, timing, packet sizes and connection patterns on paths under its visibility.
+Livelli di replay:
 
-### A7 — Active man-in-the-middle
+### Rendezvous
 
-Can intercept and modify unauthenticated network traffic and redirect discovery responses.
+Mitigato da:
 
-### A8 — Compromised device
+- `sequence`;
+- `expires_at`;
+- slot rotanti;
+- nonce nel payload.
 
-Has obtained a device's private key and local plaintext. The protocol cannot protect information already accessible to a compromised endpoint, but should support revocation and limit compromise of other devices and past sessions.
+### Session frames
 
-### A9 — Compromised identity root key
+Mitigato da sequence monotoni/finestra anti-replay autenticata con AEAD.
 
-Can authorize malicious devices and revoke legitimate ones. Root-key protection and recovery therefore require special design.
+### Handshake
 
-### A10 — Malicious or unavailable blockchain gateway
+Mitigato da nonce casuali e nuove ephemeral key per connessione.
 
-Returns stale, censored or fabricated chain responses, or becomes unavailable.
+## 6. Stale routing
 
-Correctness should be verifiable through proofs/light-client validation rather than trusting one RPC provider.
+Un record vecchio ma autentico può indicare un route non più valido.
 
-### A11 — Consensus-level blockchain adversary
+Difese:
 
-Can affect chain finality according to the security assumptions of the selected blockchain. Freedom inherits those assumptions for identity state anchored to that chain.
+- TTL corto;
+- sequence;
+- candidate expiration;
+- preferenza per route update ricevuti in-session;
+- chain usata solo dopo fallimento dei percorsi locali.
 
-## 4. Trust boundaries
+## 7. Rendezvous metadata
 
-### Trusted
+Una blockchain pubblica può rendere osservabili tempi e pattern delle scritture.
 
-For confidentiality, the trusted computing base includes:
+Mitigazioni:
 
-- the local endpoint application;
-- operating-system security relevant to secret storage;
-- cryptographic implementation;
-- authenticated state of intended remote endpoints.
+- slot opachi;
+- capability casuali al primo contatto;
+- pair secret dopo l'handshake;
+- slot rotanti;
+- payload cifrato;
+- niente DeviceID/IP nel value leggibile quando evitabile;
+- scritture solo dopo perdita completa del route;
+- niente cancellazione on-chain dopo successo.
 
-### Untrusted
+Non si assume che queste misure eliminino completamente traffic analysis o correlazioni temporali.
 
-The following must be treated as untrusted:
+## 8. Malicious RPC
 
-- Internet transport;
-- bootstrap peers;
-- DHT peers;
-- relays;
-- temporary storage peers;
-- media forwarding nodes;
-- public blockchain gateways/RPC providers;
-- user-supplied routing records until verified.
+Un RPC può:
 
-## 5. Threats and mitigations
+- mentire sullo stato;
+- omettere dati;
+- rispondere con dati stale;
+- rifiutare richieste.
 
-## T1 — Message interception
+Difese progressive:
 
-**Attack:** an intermediary reads a message in transit or temporary storage.
+- provider multipli;
+- fallback;
+- chain finality awareness;
+- proof/light-client verification dove implementata;
+- cache verificata con policy di freshness.
 
-**Required mitigation:** payload is end-to-end encrypted before leaving the sender endpoint. Relays receive ciphertext only.
+L'RPC non viene mai usato come sostituto della firma dell'endpoint.
 
-## T2 — Message modification
+## 9. Relay malicious
 
-**Attack:** an intermediary changes encrypted traffic.
+Un relay può:
 
-**Required mitigation:** authenticated encryption and transcript-bound session authentication cause modified payloads to fail verification.
+- droppare;
+- ritardare;
+- correlare timing e volume;
+- rifiutare connessioni;
+- tentare replay;
+- modificare ciphertext.
 
-## T3 — Identity impersonation
+Non deve poter:
 
-**Attack:** attacker publishes a peer record claiming another user's identity.
+- decifrare payload applicativi;
+- generare messaggi autenticati validi;
+- impersonare gli endpoint;
+- derivare le session key.
 
-**Required mitigation:** peer records must be signed by an authorized device key, whose authorization is verified against durable identity state.
+Difese:
 
-## T4 — Stale peer-record replay
+- E2EE endpoint-to-endpoint;
+- AEAD;
+- sequence;
+- possibilità di cambiare relay;
+- multipath futuro;
+- limiti di fiducia espliciti.
 
-**Attack:** attacker republishes an old valid record to redirect traffic to a stale endpoint.
+## 10. Relay resource exhaustion
 
-**Required mitigation:** expiry, monotonically increasing sequence values and device-revocation checks.
+Freedom non offre storage persistente sui relay.
 
-## T5 — Session replay
+Ogni relay deve imporre:
 
-**Attack:** attacker re-injects a previously accepted encrypted frame.
+- maximum frame size;
+- maximum buffer per circuit;
+- maximum concurrent circuits;
+- rate limit;
+- TTL;
+- hop limit;
+- timeout inattività;
+- eventuali capability/quota.
 
-**Required mitigation:** session-specific sequence/replay windows and fresh handshake state.
+Questo riduce l'utilità della rete come storage abuse target.
 
-## T6 — Downgrade attack
+## 11. Chain write spam
 
-**Attack:** attacker forces peers to use an obsolete protocol or cryptographic suite.
+Il rendezvous non deve diventare una primitive di scrittura illimitata.
 
-**Required mitigation:** version/suite negotiation must be cryptographically bound to the authenticated handshake and enforce local minimum-security policy.
+Difese:
 
-## T7 — DHT poisoning
+- fee/storage economics della chain;
+- record bounded;
+- slot aggiornabili;
+- TTL;
+- client read-before-write;
+- backoff;
+- limiti contrattuali compatibili con il modello scelto.
 
-**Attack:** attacker floods discovery with forged or misleading records.
+## 12. Contact spam
 
-**Required mitigation:** discovery returns candidates, never trust. Every identity-bearing record is cryptographically authenticated. Clients diversify lookup paths and reject invalid/stale records.
+Conoscere un DeviceID non deve necessariamente fornire capability illimitata di contatto.
 
-## T8 — Eclipse attack
+Il contact bootstrap può usare:
 
-**Attack:** attacker surrounds a node's routing table so most discovery passes through attacker-controlled peers.
+```text
+rendezvous_capability
+```
 
-**Mitigation direction:** peer diversity, independent bootstrap sources, routing-table diversity rules, rotation, chain-verifiable identities where useful, and anti-Sybil policy.
+casuale, temporanea o one-time.
 
-No single mitigation is considered complete at this stage.
+Il client può inoltre applicare:
 
-## T9 — Sybil domination
+- contacts-only;
+- request approval;
+- local block list;
+- rate limits.
 
-**Attack:** attacker cheaply creates many peers and gains disproportionate control over routing/relay selection.
+Non esiste una blacklist globale necessaria al protocollo.
 
-**Mitigation direction:** diversity rules plus an explicit anti-Sybil mechanism. Potential mechanisms include scarce identities, stake, proof-of-work/resource, reputation or rate-limited admission.
+## 13. QR theft/copy
 
-The project must not claim Sybil resistance until a concrete mechanism is selected and analyzed.
+Copiare un QR non permette impersonation perché il QR non contiene la private key.
 
-## T10 — Relay traffic analysis
+Può tuttavia dare accesso alla capability di primo rendezvous finché valida.
 
-**Attack:** relay correlates sender/recipient by timing, size or repeated routing tokens.
+Per questo le capability sensibili devono poter:
 
-**Mitigation direction:** rotating opaque routing identifiers, relay diversity, optional multi-hop paths, padding/batching where latency permits, and minimizing stable identifiers.
+- scadere;
+- essere ruotate;
+- essere one-shot;
+- essere revocate localmente/ignorate.
 
-Freedom cannot promise global traffic-analysis resistance against an observer that sees both ends of every path without substantially stronger anonymity machinery.
+## 14. Device theft
 
-## T11 — Offline mailbox enumeration
+Se un attacker ottiene accesso alla private identity key può impersonare il device finché la chiave non viene revocata/ruotata.
 
-**Attack:** relay learns a stable mapping from mailbox key to user identity or contact graph.
+Mitigazioni platform:
 
-**Required direction:** retrieval capabilities/tokens should rotate and be derived from secret session state rather than a stable public `UserID`.
+- Android Keystore;
+- Secure Enclave/Keychain su Apple quando applicabile;
+- protezione schermo/biometria opzionale;
+- key rotation;
+- revocation.
 
-## T12 — Storage exhaustion
+La recovery completa dell'identità è un sottoprogetto separato e non deve essere improvvisata.
 
-**Attack:** attacker fills volunteer relay disks with arbitrary encrypted objects.
+## 15. Key compromise
 
-**Required mitigation:** strict quotas, TTL, bounded object size and an admission-control mechanism before expensive storage allocation.
+Le identity key e le session key devono essere separate.
 
-## T13 — Bandwidth exhaustion
+Ogni sessione usa nuovo materiale effimero. Le media key devono essere separate dalle messaging key.
 
-**Attack:** attacker causes relays or endpoints to forward unlimited traffic.
+Una futura ratchet construction può migliorare forward secrecy/post-compromise properties; la scelta definitiva deve essere standard e sottoposta a review crittografica.
 
-**Required mitigation:** per-peer/connection rate limits, authenticated resource allocation, traffic caps and early rejection before costly cryptographic/application work where possible.
+## 16. Downgrade
 
-## T14 — Parser/resource attacks
+Versione e suite sono parte del transcript autenticato.
 
-**Attack:** malformed frames trigger excessive memory allocation, CPU use or crashes.
+Un attacker non deve poter forzare una suite o versione inferiore senza causare authentication failure.
 
-**Required mitigation:** bounded lengths, incremental parsing, hard limits, fuzzing, timeouts and no allocations directly controlled by unchecked remote length fields.
+## 17. Eclipse / peer isolation
 
-## T15 — Malicious attachment
+Un attacker che controlla molte fonti di bootstrap/routing può tentare di isolare un device.
 
-**Attack:** attacker sends a validly encrypted but dangerous file to a recipient.
+Mitigazioni future:
 
-**Required mitigation:** encryption does not imply content safety. Client must treat decoded attachments as untrusted files and integrate OS/content safety boundaries.
+- fonti bootstrap multiple;
+- peer diversity;
+- relay diversity;
+- cache di peer indipendenti;
+- confronto di informazioni;
+- chain verification separata dal routing.
 
-## T16 — Key compromise
+## 18. Network reachability failures
 
-**Attack:** device key is stolen.
+Freedom deve degradare attraverso più classi di percorso:
 
-**Required mitigation:** independent device revocation, fresh session keys, rekey after revocation and no requirement to reuse a single private key across devices.
+```text
+direct -> NAT traversal -> relay -> rendezvous recovery
+```
 
-A stolen live endpoint can expose local data. Protocol guarantees do not extend past endpoint compromise.
+Nessuna di queste tecniche garantisce comunicazione se il dispositivo non dispone di connettività di rete sufficiente.
 
-## T17 — Root-key compromise
+## 19. Offline recipient
 
-**Attack:** attacker steals the user's identity root key.
+Se il destinatario è offline, Freedom non replica messaggi su peer casuali.
 
-**Mitigation direction:** keep root key out of routine transport operations, support hardware-backed storage where available, design social/multi-device recovery or delayed recovery mechanisms before production.
+Questo limita:
 
-This is a critical unresolved area.
+- storage exhaustion;
+- retention non desiderata;
+- proliferazione di ciphertext;
+- responsabilità dei relay.
 
-## T18 — Malicious blockchain RPC
+Il trade-off è esplicito: la consegna richiede che entrambi gli endpoint siano online contemporaneamente.
 
-**Attack:** a gateway lies about device authorization/revocation.
+## 20. Logging
 
-**Required mitigation:** verify chain proofs/light-client consensus state or query enough independently verifiable sources that correctness does not depend on trusting the gateway response.
+Production client e relay non devono loggare di default:
 
-## T19 — Blockchain unavailability
+- plaintext;
+- private key;
+- session key;
+- rendezvous secret;
+- attachment key;
+- intero contact graph;
+- correlazioni DeviceID/IP non necessarie.
 
-**Attack/failure:** chain data is temporarily unreachable.
+## 21. Non-goals di sicurezza
 
-**Required behavior:** existing already-authenticated sessions may continue according to explicit cache/revocation policy, but new identity decisions must not silently downgrade into unauthenticated mode.
+Freedom non pretende di nascondere ogni metadato a un avversario globale capace di osservare l'intera rete.
 
-Exact cache validity is a protocol decision.
+Non può garantire disponibilità in assenza completa di connettività.
 
-## T20 — Blockchain reorganization/finality
+Non può proteggere il plaintext dopo che un endpoint legittimo lo ha volontariamente esportato, copiato o segnalato.
 
-**Attack/failure:** recent identity update is reorganized.
-
-**Required mitigation:** identity operations must define required confirmation/finality policy based on the selected chain. Security-sensitive revocations may need different UX and policy than ordinary profile updates.
-
-## T21 — Spam and unsolicited messaging
-
-**Attack:** permissionless lookup enables arbitrary users to flood recipients.
-
-**Mitigation direction:** contact capabilities, invitation tokens, sender quotas, local filtering and optional scarce-resource mechanisms.
-
-Spam prevention must not require exposing message plaintext to a central moderation service.
-
-## T22 — Group membership leakage
-
-**Attack:** group routing/storage structures reveal who belongs to a group.
-
-**Mitigation direction:** group metadata should be encrypted where forwarding semantics permit; long-lived public group membership lists should not be placed on-chain by default.
-
-## T23 — Malicious media forwarder
-
-**Attack:** group forwarding node records media, injects frames or selectively drops participants.
-
-**Required mitigation:** media remains participant-E2EE above forwarding layer and frames are authenticated. Availability attacks remain possible and require path/forwarder replacement.
-
-## T24 — Push-provider metadata
-
-**Attack/limitation:** mobile platform push service observes that an application receives a wake event.
-
-**Required mitigation:** push payload contains no message content or cryptographic secrets and is not authoritative delivery state. The app retrieves ciphertext through Freedom after wake-up.
-
-Platform push can still reveal timing metadata to the platform provider; this is an explicit privacy limitation if that integration is used.
-
-## 6. Availability is not equivalent to confidentiality
-
-A decentralized network cannot prevent every peer from refusing service. Freedom's security target is:
-
-- malicious intermediaries cannot silently read or alter protected content;
-- clients can replace unavailable paths/relays;
-- redundancy reduces reliance on any one node.
-
-It is not possible to guarantee message delivery if all viable paths or storage peers are unavailable or adversarial.
-
-## 7. Metadata limitations
-
-Even with perfect payload encryption, the following may remain observable to some network participants:
-
-- source/destination network addresses of adjacent hops;
-- connection timing;
-- packet sizes;
-- relay usage;
-- approximate session duration;
-- traffic volume.
-
-Stronger anonymity requires additional techniques and introduces bandwidth/latency tradeoffs. Freedom should not advertise anonymity properties beyond those actually implemented and measured.
-
-## 8. Security requirements for M1
-
-The first two-node prototype is not complete unless tests demonstrate:
-
-- invalid signatures are rejected;
-- wrong recipient identity causes handshake failure;
-- modified ciphertext is rejected;
-- replayed ciphertext is rejected;
-- oversized/malformed frames fail safely;
-- a reconnect creates new session key material;
-- application logs do not print plaintext secrets by default;
-- private key material is never transmitted.
-
-## 9. Security work required before public production
-
-Before describing Freedom as production-secure, the project should have:
-
-- a frozen, reviewable protocol specification;
-- concrete cryptographic primitives selected from established constructions;
-- independent cryptographic/security review;
-- protocol parser fuzzing;
-- adversarial network simulation;
-- key-compromise and recovery design;
-- anti-Sybil design;
-- spam/resource-abuse controls;
-- mobile background-delivery privacy review;
-- reproducible interoperability tests;
-- an explicit vulnerability disclosure process.
+Questi limiti devono essere documentati e non mascherati da claim assoluti.

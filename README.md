@@ -1,180 +1,249 @@
 # Freedom
 
-Freedom is an experimental decentralized communication network for **end-to-end encrypted peer-to-peer messaging, media exchange, voice calls and video calls without a central messaging server**.
+## Protocollo decentralizzato di comunicazione
 
-The core idea is to use a blockchain as a **verifiable control plane** for identity and durable network state, while keeping actual communication **off-chain** on a low-latency P2P overlay.
+Freedom è un protocollo decentralizzato di comunicazione che permette a dispositivi identificati crittograficamente di stabilire sessioni sicure senza dipendere da un server centrale di messaggistica.
 
-> Blockchain is not the packet transport. Putting chat messages, media packets or call frames on-chain would make realtime communication too slow, expensive and metadata-heavy. Freedom uses the chain to establish trust; peers carry the traffic.
+La blockchain non trasporta messaggi, file, audio o video. Viene usata come registro verificabile delle identità dei dispositivi e come meccanismo di rendezvous di fallback quando due dispositivi online non dispongono più di un percorso valido per raggiungersi.
 
-## Goals
+Il traffico applicativo viaggia fuori dalla blockchain, direttamente tra endpoint oppure attraverso relay transitivi che inoltrano ciphertext senza possedere le chiavi della conversazione.
 
-- No central service that can read or control conversations.
-- End-to-end encryption by default.
-- Direct P2P delivery whenever connectivity permits.
-- Encrypted multi-hop relay when direct connectivity is impossible.
-- Text messages, files, images, audio and video.
-- Voice calls and video calls.
-- Offline delivery without storing plaintext on infrastructure controlled by one party.
-- Cryptographic user/device identities instead of server-owned accounts.
-- Routing and peer records that can be authenticated against blockchain state.
-- Open protocol, so independent clients and nodes can interoperate.
+> Principio operativo: **identity on-chain, communication off-chain, rendezvous on-chain only when needed.**
 
-## Non-goals
+## Obiettivi
 
-- Storing message bodies or media on-chain.
-- Publishing users' IP addresses permanently on-chain.
-- Requiring every client to be a blockchain validator.
-- Treating the blockchain as a replacement for a realtime transport protocol.
+- identità dei dispositivi verificabili crittograficamente;
+- cifratura end-to-end obbligatoria;
+- nessun server centrale di messaggistica necessario;
+- comunicazione diretta quando il percorso di rete lo consente;
+- NAT traversal e relay come percorsi alternativi;
+- aggiornamenti di route scambiati direttamente durante una sessione attiva;
+- scritture blockchain ridotte al minimo tramite read-before-write;
+- nessun messaggio persistito nella rete Freedom;
+- nessun messaggio o media memorizzato sulla blockchain;
+- relay `forward-only`, con buffer limitati e temporanei;
+- protocollo indipendente da Android, iOS e dagli store;
+- possibilità di sostituire la blockchain tramite un adapter senza cambiare il protocollo applicativo.
 
-## Architectural principle
+## Non-obiettivi
 
-Freedom separates the system into two planes:
+Freedom, nella specifica attuale, non è:
 
-### 1. Control plane
+- una blockchain messenger;
+- un sistema di storage distribuito;
+- una mailbox offline globale;
+- un wallet o un exchange;
+- una random chat;
+- un sistema che pubblica IP permanenti on-chain.
 
-Durable, verifiable state:
+Per la consegna di un messaggio applicativo entrambi gli endpoint devono essere online. Se il destinatario non è raggiungibile, il messaggio resta sul dispositivo mittente e non viene disseminato automaticamente nella rete.
 
-- identity/public-key registration;
-- device/key rotation and revocation;
-- optional relay/node staking or anti-Sybil mechanisms;
-- hashes/commitments for signed network records;
-- protocol-version and capability discovery.
-
-This is the part that can be blockchain-backed.
-
-### 2. Data plane
-
-Ephemeral, high-throughput traffic:
-
-- peer discovery;
-- routing;
-- encrypted chat envelopes;
-- media transfer;
-- call signaling;
-- realtime audio/video packets;
-- encrypted relay and store-and-forward traffic.
-
-This runs on the P2P network and never requires consensus for each packet.
-
-## High-level topology
+## Architettura in una frase
 
 ```text
-                  +-------------------------+
-                  |      Blockchain         |
-                  | identity / keys /       |
-                  | durable commitments     |
-                  +------------+------------+
-                               |
-                        verify / resolve
-                               |
-        +----------------------+----------------------+
-        |                                             |
-   +----v-----+       encrypted P2P overlay      +----v-----+
-   |  Alice   | <------------------------------> |   Bob    |
-   |  peer    |                                  |   peer   |
-   +----+-----+                                  +----+-----+
-        |                                             |
-        | if direct path is unavailable               |
-        v                                             v
-   +-------------------------------------------------------+
-   | volunteer / incentivized relay peers                  |
-   | forward opaque ciphertext; no decryption capability  |
-   +-------------------------------------------------------+
+DeviceID -> blockchain identity -> rendezvous fallback -> route -> authenticated E2EE session -> messages/media
 ```
 
-## Routing model
+## Blockchain iniziale
 
-The first design rule is that **fast-changing routing tables should not live directly on-chain**. Network addresses change too quickly and publishing them permanently also creates a privacy problem.
+La prima implementazione usa **NEAR Testnet** attraverso un'interfaccia `ChainAdapter`.
 
-Instead:
+NEAR non fa parte del wire protocol Freedom: è la prima implementazione del registro decentralizzato. Il core deve poter supportare in futuro adapter differenti senza cambiare DeviceID, session protocol o formato dei messaggi.
 
-1. every node has a cryptographic `PeerID`;
-2. long-lived identity keys are anchored to blockchain state;
-3. nodes publish short-lived, signed peer/routing records into the P2P overlay;
-4. receivers verify those records against the blockchain-anchored identity;
-5. routing itself uses an ephemeral distributed routing structure such as a DHT plus local peer tables;
-6. records expire quickly and can be rotated without blockchain writes for every network change.
+```text
+ChainAdapter
+  |- NearChainAdapter      <- prima implementazione
+  |- ...                   <- future implementazioni
+```
 
-The blockchain therefore authenticates routing information without becoming the routing hot path.
+## Ruolo della blockchain
 
-## Messaging
+La chain mantiene solo stato minimo e verificabile.
 
-A message is an encrypted envelope addressed to a recipient device or group. The sender first attempts direct delivery. If the recipient is offline or unreachable, the ciphertext can be replicated to independent relay/cache peers with a TTL.
+### Device identity
 
-Relays know only what is required to forward or temporarily store an opaque object. Message plaintext and attachment keys remain end-to-end encrypted.
+```text
+DeviceRecord {
+    device_id
+    identity_public_key
+    key_epoch
+    status
+    protocol_version
+}
+```
 
-## Calls and video calls
+Il `DeviceID` è stabile e non coincide con l'hash della chiave pubblica, così una chiave può essere ruotata o revocata senza cambiare identità.
 
-Call signaling travels through the same encrypted messaging layer. Audio/video then uses the lowest-latency available path:
+### Rendezvous
 
-1. direct peer-to-peer path;
-2. NAT traversal / hole punching;
-3. encrypted relay peer when a direct path cannot be established.
+La blockchain viene usata per ristabilire un percorso solo quando non esiste più alcun route Freedom valido tra due endpoint online.
 
-Realtime media is never written to the blockchain.
+Regola fondamentale:
 
-## Important engineering constraint
+```text
+1. READ
+2. se esiste un rendezvous valido -> usa i dati, NON scrivere
+3. se non esiste -> WRITE del proprio rendezvous
+```
 
-"No central server" is achievable as **no mandatory trusted central communication server**, but a practical Internet P2P system still needs mechanisms for bootstrap, NAT traversal, offline delivery and relay. Freedom treats those functions as replaceable, permissionless peer roles rather than privileged central infrastructure.
+Appena viene ristabilita una sessione, gli aggiornamenti di endpoint, NAT candidate e relay candidate passano direttamente nel canale E2EE. La chain non viene più aggiornata finché esiste almeno un percorso valido.
 
-Mobile operating systems introduce another constraint: background delivery, especially on iOS, may require platform push mechanisms for reliable wake-up. That requirement must be isolated from the cryptographic and routing trust model rather than allowed to become the message transport itself.
+## Primo contatto
 
-## Initial milestones
+Un contatto Freedom viene scambiato intenzionalmente tramite QR, link, NFC o copia/incolla.
 
-### M0 — Protocol design
+Il QR può contenere:
 
-- identity and device model;
-- threat model;
-- routing record format;
-- encrypted session establishment;
-- message envelope format;
-- relay protocol;
-- offline-delivery model.
+```text
+FreedomContact {
+    network
+    device_id
+    rendezvous_capability
+    expires_at?
+}
+```
 
-### M1 — Two-node encrypted messaging
+`rendezvous_capability` è casuale e può essere monouso o temporanea. Serve a evitare che il primo rendezvous debba esporre pubblicamente una relazione leggibile tra due DeviceID.
 
-- local node identity;
-- direct peer discovery by explicit address;
-- authenticated encrypted session;
-- bidirectional text messages;
-- replay protection and sequence handling.
+Dopo il primo handshake autenticato, i due endpoint derivano un `PairRendezvousSecret` locale usato per generare slot on-chain opachi e rotanti per le riconnessioni successive.
 
-### M2 — Decentralized discovery and routing
+## Routing e NAT
 
-- DHT/overlay routing;
-- signed short-lived peer records;
-- blockchain-backed identity verification;
-- peer scoring and anti-Sybil controls.
+Freedom distingue identità e raggiungibilità.
 
-### M3 — Offline messages and media
+```text
+DeviceID -> chi sei
+RouteCandidate -> come posso raggiungerti adesso
+```
 
-- encrypted store-and-forward;
-- redundant temporary storage across peers;
-- attachment chunking and integrity verification;
-- TTL and garbage collection.
+Un route candidate può contenere:
 
-### M4 — Voice/video
+```text
+RouteCandidate {
+    transport
+    endpoint
+    nat_mapping
+    relay_hint
+    priority
+    expires_at
+}
+```
 
-- encrypted call signaling;
-- NAT traversal;
-- direct realtime media;
-- fallback relay;
-- adaptive bitrate and network recovery.
+Non basta monitorare l'IP: sotto NAT possono cambiare porta pubblica, mapping e percorso anche con lo stesso indirizzo esterno.
 
-### M5 — Groups and production hardening
+Ordine preferito di connessione:
 
-- group key management;
-- multi-device synchronization;
-- spam/abuse resistance without central moderation authority;
-- metadata minimization;
-- audits, fuzzing and protocol compatibility tests.
+```text
+1. percorso diretto già noto
+2. NAT traversal / hole punching
+3. relay Freedom
+4. rendezvous blockchain se tutti i percorsi sono persi
+```
 
-## Repository status
+## Relay
 
-The project is currently in the protocol-design phase. No programming language, blockchain or transport library is fixed yet; those choices should follow the protocol requirements rather than determine them.
+Un relay Freedom è un nodo di transito, non un server di messaggistica.
 
-See:
+```text
+Alice -> ciphertext -> Relay -> ciphertext -> Bob
+```
 
-- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
-- [`docs/PROTOCOL.md`](docs/PROTOCOL.md)
-- [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md)
+Un relay:
+
+- non possiede le chiavi E2EE;
+- non conserva la conversazione;
+- non crea mailbox persistenti;
+- usa buffer piccoli, limitati e con TTL;
+- può essere sostituito durante la sessione;
+- deve applicare limiti di banda, memoria e connessioni.
+
+Principio: **forward, not store**.
+
+## Sessione sicura
+
+Una route non autentica un peer. Dopo aver trovato un percorso, gli endpoint eseguono un handshake autenticato bilateralmente.
+
+La chiave pubblica attesa viene risolta dal `DeviceID` tramite blockchain. Entrambe le parti devono dimostrare il possesso della private key corrispondente.
+
+Il transcript dell'handshake deve legare almeno:
+
+- entrambi i DeviceID;
+- key epoch;
+- chiavi effimere;
+- nonce;
+- versione protocollo;
+- suite crittografica;
+- identificatore della sessione.
+
+Il progetto deve usare primitive e protocolli crittografici standard, non crittografia proprietaria.
+
+## Messaggistica
+
+Una volta stabilita la sessione:
+
+```text
+Alice <============================> Bob
+          authenticated E2EE
+```
+
+Messaggi, ACK, file metadata, signaling chiamate e route update vengono trasportati nel canale sicuro.
+
+Se Bob va offline e non esiste alcun percorso, Alice non deposita automaticamente il messaggio sulla blockchain o sui relay: resta pending localmente.
+
+## Store
+
+Freedom Protocol è separato dai client ufficiali.
+
+I client Android e iOS implementano il livello necessario per la conformità dello store senza modificare il trust model del protocollo:
+
+- blocco locale di un DeviceID;
+- segnalazione volontaria con contenuti scelti dall'utente;
+- privacy policy e termini;
+- permessi minimi;
+- nessuna master key;
+- nessuna scansione server-side necessaria delle conversazioni E2EE.
+
+Freedom è un sistema di contatti espliciti tramite DeviceID/QR, non una random chat.
+
+## Stato del codice Android
+
+Il codice Android presente nel repository è un **transport/crypto spike precedente alla specifica attuale**. Dimostra socket diretto e handshake cifrato, ma usa ancora IP manuale e fingerprint/TOFU.
+
+Non rappresenta più l'M1 canonico. Verrà rifattorizzato seguendo questa sequenza:
+
+```text
+DeviceID
+ -> NEAR Testnet identity
+ -> QR contact
+ -> chain verification
+ -> rendezvous
+ -> route establishment
+ -> mutual authentication
+ -> E2EE messaging
+```
+
+## Documentazione
+
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — architettura completa.
+- [`docs/PROTOCOL.md`](docs/PROTOCOL.md) — oggetti e flussi del protocollo.
+- [`docs/CHAIN.md`](docs/CHAIN.md) — NEAR, Device Registry e rendezvous.
+- [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md) — modello di sicurezza.
+- [`docs/STORE_COMPLIANCE.md`](docs/STORE_COMPLIANCE.md) — separazione protocollo/client e vincoli store.
+- [`ANDROID.md`](ANDROID.md) — roadmap Android.
+
+## Roadmap sintetica
+
+```text
+M0  specifica
+M1  DeviceID + NEAR Testnet + QR
+M2  rendezvous read-before-write
+M3  authenticated secure session
+M4  NAT traversal + route updates
+M5  relay forward-only
+M6  messaging + attachments
+M7  voice/video
+M8  iOS + platform wake integration
+M9  hardening, testing, interoperability
+```
+
+Freedom è definito dalle proprietà tecniche del protocollo: identità verificabile, comunicazione E2EE, routing distribuito, relay non fidati e minima dipendenza dalla blockchain durante una sessione attiva.
