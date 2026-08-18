@@ -35,7 +35,9 @@ jobs:
       - name: Install Android SDK 37
         shell: bash
         run: |
+          set +o pipefail
           yes | sdkmanager --licenses >/dev/null
+          set -o pipefail
           sdkmanager --channel=3 "platforms;android-37.0" "build-tools;36.0.0"
 
       - name: Test, lint, and assemble
