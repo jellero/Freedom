@@ -18,7 +18,7 @@ const REVOKE_OPERATION: u8 = 3;
 
 #[near(serializers = [borsh, json])]
 #[derive(Clone, Debug, PartialEq, Eq)]
-#[serde(crate = "near_sdk::serde", rename_all = "snake_case")]
+#[serde(rename_all = "snake_case")]
 pub enum DeviceStatus {
     Active,
     Revoked,
