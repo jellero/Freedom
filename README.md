@@ -207,6 +207,16 @@ Se non esiste una sessione autenticata attiva o il peer non è raggiungibile, il
 
 I client possono offrire una modalità **Live** in cui la cronologia della sessione non viene persistita e lo stato locale della conversazione viene eliminato alla chiusura/uscita secondo la policy del client.
 
+## Scope prodotto
+
+Il primo lancio di Freedom Messenger è deliberatamente focalizzato sul **1:1**. Il V1 deve rendere estremamente affidabili onboarding, contatto, sessione, messaggi, media, messaggi vocali, chiamata audio, videochiamata e modalità Live prima di ampliare il prodotto.
+
+I gruppi non sono un blocker del lancio. Arrivano successivamente come **Live Groups / Live Rooms**: sessioni multi-party sincrone, senza mailbox condivisa e senza consegna automatica della cronologia agli utenti assenti.
+
+Voce e video multi-party sono una fase successiva e devono usare un'architettura scalabile con infrastruttura media sostituibile/non autoritativa, invece di trasformare un singolo SFU in un requisito permanente del protocollo.
+
+Dettagli: [`docs/PRODUCT_SCOPE.md`](docs/PRODUCT_SCOPE.md).
+
 ## Gas e fee relayer
 
 Le rare operazioni on-chain possono richiedere fee della chain. Freedom può supportare **fee relayer indipendenti** che sponsorizzano il gas senza possedere l'identità dell'utente.
@@ -278,6 +288,7 @@ DeviceID
 - [`docs/PROTOCOL.md`](docs/PROTOCOL.md) — oggetti e flussi del protocollo.
 - [`docs/CHAIN.md`](docs/CHAIN.md) — NEAR, Device Registry e rendezvous.
 - [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md) — modello di sicurezza.
+- [`docs/PRODUCT_SCOPE.md`](docs/PRODUCT_SCOPE.md) — scope V1, Live Groups/Rooms e roadmap multi-party.
 - [`docs/MONETIZATION.md`](docs/MONETIZATION.md) — principi economici e servizi opzionali.
 - [`docs/LAUNCH_PLAN.md`](docs/LAUNCH_PLAN.md) — piano dettagliato di validazione, creator program e lancio.
 - [`docs/STORE_COMPLIANCE.md`](docs/STORE_COMPLIANCE.md) — separazione protocollo/client e vincoli store.
@@ -292,10 +303,11 @@ M2  rendezvous read-before-write
 M3  authenticated secure session
 M4  NAT traversal + route updates
 M5  relay forward-only
-M6  messaging + attachments
-M7  voice/video
-M8  iOS + platform wake integration
-M9  hardening, censorship resistance, testing, interoperability
+M6  V1: 1:1 messaging + media + voice/video + Live mode
+M7  V1.5: Live Groups / Live Rooms
+M8  V2: group voice/video + media forwarding scalabile
+M9  iOS + platform wake integration
+M10 hardening, censorship resistance, testing, interoperability
 ```
 
 ## TODO
@@ -305,6 +317,8 @@ M9  hardening, censorship resistance, testing, interoperability
 - [ ] **Network privacy / metadata resistance:** evitare identificatori di rete stabili e correlabili; supportare alias/session identifiers pairwise o temporanei e percorsi relay/shielded quando l'utente non vuole esporre il proprio endpoint, minimizzando il più possibile latenza e overhead.
 - [ ] **Resilient bootstrap / rendezvous:** bootstrap, discovery, RPC e rendezvous devono avere fonti multiple, intercambiabili e verificabili; la perdita, censura o compromissione di una singola fonte non deve impedire a due peer autorizzati di ritrovarsi quando esiste almeno un percorso disponibile.
 - [ ] **Transport diversity:** consentire transport alternativi/sostituibili per ridurre la dipendenza da una singola firma di rete o classe di endpoint.
+- [ ] **V1 product:** completare 1:1 text/media/file, voice messages, audio call, video call, Live mode e onboarding senza configurazione tecnica manuale; i gruppi non devono bloccare il lancio.
+- [ ] **Live Rooms:** introdurre successivamente gruppi sincroni/effimeri senza mailbox condivisa o consegna offline automatica; progettare separatamente voce/video multi-party e forwarding media scalabile.
 - [ ] **Monetizzazione:** mantenere core interoperabile gratuito e monetizzare capacità relay/privacy gestita, funzioni Plus e servizi Business senza monetizzare contenuti o metadati di conversazione.
 - [ ] **Launch:** completare Founder Cohort, security/privacy review, Creator Pilot e criteri Go/No-Go definiti in [`docs/LAUNCH_PLAN.md`](docs/LAUNCH_PLAN.md) prima di scalare la promozione pubblica.
 
