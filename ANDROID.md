@@ -279,7 +279,7 @@ Chrome / Firefox / selected apps
            v
      Android VpnService
            |
-     Freedom tunnel
+     Freedom Gateway
            |
  path / transport selector
    |- relay
@@ -302,7 +302,7 @@ WHOLE_DEVICE
 
 Requisiti Android:
 
-- consenso VPN esplicito;
+- consenso tunnel esplicito;
 - selected-app allowlist quando richiesta;
 - whole-device mode opzionale;
 - DNS dentro tunnel quando la policy lo richiede;
@@ -311,7 +311,9 @@ Requisiti Android:
 - kill-switch/strict mode opzionale;
 - current egress/path status;
 - nessun silent fallback direct in strict mode;
-- conflitto con altra VPN spiegato all'utente.
+- conflitto con altro tunnel/VPN spiegato all'utente.
+
+Il prodotto e la UI si chiamano **Freedom Gateway**. `VpnService` è la primitive Android, non il nome commerciale della funzione.
 
 Il Gateway non integra un browser generalista: usa il browser/app già installato dall'utente.
 
@@ -340,6 +342,62 @@ GATEWAY_SHIELDED
 GATEWAY_DEGRADED
 GATEWAY_FILTERING_SUSPECTED
 GATEWAY_UNAVAILABLE
+```
+
+## Gateway UI / managed capacity
+
+Vista semplice candidata:
+
+```text
+FREEDOM GATEWAY
+
+Status             Protected
+Mode               3 selected apps
+Path               Shielded
+Egress             CH / managed
+Filtering          None
+Managed capacity   82 MB / 100 MB today
+
+[ Disconnect ]
+[ Apps ]
+[ Network details ]
+```
+
+Target Free iniziale, quando il managed Gateway sarà disponibile:
+
+```text
+100 MB / giorno di managed Gateway capacity
+```
+
+Questa quota:
+
+- è separata dal traffico Freedom Communication;
+- è separata da Emergency Shield Communication;
+- non viene consumata da direct/community/private communication paths;
+- può essere ricalibrata con costi reali;
+- deve essere mostrata come **capacity state**, non come stato di sicurezza o censura.
+
+Se la quota finisce:
+
+```text
+Managed Gateway capacity used for today
+Freedom Communication remains available
+Private/other eligible paths remain independent
+```
+
+Non mostrare `SUSPECTED` o `UNAVAILABLE` solo perché il budget managed è terminato.
+
+Configurazione candidata:
+
+```text
+Freedom Gateway       ON/OFF
+Mode                   Selected apps / Whole device
+Protected apps         Chrome, Firefox, ...
+Protection             Standard / Shielded / Maximum Reachability
+DNS leak protection    ON
+Kill switch            optional
+Managed quota          used / remaining
+Egress                 region / class
 ```
 
 ## Maximum Reachability — post-V1
@@ -447,6 +505,7 @@ TX/RX sequence
 RTT
 Failure classification
 Gateway mode/status when active
+Gateway quota used/remaining
 ```
 
 ## Build / CI
@@ -469,6 +528,7 @@ network namespace / emulator integration tests
 DPI/firewall simulation
 relay failover tests
 Gateway DNS/leak tests
+Gateway quota accounting tests
 multi-device tests
 fuzzing
 ```
@@ -499,10 +559,11 @@ POST-V1 GATEWAY
 G1  explicit egress protocol
 G2  selected-app VpnService
 G3  whole-device + DNS/leak controls
-G4  egress failover / diversity
-G5  shielded multi-hop Gateway
-G6  pluggable anti-censorship transports
-G7  bridge anti-enumeration
-G8  DPI/firewall lab
-G9  Maximum Reachability
+G4  managed quota accounting + 100 MB/day Free target
+G5  egress failover / diversity
+G6  shielded multi-hop Gateway
+G7  pluggable anti-censorship transports
+G8  bridge anti-enumeration
+G9  DPI/firewall lab
+G10 Maximum Reachability
 ```
