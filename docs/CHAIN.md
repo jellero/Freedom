@@ -4,60 +4,58 @@
 
 La prima implementazione blockchain di Freedom usa **NEAR Testnet** attraverso `ChainAdapter`.
 
-NEAR non è parte del wire protocol applicativo e deve poter essere sostituito senza cambiare DeviceID, session format o semantica della comunicazione.
+NEAR non è parte del wire protocol applicativo e deve poter essere sostituito senza cambiare RootIdentity, device authorization model, session format o semantica della comunicazione.
 
 La chain è un **control-plane distribuito e verificabile**. Non trasporta messaggi, media, chiamate o APK.
 
 Funzioni previste:
 
-- identity registry;
+- RootIdentity/root commitment;
+- device authorization con record opachi;
 - key rotation/revocation;
-- fallback rendezvous e recovery beacon;
-- RootIdentity/account ownership commitment;
+- fallback rendezvous e recovery beacon pairwise;
 - entitlement/licenze e limiti device;
 - PurchaseIntent/PaymentAttestation minimali;
 - emergency/security bulletin;
 - signed release manifest/policy;
 - stato economico bounded necessario alla sponsorship.
 
-## 2. Separazione RootIdentity / DeviceIdentity
+## 2. Identity model
+
+Freedom non richiede un `DeviceID` globale.
 
 ```text
-RootIdentity   -> recovery, ownership, entitlement, device authorization
-DeviceIdentity -> autenticazione operativa del singolo endpoint
+RootIdentity             -> recovery / ownership / entitlement
+DeviceKey                -> autenticazione operativa
+DeviceRecordCommitment   -> handle opaco del control-plane
+PairwiseContactAlias     -> identità specifica della relazione
+TransportToken           -> routing/circuito temporaneo
 ```
 
-Il `DeviceID` continua a identificare un device nel protocollo di sessione. La RootIdentity non viene usata come chiave di chat.
-
-Dettagli: [`ACCOUNT_RECOVERY_LICENSES.md`](ACCOUNT_RECOVERY_LICENSES.md).
+Il commitment tecnico del device non è username, contact ID o route identifier. Dettagli: [`IDENTITY_MODEL.md`](IDENTITY_MODEL.md).
 
 ## 3. Installazione locale senza write obbligatoria
-
-Il semplice install non deve generare automaticamente costo/stato on-chain:
 
 ```text
 install
  -> generate RootIdentity locally
- -> generate DeviceIdentity locally
+ -> generate DeviceKey locally
+ -> generate DeviceRecordCommitment locally
  -> generate Recovery Kit
  -> 0 mandatory chain writes
 ```
 
 La prima registrazione avviene quando l'identità deve diventare verificabile per l'uso effettivo del protocollo e può essere sponsorizzata secondo la policy anti-abuso.
 
-Questo evita di pagare storage per installazioni mai utilizzate.
-
 ## 4. ChainAdapter
-
-Interfaccia concettuale estesa:
 
 ```text
 interface ChainAdapter {
     registerRoot(...)
-    registerDevice(...)
-    resolveDevice(...)
+    registerDeviceRecord(...)
+    resolveDeviceRecord(...)
     rotateDeviceKey(...)
-    revokeDevice(...)
+    revokeDeviceRecord(...)
     activateDeviceSlot(...)
     revokeDeviceSlot(...)
     resolveEntitlement(...)
@@ -80,29 +78,30 @@ interface ChainAdapter {
 
 La logica core non deve importare SDK NEAR direttamente.
 
-## 5. Device registry
+## 5. Device record registry
 
 Stato concettuale minimale:
 
 ```text
-devices[DeviceID] = DeviceRecord
+device_records[DeviceRecordCommitment] = DeviceRecord
 
 DeviceRecord {
     version
-    identity_public_key
+    device_public_key
     key_epoch
     status
     protocol_version
+    authorization_proof
 }
 ```
 
-Il mapping deve essere compatto. Non memorizzare PII, contatti, route persistenti o history.
+Il commitment è opaco e può restare stabile durante una rotazione della DeviceKey. Non deve essere usato come identificatore pubblico di rete.
+
+Non memorizzare PII, contatti, route persistenti o history.
 
 ## 6. Sponsored registration / anti-Sybil
 
-Freedom può sponsorizzare la prima registrazione Free tramite fee relayer/treasury, ma non deve offrire write illimitate a chiunque.
-
-Pipeline:
+Freedom può sponsorizzare la prima registrazione Free tramite fee relayer/treasury, ma non deve offrire write illimitate.
 
 ```text
 new RootIdentity
@@ -114,7 +113,7 @@ new RootIdentity
  -> register
 ```
 
-La policy iniziale prevede:
+Policy iniziale:
 
 - installazione locale gratuita senza write;
 - una prima RootIdentity sponsorizzabile;
@@ -130,22 +129,21 @@ Dettagli: [`REGISTRATION_ECONOMICS.md`](REGISTRATION_ECONOMICS.md).
 ## 7. Key rotation e revocation
 
 ```text
-epoch 1 -> PK1
-epoch 2 -> PK2
-...
+DeviceRecordCommitment X
+  epoch 1 -> PK1
+  epoch 2 -> PK2
+  ...
 ```
 
-Una rotazione incrementa `key_epoch` senza cambiare DeviceID. Un device revocato deve risultare non valido per nuovi handshake.
+Una rotazione incrementa `key_epoch` senza introdurre un nuovo identificatore globale. Un record revocato deve risultare non valido per nuovi handshake.
 
-La RootIdentity recuperata può autorizzare la sostituzione/revoca di device secondo la policy di recovery.
+La RootIdentity recuperata può autorizzare sostituzione/revoca di device secondo la policy di recovery.
 
 ## 8. Entitlement e limiti device
 
-La licenza appartiene alla RootIdentity/account commitment.
-
 ```text
 FreedomEntitlement {
-    account_commitment
+    root_commitment
     tier
     entitlement_epoch
     max_devices
@@ -162,19 +160,17 @@ active_devices <= max_devices
 
 Policy iniziale: Free = 1 device attivo; i tier pagati possono avere più slot secondo il piano.
 
-Gli slot devono essere progettati con commitment opachi, evitando un elenco pubblico `Account -> DeviceID[]`.
+Gli slot devono essere progettati con commitment opachi, evitando un elenco pubblico leggibile `RootIdentity -> devices[]`.
 
 ## 9. Contatti Free e privacy
 
 Il piano Free prevede 10 contatti attivi, ma la lista contatti **non deve essere pubblicata in chiaro sulla chain**.
 
-La rubrica resta locale/cifrata. Se è necessario enforcement resistente a client modificati, usare slot/commitment opachi che permettano il conteggio senza pubblicare il social graph.
+Il contatto logico è una persona/RootIdentity, non ogni device autorizzato della persona. La rubrica resta locale/cifrata. Se è necessario enforcement resistente a client modificati, usare slot/commitment opachi che permettano il conteggio senza pubblicare il social graph.
 
 ## 10. Rendezvous
 
 Freedom non scrive continuamente IP o route on-chain.
-
-Ordine generale:
 
 ```text
 known route -> try
@@ -183,9 +179,9 @@ relay/shielded candidate -> try
 all fail -> chain rendezvous/recovery
 ```
 
-Il primo contatto usa una `rendezvous_capability` casuale; dopo handshake i peer derivano `PairRendezvousSecret` e slot opachi/direzionali.
+Il primo contatto usa una `contact_capability` casuale; dopo handshake i peer derivano `PairRendezvousSecret` e slot opachi/direzionali.
 
-Ogni `RendezvousRecord` è autosufficiente:
+Gli slot non sono derivati da un identificatore globale del device.
 
 ```text
 RendezvousRecord {
@@ -195,7 +191,7 @@ RendezvousRecord {
 }
 ```
 
-Il payload cifrato può contenere route/relay candidate e materiale effimero. Non esiste una revisione storica obbligatoria.
+Il payload cifrato può contenere route/relay candidate, materiale effimero e prova del device corrente. Non esiste una revisione storica obbligatoria.
 
 ## 11. Read-before-write
 
@@ -227,7 +223,7 @@ La chain non processa necessariamente il pagamento fiat; conserva solo stato min
 ```text
 PurchaseIntent {
     purchase_ref_hash
-    account_commitment
+    root_commitment
     product
     amount
     provider
@@ -276,8 +272,10 @@ Una security policy non deve diventare un kill-switch commerciale: preferire la 
 
 On-chain non devono comparire in chiaro, salvo necessità non evitabile:
 
-- IP/porta associati a DeviceID;
+- IP/porta associati a RootIdentity o DeviceRecordCommitment;
+- mapping leggibile RootIdentity -> device list;
 - lista contatti/social graph;
+- alias pairwise in forma correlabile globalmente;
 - posizione precisa utente;
 - conversation/message ID;
 - presence globale continua;
@@ -285,6 +283,8 @@ On-chain non devono comparire in chiaro, salvo necessità non evitabile:
 - dati PayPal identificativi;
 - payload applicativo;
 - APK binary.
+
+Un commitment opaco non elimina da solo la correlazione temporale: activation, revocation e rendezvous devono essere analizzati anche come pattern osservabili.
 
 ## 17. RPC strategy
 
@@ -306,9 +306,9 @@ media/call frames  -> 0 chain writes
 active session     -> 0 heartbeat writes
 ```
 
-Scritture possibili: registrazione, rotation/revocation, device activation, rendezvous/recovery, entitlement/payment state, policy/release publishing.
+Scritture possibili: root/device registration, rotation/revocation, device activation, rendezvous/recovery, entitlement/payment state, policy/release publishing.
 
-Lo storage permanente deve essere minimale; stato temporaneo deve essere bounded e reclaimable/riutilizzabile quando possibile.
+Lo storage permanente deve essere minimale; stato temporaneo bounded e reclaimable/riutilizzabile quando possibile.
 
 ## 19. Contract scope
 
@@ -323,16 +323,18 @@ Il contratto non implementa:
 
 Ogni endpoint di write deve avere bounds, autorizzazione e protezioni contro storage exhaustion.
 
-## 20. Testnet acceptance criteria aggiornati
+## 20. Testnet acceptance criteria
 
 Prima della mainnet devono essere testati almeno:
 
-- RootIdentity/DeviceIdentity separate;
+- RootIdentity / DeviceKey / DeviceRecordCommitment separati;
+- nessun `DeviceID` globale necessario al wire protocol;
 - install senza write automatica;
 - sponsored registration con anti-abuse e rate limit;
-- device rotation/revocation;
-- recovery su nuovo device senza clonare la DeviceKey;
+- device rotation/revocation tramite commitment opaco;
+- recovery su nuovo device con nuova DeviceKey e nuovo record;
 - enforcement `max_devices`;
+- contatto logico per RootIdentity e alias pairwise;
 - rendezvous read-before-write;
 - RecoveryBeacon bounded;
 - PurchaseIntent/attestation idempotenti;
