@@ -1,404 +1,237 @@
 # Freedom — Threat Model
 
-Status: **canonical design draft**
+Status: **canonical design draft**.
 
-Normative security rules: [`SECURITY_INVARIANTS.md`](SECURITY_INVARIANTS.md).
-Control-plane details: [`CONTROL_PLANE_SECURITY.md`](CONTROL_PLANE_SECURITY.md).
-Shield details: [`SHIELD.md`](SHIELD.md).
+Normative baseline: [`SECURITY_INVARIANTS.md`](SECURITY_INVARIANTS.md).
+Control-plane: [`CONTROL_PLANE_SECURITY.md`](CONTROL_PLANE_SECURITY.md).
+Revocation: [`REVOCATION.md`](REVOCATION.md).
+Shield: [`SHIELD.md`](SHIELD.md).
+Schema: [`../spec/freedom.cddl`](../spec/freedom.cddl).
 
-## 1. Assunzioni
+## 1. Assunzioni avversarie
 
-Freedom assume non fidati:
+Freedom assume non fidati rete/path, relay/bridge/egress, RPC/provider, peer, source di download, wall clock locale, self-declared relay metadata e singoli signer/payment worker.
 
-- rete e path;
-- relay/bridge/egress;
-- RPC/provider;
-- peer;
-- source di download;
-- singoli signer/payment worker;
-- wall clock locale;
-- metadata self-declared dei relay.
+Un avversario può:
 
-Un avversario può osservare metadata, bloccare/ritardare/riordinare traffico, creare Sybil relay, servire stato stale/forked, tentare rollback/downgrade, sostituire Contact QR prima del bootstrap, compromettere device/root keys, saturare storage/risorse e distribuire artifact falsi.
+- osservare timing/volume/address metadata;
+- block/drop/delay/reorder/duplicate traffic;
+- creare Sybil relay;
+- servire stale/forked state;
+- tentare rollback/downgrade;
+- front-run/overwrite public control-plane slots;
+- sostituire Contact QR prima del bootstrap;
+- rubare device/root secrets;
+- saturare storage/resources;
+- distribuire artifact falsi;
+- compromettere un signer o, nel worst case, colludere con un quorum.
 
-## 2. Security boundary
-
-### Freedom Communication
+## 2. Freedom Communication boundary
 
 ```text
 Alice <==== authenticated E2EE ====> Bob
 ```
 
-Session/traffic keys agli endpoint.
+Session/traffic keys agli endpoint. Relay/path non è authentication authority.
 
-### Freedom Gateway
+## 3. Gateway / Shield boundaries
 
-```text
-app -> Freedom tunnel -> relay/Shield -> explicit Egress -> Internet
-```
+Gateway egress è trust boundary separata. Shield riduce la conoscenza del singolo hop solo con vero circuit protocol; non promette anonimato contro collusione completa/global observer.
 
-Egress è trust boundary distinta e può osservare destination metadata/plaintext di protocolli esterni non cifrati.
+## 4. Malicious/stale RPC
 
-### Freedom Shield
+Security state richiede checkpoint/finality + state proof. Multi-RPC senza proof non basta.
 
-```text
-Alice -> Hop A -> Hop B -> Bob
-```
+## 5. Fresh-install freeze
 
-Shield riduce la conoscenza del singolo hop solo dopo vero circuit protocol con per-hop keys/layered forwarding; non promette anonimato contro collusione completa/global observer.
+Un fresh install non ha highest-seen locale.
 
-## 3. Trust anchors
-
-Trust anchor del core:
-
-- RootRecoveryKey/RootIdentity secondo ruolo;
-- DeviceAuthorizationDelegation + DeviceCertificate;
-- DeviceKey possession;
-- pairwise authenticated state;
-- verificatore del control-plane + NetworkAnchor/checkpoint;
-- BootstrapTrustAnchor/release signer root;
-- primitive crittografiche standard.
-
-Non sono trust anchor:
-
-- IP;
-- relay/bridge/egress;
-- RPC;
-- fee relayer;
-- payment provider;
-- download source;
-- transaction hash;
-- relay metadata self-declared.
-
-## 4. Malicious / stale RPC
-
-Un RPC può servire stato sintatticamente valido ma vecchio o appartenente a un fork non accettato.
-
-Difesa normativa:
+Mitigazione:
 
 ```text
-NetworkAnchor
- -> VerifiedControlPlaneCheckpoint
- -> state root
- -> inclusion/non-inclusion proof
+BootstrapTrustAnchor
++ BootstrapFreshnessFloor
 ```
 
-Per stato security-sensitive, multi-RPC senza proof verification non basta.
+Un verifier recente rifiuta checkpoint/signer/policy sotto il proprio floor.
 
-Highest-seen checkpoint/epoch impedisce rollback.
+Limite: un verifier autentico ma molto vecchio ottenuto soltanto da canali attacker-controlled può essere congelato nel proprio passato. Freshness del verifier stesso richiede un canale/bootstrap anchor indipendente.
 
-## 5. False-success transaction
+## 6. False-success transaction
 
 ```text
-submit
- -> finality proof
- -> execution success
- -> resulting state proof
- -> expected transition
- -> local success
+submit -> finality proof -> execution success -> resulting-state proof -> local success
 ```
 
-Hash tx non equivale a `ACTIVE/PAID/REVOKED/VERIFIED`.
+Tx hash non equivale a success.
 
-## 6. Control-plane contract takeover
+## 7. Revocation ambiguity
 
-Rischio: una singola Full Access key/upgrade key sostituisce il contratto o cambia le regole.
+Rischio: RPC `not found`, stale cache o namespace ambiguo viene interpretato come non-revoca.
+
+Difesa:
+
+- adapter-specific inclusion/non-inclusion proof semantics;
+- monotonic revocation epochs/floors;
+- freshness classes;
+- highest-seen root/authorization/key epochs;
+- fail explicit `REVOCATION_STATE_STALE`.
+
+## 8. Root compromise
+
+Una sola RootRecoveryKey rubata rende proprietario e attacker indistinguibili se non esiste una seconda authority.
+
+Mitigazione per claim `ROOT_COMPROMISE` recovery:
+
+- `UserRecoveryPolicy` precommitted;
+- independent recovery keys/shares;
+- threshold;
+- recovery delay;
+- compromise-mode `UserRootRotation`.
+
+Senza independent precommitment Freedom non promette compromise recovery.
+
+## 9. Rendezvous overwrite/front-running
+
+Rischio: dopo la prima public write uno slot diventa osservabile e può essere sovrascritto/spammato.
+
+Mitigazione:
+
+```text
+PairRendezvousSecret
+ -> one-time RendezvousWriteKeypair
+ -> slot derived from write public key
+ -> signed generation-monotonic record
+```
+
+Osservare public key/slot non concede private write authority.
+
+## 10. Pairwise backup rollback
+
+Un old `PairwiseRecoveryBundle` rubato/restored può contenere state superato.
 
 Mitigazioni:
 
-- immutable security core oppure threshold-governed upgrade;
-- code-hash manifest;
-- timelock;
-- accepted contract lineage;
-- rollback floor;
-- no silent contract-address swap;
-- emergency key non può installare codice arbitrario da sola.
+- state/recovery-key epochs;
+- highest-known rollback checks quando disponibili;
+- re-authentication del peer;
+- rotate/re-derive future rendezvous/session state dopo restore;
+- untrusted backup source.
 
-## 7. Signer-set rollback / quorum loss
+## 11. First-contact substitution
 
-Rischi:
+Un descriptor interamente sostituito prima del bootstrap può creare una relazione valida con Mallory.
 
-- vecchio signer set validamente firmato ripresentato;
-- nuovo set auto-firmato senza authorization precedente;
-- quorum perso e recovery trasformato in super-admin.
+Mitigazioni: `BOOTSTRAP_UNVERIFIED`, safety code/fingerprint/out-of-band verification, `CONTACT_VERIFIED` solo dopo independent assurance.
 
-Mitigazioni:
+## 12. Colluding contacts
 
-```text
-previous set threshold authorizes N->N+1
-next set accepts
-highest-seen epoch persisted
-old set cannot reactivate
-recovery set/manifest pinned in advance
-stronger threshold/timelock for quorum recovery
-```
+Pairwise alias riduce infrastructure correlation, non garantisce unlinkability contro contatti che confrontano root/certificate material.
 
-## 8. Verified time attacks
+## 13. Handshake downgrade
 
-Wall clock locale può essere spostato avanti/indietro.
+Transcript lega entrambi gli offer set; selection strongest-allowed/deterministic. Offer stripping sotto policy fallisce.
 
-Mitigazioni:
+## 14. Signature cross-domain substitution
 
-- `VerifiedTimeAnchor` da checkpoint finalizzato;
-- height/epoch-based validity quando possibile;
-- monotonic local clock;
-- max skew policy;
-- highest-seen anti-rollback.
+Rischio: una firma valida per un oggetto/rete viene riusata come un altro oggetto/rete.
 
-Clock locale non può riattivare certificati/release policy scaduti.
+Difesa: deterministic canonical encoding + signing domain che lega network, object type e schema version.
 
-## 9. Device authorization privacy
+Child certificate scope/expiry non può superare la delegation parent.
 
-Rischio: una RootIdentity/root signature pubblica accanto alla DeviceKey ricrea `RootIdentity -> device`.
+## 15. Forward secrecy / rekey split-brain
 
-Production target usa anonymous authorization/membership proof + slot nullifier.
+Rekey può fallire per simultaneous init, lost commit/ack, duplicate/replay o route switch.
 
-Se Testnet è linkabile, il claim privacy production è vietato fino alla migrazione.
+La state machine canonica risolve simultaneous init deterministicamente, usa key confirmation, old-key grace bounded e termina la sessione su mismatch/timeout prima del lifetime limit.
 
-## 10. Root key compromise
+## 16. Transport semantic confusion
 
-Rischio: RootRecoveryKey compromessa.
+Adapters dichiarano reliable stream/datagram semantics. Control/media sequence spaces sono separati.
 
-Mitigazioni:
+## 17. Storage exhaustion
 
-- RootRecoveryKey cold;
-- delegated DeviceAuthorizationKey;
-- `UserRootRotation` per root compromise;
-- root compromise distinto da device loss;
-- re-authorization dei device dopo rotation.
+TTL non basta: active state deve convergere a upper bound tramite overwrite/ring/prune/lease/reclaim.
 
-Continuare a usare la stessa root rubata non è recovery.
+## 18. Device/account privacy
 
-## 11. Recovery Kit offline brute force
+V1 evita di rendere necessaria una public RootIdentity→device proof. Peer validity deriva dal DeviceCertificate; record spam è anti-abuse problem.
 
-Rischio: furto QR/bundle e brute-force del codice umano.
+`max_devices` hard enforcement privacy-preserving è futuro; non si introduce un public device graph solo per monetizzazione.
 
-Mitigazioni normative:
+## 19. Relay Sybil / provenance
 
-- >=128-bit recovery entropy generata casualmente;
-- memory-hard KDF (`Argon2id` target o standard equivalente);
-- random salt;
-- AEAD;
-- parametri KDF versionati/benchmarkati;
-- checksum non sostituisce authentication.
+`N relay IDs != N operators`.
 
-## 12. Pairwise-state loss
+Signed descriptors e provenance attestations distinguono self-declared/observed/attested metadata, ma una attestation non prova magicamente operator independence.
 
-Root recovery non implica automaticamente recupero di `PairSecret`/`PairRendezvousSecret`.
+Diversity forte è probabilistica e migliora con issuer/source/custody domains differenti.
 
-Mitigazioni:
+## 20. Malicious relay
 
-- authenticated device-to-device transfer;
-- encrypted PairwiseRecoveryBundle.
+Può drop/delay/correlare/mentire; non deve decrypt/impersonate/forge valid app ACK. Resource bounds obbligatori.
 
-Se entrambi mancano, ownership torna ma i contatti devono essere re-bootstrapati.
+## 21. Shield collusion
 
-## 13. First-contact substitution
+Single hop compromise non ottiene plaintext/session identity authority. Collusion di tutti gli hop/global timing observer resta limite esplicito.
 
-Copiare un QR valido non concede le private key, ma sostituire **l'intero descriptor** prima del primo bootstrap può creare una relazione valida con Mallory.
+## 22. Censura / DPI / active probing
 
-Mitigazioni:
+Path/provider/transport diversity e bridges aumentano reachability. Freedom non promette universal firewall bypass.
 
-- `BOOTSTRAP_UNVERIFIED` vs `CONTACT_VERIFIED`;
-- safety code/fingerprint;
-- out-of-band verification per assurance alta.
+## 23. Adaptive inference
 
-La crittografia non può sapere da sola che una key appartiene alla persona fisica chiamata “Bob”.
+`SUSPECTED` deriva da osservazioni incoerenti; non prova censura/sorveglianza/attribution.
 
-## 14. Colluding contacts
+## 24. Gateway egress/leaks
 
-Pairwise aliases riducono infrastructure correlation ma Bob e Carol possono confrontare root/certificate material se lo vedono.
+Egress può vedere destination/timing/DNS/plaintext esterno non cifrato. Strict/Shield mode vieta silent direct fallback. DNS/IPv4/IPv6 leak tests necessari.
 
-Non promettere unlinkability contro contatti colludenti senza anonymous/pairwise-scoped identity credentials implementate.
+## 25. Payment correlation
 
-## 15. Handshake downgrade / offer stripping
+Domain separation non basta se payment ed entitlement sono nella stessa public flow. Voucher/blind credential + nullifier riduce linkage; timing correlation può restare.
 
-Autenticare solo la suite selezionata può essere insufficiente se un MITM rimuove offerte migliori prima della scelta.
+## 26. Product quota tampering
 
-Transcript lega gli offer set di entrambi i peer e la scelta deve rispettare una deterministic/strongest-allowed policy.
+Contact/device-count V1 sono product/service policy. Un client modificato può aggirare local quota.
 
-## 16. Forward secrecy / post-compromise
+Questo non è un compromise E2EE; implica che il business model non deve dipendere esclusivamente da tali limiti.
 
-- fresh ephemeral exchange per sessione;
-- FS tra sessioni;
-- bounded traffic-key lifetime;
-- authenticated rekey;
-- media/control keys separate;
-- standard/reviewed ratchet come target PCS.
+## 27. Governance quorum compromise
 
-Endpoint/OS compromesso può comunque leggere plaintext corrente.
+Threshold governance elimina una singola key unilaterale ma **non** elimina il rischio di quorum collusion/compromise.
 
-## 17. Transport semantic confusion
+Trust assumption:
 
-Rischio: assumere reliable/ordered semantics su transport datagram/multipath e bloccare text/control per perdita media.
+- abbastanza signer onesti/indipendenti restano fuori dal controllo dell'attaccante;
+- custody/operator domains sono separati per quanto praticabile;
+- no single secret-manager/account contiene un quorum.
 
-Mitigazioni:
+Se un singolo soggetto controlla unilateralmente il threshold, il claim corretto è “nessuna singola chiave”, non “nessun singolo attore”.
 
-```text
-RELIABLE_ORDERED_STREAM
-UNRELIABLE_DATAGRAM
-```
+## 28. Contract/state migration takeover
 
-dichiarati da ogni adapter; sequence/replay spaces separati per control e media.
+Un quorum non deve poter chiamare “migration” uno state rewrite arbitrario.
 
-## 18. Rendezvous / storage exhaustion
+`StateMigrationProof` lega source finalized state + migration code hash + target imported root e deve essere verificabile.
 
-TTL logico non libera automaticamente active state.
+## 29. Supply chain / first install
 
-Mitigazioni:
+Source bytes non è trust. Verification richiede exact hash, threshold release, Android signer, current verified status/policy, bootstrap trust e freshness floor.
 
-- overwrite/ring/bucket bounded;
-- permissionless prune;
-- lease/rent;
-- bounded refund/bounty;
-- active-state upper bound testato.
-
-Una map key nuova per ogni epoch senza reclaim è vietata.
-
-La chain history archiviale resta osservabile.
-
-## 19. Rendezvous metadata
-
-Timing delle write può correlare activity/recovery.
-
-Mitigazioni: pairwise opaque slots, encrypted payload, read-before-write, TTL/backoff, no root/device/IP plaintext.
-
-Non elimina global traffic analysis.
-
-## 20. Network identity leakage
-
-Direct espone IP ai peer. Single relay può vedere entrambi i lati adiacenti.
-
-Mitigazioni: direct opzionale, relay/Shield, temporary transport tokens, log minimizzati.
-
-## 21. Relay Sybil / eclipse
-
-Un attacker può creare molti relay IDs/endpoint/capacity hints.
-
-Mitigazioni:
-
-- signed RelayDescriptor;
-- distinguish self-declared/observed/verified provenance;
-- diversity per source/ASN/provider/operator quando disponibile;
-- evitare path interamente da una singola provenance;
-- controlled randomization;
-- simulation di eclipse.
-
-`N relay IDs != N independent operators`.
-
-## 22. Malicious relay
-
-Può drop/ritardare/correlare/mentire su capacity ma non deve decrypt, impersonate, derive session keys o forge app ACK.
-
-Resource bounds obbligatori: frame/buffer/circuits/handshakes/rate/idle/TTL/hop/bandwidth.
-
-## 23. Relay open proxy
-
-Vietato:
-
-```text
-DEVICE_RELAY -> arbitrary Internet IP:port
-```
-
-Internet egress solo Gateway esplicito.
-
-## 24. Shield compromise / collusion
-
-Single hop compromise non deve ottenere plaintext o entrambe le estremità finali.
-
-Collusione di tutti gli hop o global timing observer può correlare traffico: nessun anonimato assoluto.
-
-Due proxy concatenati non costituiscono Shield.
-
-## 25. Censura / DPI / active probing
-
-Attacker può bloccare IP/provider/RPC/DNS/UDP/TLS fingerprint/bridge/egress/transport classes.
-
-Freedom usa provider/path/transport diversity, bridges e Adaptive Defense.
-
-> Freedom massimizza la probabilità di trovare un carrier utilizzabile; non promette universal bypass.
-
-## 26. Adaptive interference inference
-
-```text
-local connectivity OK
-+ verified control-plane path OK
-+ peer beacon recent
-+ data path FAIL
- -> INTERFERENCE_OR_ROUTE_FAILURE_SUSPECTED
-```
-
-Non è prova di censura/sorveglianza né attribution.
-
-## 27. Gateway egress compromise / leaks
-
-Egress può vedere destination IP, timing/volume, DNS e plaintext esterno non cifrato.
-
-Mitigazioni: HTTPS app, egress diversity, multi-hop, DNS-over-tunnel, strict/kill-switch, IPv4/IPv6 leak tests.
-
-No silent direct fallback in strict/Shield mode.
-
-## 28. Payment correlation
-
-Domain separation non impedisce correlazione se payment e entitlement compaiono nello stesso flow pubblico.
-
-Mitigazione preferita:
-
-```text
-payment -> one-time EntitlementVoucher/blind credential
- -> redemption nullifier -> entitlement
-```
-
-Timing correlation può restare possibile e va dichiarata.
-
-## 29. Contact-slot privacy/enforcement
-
-Il limite 10/20 contatti è product policy V1, non protocol-interoperability invariant.
-
-Questo evita di pubblicare social graph solo per enforcement commerciale.
-
-Un futuro enforcement resistente a modified clients richiede privacy-preserving credential/nullifier/ZK design separato.
-
-## 30. Supply chain / first install
-
-Source dei byte non è trust.
-
-First sideload usa `BootstrapTrustAnchor` pinned. Release verification richiede exact hash + threshold release signature + Android signer lineage + non-revoked/current policy.
-
-## 31. Single super-admin
-
-Production governance minima:
-
-```text
-ReleaseAuthorization   >= 3-of-5
-ReleaseRevocation      >= 3-of-5
-CriticalSecurityPolicy >= 3-of-5
-ContractUpgrade        >= 3-of-5 + timelock
-GovernanceRootRotation >= 3-of-5 + recovery
-Emergency advisory     scoped + TTL
-```
-
-Payment/entitlement/emergency/relay roles non condividono authority totale.
-
-## 32. Anti-overclaim
-
-Distinguere:
-
-```text
-SECURITY CLAIM
-REACHABILITY CLAIM
-INFERENCE
-```
+## 30. Anti-overclaim
 
 Claim vietati senza evidenza:
 
-- “passa ogni firewall”;
-- “impossibile da bloccare”;
-- “non tracciabile”;
-- “rileva la sorveglianza”;
-- “pairwise identity rende unlinkable contro contatti colludenti”;
-- “Gateway ha la stessa E2EE di Communication”.
+- universal firewall bypass;
+- impossible to track/block;
+- surveillance detection;
+- colluding-contact unlinkability;
+- Shield anonymity against global observer;
+- root-compromise recovery senza independent recovery policy;
+- “nessun singolo attore” se un singolo operator controlla il governance quorum.
 
 Claim corretto:
 
-> **Freedom Communication protegge la conversazione endpoint-to-endpoint; Shield/Gateway/Adaptive Defense modificano la resilienza e privacy del percorso entro limiti espliciti.**
+> **Freedom Communication protegge la conversazione endpoint-to-endpoint; control-plane, Shield, Gateway e recovery aggiungono proprietà verificabili entro trust assumptions e limiti espliciti.**
