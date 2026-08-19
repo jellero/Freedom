@@ -5,7 +5,9 @@ Status: **canonical design draft**.
 Normative security: [`SECURITY_INVARIANTS.md`](SECURITY_INVARIANTS.md).
 Control-plane: [`CONTROL_PLANE_SECURITY.md`](CONTROL_PLANE_SECURITY.md).
 Revocation: [`REVOCATION.md`](REVOCATION.md).
+Pairwise recovery: [`PAIRWISE_RECOVERY.md`](PAIRWISE_RECOVERY.md).
 Schema: [`../spec/freedom.cddl`](../spec/freedom.cddl).
+Crypto domains: [`../spec/crypto-domains.txt`](../spec/crypto-domains.txt).
 
 ## 1. Obiettivo
 
@@ -23,6 +25,7 @@ DeviceRecordCommitment          -> opaque device-state handle
 DeviceControlKey                -> scoped control of one device record
 PairwiseContactAlias            -> relationship alias
 PairRendezvousSecret            -> relationship rendezvous authority
+RecoveryStateKey                -> encrypted pairwise-backup state
 TransportToken                  -> temporary route/circuit token
 Session keys                    -> ephemeral E2EE
 ```
@@ -99,7 +102,7 @@ Schema canonico: `device-certificate`.
 
 Il peer verifica:
 
-- canonical encoding + signing domain;
+- canonical encoding + registered cryptographic domain;
 - expected contact/root proof;
 - delegation chain e scope;
 - DeviceRecordCommitment binding;
@@ -136,6 +139,16 @@ threshold
 recovery delay
 policy commitment
 ```
+
+Validità minima:
+
+```text
+>= 2 recovery key commitments
+all commitments distinct
+1 <= threshold <= number of distinct recovery keys
+```
+
+Un profilo production che dichiara **independent compromise recovery** dovrebbe usare threshold >=2 e custody domains realmente separati dalla RootRecoveryKey/device environment ordinaria.
 
 Se esiste una sola RootRecoveryKey e nessuna authority indipendente, proprietario e attacker con la stessa secret sono indistinguibili. Freedom non promette compromise recovery in quel profilo.
 
@@ -227,7 +240,7 @@ Il public slot è:
 slot_id = H("Freedom/RendezvousSlot" || network_id || write_public_key)
 ```
 
-Direction/epoch restano nella derivazione segreta della write key e non devono essere esposti al contratto per verificare il slot binding.
+Il fixed hash purpose è registrato in `spec/crypto-domains.txt`; direction/epoch restano nella derivazione segreta della write key e non devono essere esposti al contratto per verificare il slot binding.
 
 Record firmato + generation monotonic impediscono overwrite a chi osserva soltanto lo slot/public key.
 
@@ -237,16 +250,39 @@ Recovery tramite surviving-device transfer o encrypted `PairwiseRecoveryBundle` 
 
 La source è non fidata; il bundle resta ciphertext.
 
-Dopo restore:
+Il bundle canonico possiede `bundle_id`, `backup_generation`, `previous_bundle_hash`, `state_commitment` e `recovery_key_epoch`.
+
+Dopo perdita totale dei device, **integrity non implica freshness**: una source può restituire un vecchio bundle valido.
+
+Per rollback detection forte il profilo usa un `PairwiseRecoveryAnchor` monotono, piccolo e indipendentemente verificabile:
 
 ```text
-reject detectable rollback
+root_control_commitment
+anchor_epoch
+latest_backup_generation
+latest_bundle_hash
+latest_state_commitment
+recovery_key_epoch
+```
+
+L'anchor non contiene contatti/plaintext ma rende osservabile il timing degli update associati all'opaque recovery lineage. Il trade-off privacy è esplicito.
+
+Restore con anchor:
+
+```text
+verified latest anchor
+ -> candidate bundle hash/generation/state commitment match
+ -> decrypt
  -> re-authenticate peer
  -> rotate/re-derive future rendezvous state
  -> establish fresh session state
 ```
 
-Se manca device sopravvissuto e backup valido, ownership torna ma i contatti richiedono re-bootstrap.
+Senza surviving device o independent anchor, il client può verificare l'integrità del bundle ma non deve chiamarlo `LATEST_VERIFIED_BACKUP`.
+
+Se manca anche un backup valido, ownership torna ma i contatti richiedono re-bootstrap.
+
+Dettagli normativi: `PAIRWISE_RECOVERY.md`.
 
 ## 18. Handshake / session
 
@@ -266,4 +302,5 @@ Forward secrecy e complete rekey state machine sono obbligatorie secondo `PROTOC
 - social graph non è on-chain;
 - root-compromise recovery richiede independent precommitment;
 - current root alone cannot remove sticky recovery policy;
+- pairwise backup source non è freshness authority;
 - colluding-contact unlinkability non viene promessa senza primitive dedicate.
