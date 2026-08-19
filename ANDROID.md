@@ -1,15 +1,16 @@
 # Freedom Android
 
-## Stato
+Status: **implementation roadmap for the canonical specification**
 
-Android è la prima piattaforma di implementazione.
+Normative security rules: [`docs/SECURITY_INVARIANTS.md`](docs/SECURITY_INVARIANTS.md).
 
-Il codice sotto `app/` è ancora un **transport/crypto spike** precedente alla specifica corrente. Dimostra TCP diretto, handshake cifrato e scambio E2EE di test, ma usa IP manuale e fingerprint/TOFU.
+Android è la prima piattaforma di implementazione. Questo documento descrive il target architetturale, non attribuisce automaticamente al codice corrente le proprietà della specifica.
 
-La nuova implementazione canonica parte da:
+## 1. Identity stack
 
 ```text
 RootIdentity
+DeviceCertificate
 DeviceKey
 DeviceRecordCommitment
 PairwiseContactAlias
@@ -18,55 +19,54 @@ TransportToken
 
 Non esiste un `DeviceID` globale richiesto dal client o dal wire protocol.
 
-Dettagli: [`docs/IDENTITY_MODEL.md`](docs/IDENTITY_MODEL.md).
-
-## UX iniziale
-
-```text
-Home
-My Freedom
-Add Contact / Scan QR
-Contacts
-Conversation
-Network Status
-Settings
-Blocked Contacts
-```
-
-Commitment, epoch, RPC e dettagli chain restano nel debug/advanced UI salvo recovery/errori.
-
-## A1 — RootIdentity e device authorization
+## 2. Prima installazione
 
 ```text
 Install Freedom
-      |
-Generate RootIdentity
-      |
-Generate DeviceKey
-      |
-Generate opaque DeviceRecordCommitment
-      |
-protected storage / Android Keystore
-      |
-Generate Recovery Kit
-      |
-0 mandatory chain writes
+ -> generate RootIdentity
+ -> generate DeviceKey
+ -> generate opaque DeviceRecordCommitment
+ -> secure storage / Android Keystore
+ -> generate Recovery Kit
+ -> 0 mandatory chain writes
 ```
 
-Quando serve identità verificabile:
+Quando serve stato verificabile:
 
 ```text
 anti-abuse proof
- -> sponsored registration when eligible
- -> RootIdentity + authorized device record
+ -> sponsored registration/activation
+ -> wait finality
+ -> verify execution/resulting state
+ -> issue/use DeviceCertificate
  -> READY
 ```
 
-`My Freedom` non mostra un global device identifier come identità utente.
+`tx hash` non significa `READY`.
 
-## A2 — Contact QR
+## 3. DeviceCertificate
 
-Il contatto rappresenta una persona/RootIdentity.
+Android deve gestire e verificare:
+
+```text
+DeviceCertificate {
+    version
+    network_id
+    root_identity_commitment_or_proof
+    device_public_key
+    key_epoch
+    protocol_version
+    capabilities?
+    issued_at
+    expires_at
+    certificate_id
+    root_authorization_signature
+}
+```
+
+Il certificato consente handshake offline-verifiable. Chain/cache serve per revocation/freshness, senza RPC obbligatoria nel packet hot path.
+
+## 4. Contact QR / pairwise identity
 
 ```text
 FreedomContact {
@@ -80,7 +80,7 @@ FreedomContact {
 }
 ```
 
-Dopo il primo handshake:
+Dopo handshake:
 
 ```text
 PairSecret
@@ -88,39 +88,37 @@ PairwiseContactAlias
 PairRendezvousSecret
 ```
 
-Alias differenti per contatti differenti.
+Alias differenti per relazioni differenti.
 
-## A3 — Rendezvous
-
-```text
-known route?
-  yes -> connect
-  no
-
-read pairwise remote rendezvous
-  found -> try, no write
-  empty
-
-read local rendezvous
-  valid -> wait/poll
-  empty -> publish one bounded offer
-```
-
-Gli slot derivano da `PairRendezvousSecret`, non da RootIdentity/device commitment pubblico.
-
-## A4 — Secure session
+## 5. Secure session
 
 ```text
 verify expected RootIdentity/contact
- -> verify DeviceKey authorization / epoch
- -> mutual authenticated handshake
- -> fresh session keys
+ -> verify DeviceCertificate
+ -> verify DeviceKey possession
+ -> apply revocation/freshness policy
+ -> authenticated ephemeral key exchange
  -> E2EE ACTIVE
 ```
 
-Il transcript usa identity proof/alias pairwise e device authorization proof.
+Il transcript lega pairwise context, certificate proof/hash, epochs, ephemeral keys, nonces, suite e session ID.
 
-## A5 — Messaging sincrono
+È vietato accettare una chiave semplicemente perché firma correttamente se non è legata al contatto atteso.
+
+## 6. Forward secrecy / rekey
+
+Android deve implementare:
+
+- ephemeral key exchange per nuova sessione;
+- forward secrecy tra sessioni;
+- traffic-key lifetime bounded per tempo/frame/byte;
+- authenticated rekey prima dei limiti;
+- messaging/media keys separate;
+- failure esplicita se un rekey obbligatorio non può essere completato.
+
+Ratchet standard/reviewato: target successivo per post-compromise security.
+
+## 7. Messaging sincrono
 
 ```text
 SEND
@@ -132,39 +130,35 @@ SEND
 
 Nessun retry offline implicito e nessuna queue di delivery futura.
 
-Una bozza UI locale non è una mailbox.
-
-## A6 — Route maintenance
-
-Durante una sessione:
+## 8. Rendezvous
 
 ```text
-Wi-Fi/mobile change
-candidate change
-relay availability
-transport health
-        |
-        v
-RouteUpdate -> E2EE session
+known route?
+  yes -> connect
+  no
+
+read pairwise remote rendezvous
+  usable -> try, no write
+  empty
+
+read local rendezvous
+  valid -> wait/poll
+  empty -> publish one bounded offer
 ```
 
-Nessuna write blockchain se almeno un path resta valido.
+Slot derivati da `PairRendezvousSecret`.
 
-## A7 — NAT / transport fabric
-
-Supporto progressivo:
+## 9. Route / transport
 
 ```text
 DIRECT
 OBSERVED
-UDP hole punching
+NAT_TRAVERSAL
 RELAY
 BRIDGE
 SHIELDED / MULTI_HOP
 PLUGGABLE / OBFUSCATED TRANSPORT
 ```
-
-Il transport layer deve essere modulare:
 
 ```text
 TransportAdapter
@@ -175,41 +169,36 @@ TransportAdapter
   close()
 ```
 
-Il core non deve dipendere da un singolo protocollo di rete.
+## 10. Relay mode
 
-## A8 — Relay mode
-
-`DEVICE_RELAY` è opt-in.
+`DEVICE_RELAY` è opt-in e resource-bounded:
 
 ```text
-Relay mode: OFF/ON
-Wi-Fi only
-Charging only optional
-Battery minimum
-Max bandwidth
-Max concurrent circuits
+relay_enabled
+wifi_only
+charging_only
+battery_minimum
+metered_network_allowed
+max_bandwidth
+max_concurrent_circuits
+max_memory
+max_cpu
+background_policy
 ```
 
 Relay mode:
 
 - non salva conversazioni;
 - usa circuit token temporanei;
-- non riceve RootIdentity/device commitment quando non necessario;
-- non diventa open proxy Internet;
-- può qualificare al Relay Contributor benefit.
+- non riceve identity globali quando non necessari;
+- non diventa open Internet proxy;
+- può qualificare Relay Contributor.
 
-## A9 — Attachments
+## 11. Attachments / voice / video
 
-```text
-active secure session
- -> encrypted chunks
- -> direct/relay/Shield transport
- -> receiver endpoint
-```
+Trasferimento solo dentro sessione/route attiva.
 
-La perdita route non trasforma il file in storage offline di rete.
-
-## A10 — Voice/video
+Voice/video:
 
 ```text
 CallInvite
@@ -218,11 +207,9 @@ CallCandidate
 CallEnd
 ```
 
-Signaling E2EE; media keys separate; path direct/relay/Shield compatibile.
+Signaling E2EE; media keys separate e soggette a key lifetime/rekey.
 
-## Network Indicator
-
-Il client deve mostrare almeno:
+## 12. Network Indicator / Adaptive Defense
 
 ```text
 NORMAL
@@ -232,64 +219,53 @@ SUSPECTED
 UNAVAILABLE
 ```
 
-Advanced status può mostrare:
+`SUSPECTED` deriva da osservazioni/inferenze implementate; non significa “sei monitorato”.
+
+Fallback possibili:
 
 ```text
-current path
-transport family
-relay/bridge class
-control-plane status
-failure classification
-active fallback
+same transport / different endpoint
+ -> different provider
+ -> relay / bridge
+ -> different transport family
+ -> Shield / multi-hop
 ```
 
-## Adaptive Defense
-
-Dopo failure selettive:
-
-```text
-PATH_FAILURE
-PROTOCOL_BLOCK_SUSPECTED
-DPI_OR_FILTERING_SUSPECTED
-BRIDGE_UNREACHABLE
-CONTROL_PLANE_DEGRADED
-```
-
-Il client prova alternative bounded senza attribuire censura/sorveglianza a un attore specifico.
-
-## Share Freedom
+## 13. Share Freedom / first sideload
 
 ```text
 Share Freedom
  -> Install QR
  -> peer / relay / mirror / store
- -> verify release/hash/signer
- -> Android installer
+ -> exact artifact hash
+ -> threshold FreedomRelease signatures
+ -> Android signer lineage
+ -> ReleaseStatus / SecurityPolicy
+ -> installer
 ```
 
-La Direct build può servire una cache APK standalone già verificata. Non incorporare per default una seconda copia dell'APK.
+Per il primo sideload il `Freedom Bootstrap Verifier` usa root pinned:
 
-## Freedom Gateway — post-V1
+```text
+expected_package_id
+release_signer_set_root_commitment
+android_signing_root_or_lineage_anchor
+minimum verifier policy
+```
 
-Gateway è separato dalla chat Freedom e dal `DEVICE_RELAY`.
+Il peer/QR non può ridefinire queste root.
+
+## 14. Freedom Gateway — post-V1
+
+Gateway è separato da Freedom Communication e `DEVICE_RELAY`.
 
 ```text
 Chrome / Firefox / selected apps
-           |
-           v
-     Android VpnService
-           |
-     Freedom Gateway
-           |
- path / transport selector
-   |- relay
-   |- bridge
-   |- Shield / multi-hop
-   `- alternate transport
-           |
-     explicit Egress
-           |
-        Internet
+ -> Android VpnService
+ -> Freedom Gateway
+ -> path / transport selector
+ -> explicit Egress
+ -> Internet
 ```
 
 Modalità:
@@ -300,150 +276,68 @@ SELECTED_APPS
 WHOLE_DEVICE
 ```
 
-Requisiti Android:
+Requisiti:
 
-- consenso tunnel esplicito;
-- selected-app allowlist quando richiesta;
-- whole-device mode opzionale;
-- DNS dentro tunnel quando la policy lo richiede;
-- IPv4/IPv6 leak test;
+- consenso esplicito;
+- DNS/leak controls;
 - split tunneling visibile;
-- kill-switch/strict mode opzionale;
+- kill-switch/strict mode;
+- no silent fallback direct in strict mode;
 - current egress/path status;
-- nessun silent fallback direct in strict mode;
-- conflitto con altro tunnel/VPN spiegato all'utente.
+- `DEVICE_RELAY != INTERNET_EGRESS`.
 
-Il prodotto e la UI si chiamano **Freedom Gateway**. `VpnService` è la primitive Android, non il nome commerciale della funzione.
-
-Il Gateway non integra un browser generalista: usa il browser/app già installato dall'utente.
-
-Dettagli: [`docs/GATEWAY.md`](docs/GATEWAY.md).
-
-## Gateway security boundary
+Target Free managed Gateway iniziale:
 
 ```text
-Freedom Communication
-  endpoint-authenticated E2EE
-  strongest communication boundary
-
-Freedom Gateway
-  encrypted path to egress
-  application protocol remains responsible after egress
+100 MB / giorno
 ```
 
-Non usare la UI "End-to-end encrypted by Freedom" per traffico Gateway generico.
+Quota separata da Freedom Communication ed Emergency Shield.
 
-Stati Gateway separati possibili:
+## 15. Maximum Reachability / censorship lab
 
-```text
-GATEWAY_OFF
-GATEWAY_DIRECT_EGRESS
-GATEWAY_SHIELDED
-GATEWAY_DEGRADED
-GATEWAY_FILTERING_SUSPECTED
-GATEWAY_UNAVAILABLE
-```
-
-## Gateway UI / managed capacity
-
-Vista semplice candidata:
-
-```text
-FREEDOM GATEWAY
-
-Status             Protected
-Mode               3 selected apps
-Path               Shielded
-Egress             CH / managed
-Filtering          None
-Managed capacity   82 MB / 100 MB today
-
-[ Disconnect ]
-[ Apps ]
-[ Network details ]
-```
-
-Target Free iniziale, quando il managed Gateway sarà disponibile:
-
-```text
-100 MB / giorno di managed Gateway capacity
-```
-
-Questa quota:
-
-- è separata dal traffico Freedom Communication;
-- è separata da Emergency Shield Communication;
-- non viene consumata da direct/community/private communication paths;
-- può essere ricalibrata con costi reali;
-- deve essere mostrata come **capacity state**, non come stato di sicurezza o censura.
-
-Se la quota finisce:
-
-```text
-Managed Gateway capacity used for today
-Freedom Communication remains available
-Private/other eligible paths remain independent
-```
-
-Non mostrare `SUSPECTED` o `UNAVAILABLE` solo perché il budget managed è terminato.
-
-Configurazione candidata:
-
-```text
-Freedom Gateway       ON/OFF
-Mode                   Selected apps / Whole device
-Protected apps         Chrome, Firefox, ...
-Protection             Standard / Shielded / Maximum Reachability
-DNS leak protection    ON
-Kill switch            optional
-Managed quota          used / remaining
-Egress                 region / class
-```
-
-## Maximum Reachability — post-V1
-
-Android deve poter supportare una policy avanzata:
+Policy futura:
 
 ```text
 MAXIMUM_REACHABILITY
-  maintain bounded alternative candidates
-  try independent providers
-  rotate transport family after filtering evidence
-  use non-public bridge when available
-  parallel connect within battery/data policy
+  bounded warm alternatives
+  independent providers
+  transport-family rotation
+  non-public bridge when available
+  parallel connect within resource policy
   aggressive bounded failover
 ```
 
-Nessun claim "passa tutti i firewall". Il test target è misurare quante classi di blocco reali vengono superate.
+Test riproducibili:
 
-## Censorship / firewall test lab
+- block known relay IPs;
+- block one provider ASN;
+- block UDP/QUIC;
+- protocol fingerprint block;
+- DNS/SNI filtering;
+- active-probe simulation;
+- loss/latency/reordering;
+- partial allowlist;
+- RPC/provider block.
 
-Prima di claim pubblici forti creare test riproducibili:
+Nessun claim “passa tutti i firewall”.
 
-```text
-block known relay IPs
-block one provider ASN
-block UDP
-block QUIC
-block known protocol fingerprint
-DNS poisoning/blocking
-SNI/domain filtering
-active probe simulated
-high loss / latency / reordering
-partial allowlist environment
-RPC provider block
-```
+## 16. Secure storage
 
-Acceptance criteria devono misurare:
+Separare almeno:
 
-- time-to-detect;
-- time-to-failover;
-- successful alternate transport rate;
-- false positive rate;
-- battery/data cost;
-- inability to correlate identity through fallback artifacts.
+- RootIdentity/private material;
+- DeviceKey / DeviceCertificate;
+- device authorization state;
+- pairwise contacts/rendezvous secrets;
+- session state secondo policy;
+- network cache;
+- Gateway config;
+- release/signer-set/SecurityPolicy state.
 
-## Module target
+Non loggare private/session/rendezvous/Gateway tunnel keys.
+
+## 17. Module target
 
 ```text
 app/
@@ -466,101 +360,68 @@ gateway/
   android-vpn/
   tunnel/
   egress/
+release/
+  verifier/
+  bootstrap/
 platform-android/
 ```
 
-La separazione può essere introdotta gradualmente senza sovra-ingegnerizzare lo spike.
+## 18. Test gates
 
-## Secure storage
-
-Separare almeno:
-
-- RootIdentity metadata/private material;
-- device authorization metadata;
-- contacts/pairwise aliases;
-- pair rendezvous secrets;
-- conversation data secondo policy;
-- network cache;
-- Gateway configuration;
-- trusted release/update state.
-
-Non loggare private/session/rendezvous/Gateway tunnel keys.
-
-## Debug screen
+Minimo prima dell'interoperabilità pubblica:
 
 ```text
-Root commitment hash abbreviated
-Device record commitment hash abbreviated
-Key epoch
-Chain state/finality
-RPC selected
-Pairwise alias hash
-Rendezvous slot hash / TTL
-Known route candidates
-Current path
-Transport family
-Relay / bridge / egress class
-Session ID
-TX/RX sequence
-RTT
-Failure classification
-Gateway mode/status when active
-Gateway quota used/remaining
-```
-
-## Build / CI
-
-Minimo:
-
-```text
-assembleDebug
+assemble
 unit tests
-protocol serialization tests
-crypto vectors
-transport adapter tests
-lint
+protocol serialization/test vectors
+DeviceCertificate positive/negative tests
+expected-contact handshake negative tests
+forward-secrecy/rekey tests
+replay/downgrade tests
+control-plane Failure/finality/state-mismatch tests
+Keystore instrumentation tests
+release/bootstrap verification tests
+transport resource-bound tests
 ```
 
 Successivamente:
 
 ```text
-network namespace / emulator integration tests
 DPI/firewall simulation
-relay failover tests
+relay failover/load tests
 Gateway DNS/leak tests
-Gateway quota accounting tests
-multi-device tests
+multi-device/recovery tests
 fuzzing
 ```
 
-## Roadmap Android
+## 19. Roadmap Android
 
 ```text
 A1  RootIdentity + DeviceKey + opaque device record
 A2  Recovery Kit + sponsored registration
-A3  NearChainAdapter Testnet
-A4  person/contact QR + pairwise alias
-A5  device authorization resolve/rotation/revocation
-A6  pairwise rendezvous capability + slots
-A7  read-before-write flow
-A8  mutual authenticated session
-A9  synchronous text + ACK
-A10 route update
-A11 NAT traversal
+A3  DeviceCertificate offline-verifiable
+A4  NearChainAdapter + verified finality/state
+A5  person/contact QR + pairwise alias
+A6  device rotation/revocation/freshness
+A7  pairwise rendezvous + read-before-write
+A8  expected-contact authenticated session
+A9  forward secrecy + bounded key lifetime/rekey
+A10 synchronous text + ACK
+A11 route update / NAT
 A12 relay / DEVICE_RELAY
 A13 attachments
 A14 voice/video
-A15 Share Freedom Direct
+A15 Share Freedom + BootstrapTrustAnchor
 A16 Network Indicator / Adaptive Defense
 A17 transport abstraction / bridge support
-A18 store compliance polish
+A18 store/direct release polish
 
 POST-V1 GATEWAY
 G1  explicit egress protocol
 G2  selected-app VpnService
 G3  whole-device + DNS/leak controls
-G4  managed quota accounting + 100 MB/day Free target
-G5  egress failover / diversity
+G4  managed quota + 100 MB/day Free target
+G5  egress failover/diversity
 G6  shielded multi-hop Gateway
 G7  pluggable anti-censorship transports
 G8  bridge anti-enumeration
