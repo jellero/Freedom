@@ -1,4 +1,4 @@
-# Freedom Messenger
+# Freedom Communication
 
 **Powered by Freedom Protocol**
 
@@ -8,7 +8,7 @@
 
 Freedom può usare relay, egress, RPC e altri nodi fisici, ma **nessuno di essi deve essere un'autorità assoluta o un requisito permanente**. La fiducia non viene concessa a un singolo operatore: deriva da primitive crittografiche, firme verificabili, policy esplicite e un'architettura progettata per rendere i componenti infrastrutturali sostituibili.
 
-Freedom è un progetto di comunicazione privata e resilienza di rete costruito attorno a una scelta precisa: **la conversazione Freedom esiste quando le persone sono presenti nello stesso momento**.
+Freedom Communication è il prodotto di comunicazione privata costruito su Freedom Protocol. La sua scelta fondamentale è precisa: **la conversazione Freedom esiste quando le persone sono presenti nello stesso momento**.
 
 ```text
 peer raggiungibile + sessione autenticata -> comunica adesso
@@ -17,7 +17,7 @@ peer non raggiungibile                    -> non accodare per dopo
 
 Il protocollo base non crea una mailbox offline, non deposita messaggi sulla blockchain e non usa i relay come storage persistente.
 
-La seconda direzione del progetto, separata dal core messenger, è **Freedom Gateway**: usare lo stesso fabric di route/relay/Shield e transport adattivi come percorso di rete opzionale per browser e altre app, soprattutto in reti filtrate o degradate.
+La seconda direzione del prodotto, separata da Freedom Communication, è **Freedom Gateway**: usare lo stesso fabric di route/relay/Shield e transport adattivi come percorso di rete opzionale per browser e altre app, soprattutto in reti filtrate o degradate.
 
 ## Due superfici, due garanzie
 
@@ -205,6 +205,23 @@ RootIdentity
 La blockchain/control-plane **non trasporta** chat, file, audio, video, Gateway payload o APK. Serve per ownership/device authorization, key rotation/revocation, rendezvous/recovery, entitlement e piccoli manifest/policy firmati.
 
 **NEAR non è Freedom Protocol.** È la prima implementazione del registro tramite `ChainAdapter` e deve poter essere sostituita.
+
+### Freedom Communication architecture
+
+![Freedom Communication architecture](docs/assets/freedom-communication.svg)
+
+Lo schema Communication rende esplicita la security boundary principale:
+
+```text
+RootIdentity / authorized DeviceKey
+ -> pairwise authenticated relationship
+ -> adaptive route / transport selector
+ -> direct / relay / bridge / Shield
+ -> authenticated E2EE live session
+ -> text / file / voice / video
+```
+
+Il percorso è sostituibile; **l'identità del peer e le chiavi della conversazione restano agli endpoint**. Relay e bridge trasportano ciphertext e non diventano mailbox o trust anchor.
 
 ### Freedom Gateway architecture
 
@@ -468,7 +485,7 @@ I 100 MB/giorno riguardano esclusivamente il **managed Gateway egress**. Non son
 - multi-hop Gateway;
 - Maximum Reachability con resource budget superiore.
 
-Pro non compra una cifratura del messenger "più forte" né una diagnosi più onesta.
+Pro non compra una cifratura di Freedom Communication "più forte" né una diagnosi più onesta.
 
 ### Gateway
 
@@ -511,7 +528,7 @@ Share Freedom
 payment/entitlement foundation
 ```
 
-**Freedom Gateway non deve ritardare il messenger V1.** Viene costruito sopra le primitive riutilizzabili di routing, relay, Shield e transport diversity.
+**Freedom Gateway non deve ritardare Freedom Communication V1.** Viene costruito sopra le primitive riutilizzabili di routing, relay, Shield e transport diversity.
 
 Dettagli: [`docs/PRODUCT_SCOPE.md`](docs/PRODUCT_SCOPE.md) e [`docs/GATEWAY.md`](docs/GATEWAY.md).
 
