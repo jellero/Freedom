@@ -3,78 +3,83 @@
 Status: **canonical design draft**
 
 Normative security rules: [`SECURITY_INVARIANTS.md`](SECURITY_INVARIANTS.md).
+Control-plane security: [`CONTROL_PLANE_SECURITY.md`](CONTROL_PLANE_SECURITY.md).
+Shield: [`SHIELD.md`](SHIELD.md).
 
 ## 1. Definizione
 
 Freedom separa esplicitamente:
 
-1. **ownership identity** — RootIdentity/recovery;
-2. **offline-verifiable device authorization** — DeviceCertificate + DeviceKey;
-3. **verifiable control-plane** — revocation/rotation, entitlement, recovery, policy e release;
+1. **user-root recovery** — RootRecoveryKey / RootIdentity epoch;
+2. **device authorization** — delegated DeviceAuthorizationKey + DeviceCertificate;
+3. **verifiable control-plane** — checkpoint/state proof, revocation/rotation, entitlement, recovery, policy/release;
 4. **pairwise identity/rendezvous** — relazione specifica tra due contatti;
 5. **routing/transport fabric** — direct, NAT, relay, bridge, Shield, pluggable transport;
 6. **Freedom Communication** — sessione E2EE live;
-7. **Freedom Gateway** — percorso opzionale per app esterne verso Internet egress;
-8. **verified distribution** — source non fidata, release verificata.
+7. **Freedom Gateway** — percorso opzionale verso explicit Internet egress;
+8. **verified distribution** — source bytes non fidata, release verificata.
 
-La prima implementazione del control-plane usa NEAR tramite `ChainAdapter`; chat, media, Gateway payload e APK restano off-chain.
+NEAR è la prima implementazione `ChainAdapter`; chat, media, Gateway payload e APK restano off-chain.
 
 ## 2. Vista d'insieme
 
 ```text
-                  DISTRIBUTED / VERIFIABLE CONTROL PLANE
-      +---------------------------------------------------------+
-      | device revocation / rotation                           |
-      | pairwise rendezvous / recovery                         |
-      | entitlement / sponsorship                              |
-      | security policy / release / signer sets                |
-      +----------------------------+----------------------------+
-                                   |
-                          only when needed
-                                   |
+                DISTRIBUTED / VERIFIABLE CONTROL PLANE
+      +------------------------------------------------------+
+      | finalized checkpoint / state proofs                  |
+      | device revocation / rotation                         |
+      | pairwise rendezvous / recovery                       |
+      | entitlement / sponsorship / payment redemption       |
+      | security policy / release / signer / contract state  |
+      +--------------------------+---------------------------+
+                                 |
+                         only when needed
+                                 |
 
-+--------------------------+                     +--------------------------+
-| Alice                    |                     | Bob                      |
-| RootIdentity             |                     | RootIdentity             |
-| DeviceCertificate        |                     | DeviceCertificate        |
-| DeviceKey                |                     | DeviceKey                |
-| PairwiseContactAlias_AB  |                     | PairwiseContactAlias_BA  |
-+------------+-------------+                     +------------+-------------+
-             |                                                |
-             +--------- pairwise authenticated state ---------+
-                                   |
-                         path / transport selector
-                                   |
-             +---------------------+---------------------+
-             |                                           |
-             v                                           v
-   FREEDOM COMMUNICATION                         FREEDOM GATEWAY
-   authenticated E2EE live                      external app traffic
-             |                                           |
- text / file / voice / video                    relay/bridge/Shield
-                                                         |
-                                                 explicit Internet Egress
-                                                         |
-                                                      Internet
++---------------------------+                 +---------------------------+
+| Alice                     |                 | Bob                       |
+| RootIdentity              |                 | RootIdentity              |
+| DeviceAuthorization proof |                 | DeviceAuthorization proof |
+| DeviceCertificate         |                 | DeviceCertificate         |
+| DeviceKey                 |                 | DeviceKey                 |
+| PairwiseContactAlias_AB   |                 | PairwiseContactAlias_BA   |
++-------------+-------------+                 +-------------+-------------+
+              |                                             |
+              +--------- authenticated relationship --------+
+                                  |
+                        path / transport selector
+                                  |
+              +-------------------+-------------------+
+              |                                       |
+              v                                       v
+   FREEDOM COMMUNICATION                      FREEDOM GATEWAY
+   authenticated E2EE live                   external app traffic
+              |                                       |
+ text / file / voice / video                 relay/bridge/Shield
+                                                      |
+                                              explicit Internet Egress
 ```
 
 ## 3. Trust model
 
 ```text
-RootIdentity                    -> ownership / recovery
-DeviceCertificate               -> offline authorization proof
-DeviceKey                       -> device authentication
-DeviceRecordCommitment          -> opaque control-plane handle
-PairwiseContactAlias            -> relationship identity
-TransportToken                  -> temporary path identity
-Session keys                    -> E2EE traffic keys
-EntitlementCommitment           -> domain-separated commercial state
-PaymentBindingCommitment        -> domain-separated payment state
+RootRecoveryKey                -> cold user recovery
+RootIdentity                   -> ownership/root epoch
+DeviceAuthorizationKey         -> delegated authorization epoch
+DeviceCertificate              -> offline device authorization proof
+DeviceKey                      -> device authentication
+DeviceRecordCommitment         -> opaque control-plane handle
+PairwiseContactAlias           -> relationship identity
+TransportToken                 -> temporary path identity
+Session keys                   -> E2EE traffic keys
+EntitlementCommitment          -> commercial state
+PaymentBindingCommitment       -> payment state
+VerifiedControlPlaneCheckpoint -> verified state root/finality
 ```
 
 Nessun livello viene riutilizzato automaticamente come un altro.
 
-## 4. Freedom Communication security boundary
+## 4. Communication security boundary
 
 ![Freedom Communication architecture](assets/freedom-communication.svg)
 
@@ -84,61 +89,44 @@ Freedom endpoint A
 Freedom endpoint B
 ```
 
-Le session keys restano agli endpoint.
-
-Relay, bridge, RPC, provider e path selector non autenticano il peer e non possiedono le conversation keys.
-
-Il path può cambiare senza cambiare identità pairwise o session semantics.
+Session keys restano agli endpoint. Relay/bridge/RPC/provider/path selector non autenticano il peer e non possiedono conversation keys.
 
 ## 5. Device authorization senza RPC nel packet hot path
 
-La RootIdentity autorizza DeviceKey tramite:
-
 ```text
-DeviceCertificate {
-    version
-    network_id
-    root_identity_commitment_or_proof
-    device_public_key
-    key_epoch
-    protocol_version
-    capabilities?
-    issued_at
-    expires_at
-    certificate_id
-    root_authorization_signature
-}
+RootRecoveryKey
+ -> DeviceAuthorizationDelegation
+ -> DeviceCertificate
+ -> DeviceKey possession
 ```
 
-Il peer verifica offline il certificato e usa control-plane/cache verificata per revocation/freshness.
+Il peer verifica delegation/certificate offline e applica revocation/freshness da cache/control-plane **crittograficamente verificato**.
 
-Quindi:
+Nessuna singola RPC diventa trust anchor.
 
-```text
-new handshake
- -> verify expected contact relationship
- -> verify DeviceCertificate offline
- -> verify DeviceKey possession
- -> apply cached/fresh revocation policy
- -> establish E2EE session
-```
+## 6. Control-plane authenticity
 
-Nessuna singola RPC diventa necessaria per ogni handshake.
-
-## 6. Pairwise identity / no global DeviceID
-
-Freedom non usa un `DeviceID` globale come identity o routing identifier.
+Security-sensitive state:
 
 ```text
-Bob / RootIdentity
-  |- Phone DeviceCertificate
-  |- Tablet DeviceCertificate
-  `- Desktop DeviceCertificate
+NetworkAnchor
+ -> VerifiedControlPlaneCheckpoint
+ -> state root
+ -> inclusion/non-inclusion proof
+ -> canonical object
 ```
 
-Il contatto è la persona/RootIdentity.
+Multi-RPC senza proof verification non basta per dichiarare stato production `VERIFIED`.
 
-Dopo bootstrap:
+## 7. Device/account privacy
+
+No global DeviceID.
+
+Production target per device activation/multi-device usa anonymous authorization proof/slot nullifier per evitare una lista pubblica leggibile RootIdentity→devices.
+
+Se Testnet resta linkabile, tale limite viene dichiarato esplicitamente.
+
+## 8. Pairwise identity
 
 ```text
 PairSecret_AB
@@ -148,44 +136,36 @@ PairRendezvousSecret_AB
 
 Relazioni differenti producono alias differenti.
 
-## 7. Commitment domain separation
+Questo riduce infrastructure correlation; non implica automaticamente unlinkability contro contatti colludenti che confrontano root/certificate material.
 
-Un singolo `root_commitment` non deve diventare il nuovo global correlator.
+## 9. First contact
 
-```text
-DeviceAuthorizationCommitment
-EntitlementCommitment
-PaymentBindingCommitment
-SponsorshipCommitment
-```
+Prima del primo bootstrap un descriptor può essere sostituito.
 
-sono domain-separated.
-
-Rendezvous usa `PairRendezvousSecret`, non account commitment globali.
-
-## 8. Pairwise rendezvous / recovery
+Il client distingue:
 
 ```text
-known path -> try
-alternate relay/bridge -> try
-pairwise slot -> read
-if usable -> connect, no write
-else bounded read-before-write recovery
+BOOTSTRAP_UNVERIFIED
+CONTACT_VERIFIED
 ```
+
+Safety code/fingerprint/out-of-band verification è disponibile quando serve assurance umana più forte.
+
+## 10. Pairwise recovery
+
+Pairwise state non è on-chain.
+
+Recovery avviene tramite:
 
 ```text
-RendezvousRecord {
-    version
-    expires_at
-    ciphertext
-}
+surviving authorized device transfer
+or
+encrypted PairwiseRecoveryBundle
 ```
 
-Il record pubblico non contiene mapping leggibile identity/device/route.
+Se entrambi mancano, ownership torna ma i contatti richiedono re-bootstrap.
 
-## 9. Route / transport fabric
-
-Classi:
+## 11. Route / transport fabric
 
 ```text
 DIRECT
@@ -197,91 +177,109 @@ MULTI_HOP
 PLUGGABLE / OBFUSCATED TRANSPORT
 ```
 
-Transport identity usa capability temporanee:
+Ogni adapter dichiara semantica `RELIABLE_ORDERED_STREAM` e/o `UNRELIABLE_DATAGRAM`.
 
-```text
-TransportToken
-RelayCircuitToken
-NextHopToken
-RouteCapability
-```
+Text/control/rekey non dipendono dalla perdita di media datagram attraverso un sequence space unico.
 
-Un IP non rappresenta una identity Freedom.
+## 12. Relay architecture
 
-## 10. Relay architecture
-
-Un relay può essere VPS, server, mini-PC, community node, managed/private node o device opt-in.
+Relay può essere VPS/server/mini-PC/community/managed/private/device opt-in.
 
 Invarianti:
 
-- forward ciphertext, not store;
-- niente mailbox persistente;
-- buffer/TTL/size/concurrency bounded;
-- relay non autentica peer;
-- relay non possiede session keys;
-- `DEVICE_RELAY` non è Internet egress;
-- endpoint context e relay context separati.
+- forward not store;
+- no mailbox;
+- resource bounds;
+- no session keys;
+- no implicit Internet egress;
+- RelayDescriptor firmato;
+- diversity non derivata solo da metadata self-declared;
+- `N relay IDs != N independent operators`.
 
 > **Qualsiasi macchina compatibile può inoltrare Freedom; nessuna macchina deve diventare Freedom.**
 
-## 11. Forward secrecy / rekey
+## 13. Shield
+
+Freedom Shield forte richiede vero circuit protocol:
+
+```text
+Alice -> Hop A -> Hop B -> Bob
+```
+
+con per-hop keys, layered forwarding, provenance-aware path selection e no silent direct fallback.
+
+Due proxy concatenati non bastano. Dettagli: [`SHIELD.md`](SHIELD.md).
+
+## 14. Forward secrecy / anti-downgrade
 
 Freedom Communication richiede:
 
 ```text
-ephemeral key exchange per sessione
-+ forward secrecy tra sessioni
+fresh ephemeral exchange
++ both-offer-set transcript binding
++ strongest-allowed negotiation
++ forward secrecy
 + bounded traffic-key lifetime
-+ authenticated rekey per sessioni lunghe
-+ media keys separate
++ authenticated rekey
++ separate media/control keys
 ```
 
-Una futura ratchet construction standard/reviewata è il target per post-compromise security.
-
-La compromissione futura della DeviceKey non deve rendere decifrabili sessioni precedenti già concluse.
-
-## 12. Synchronous semantics
+## 15. Synchronous semantics
 
 ```text
-active authenticated session?
-  yes -> transmit now
-  no  -> fail/discard now
+active authenticated session? yes -> transmit now
+active authenticated session? no  -> fail/discard now
 ```
 
-Nessuna mailbox, message queue o store-and-forward automatico nel protocollo base.
+No mailbox/offline delivery queue/store-and-forward automatico.
 
-## 13. Verified control-plane finality
+## 16. Verified finality
 
 ```text
-submit signed operation
- -> acceptable finality
+submit
+ -> finality proof
  -> execution success
- -> read resulting state
- -> verify expected transition
+ -> resulting state proof
+ -> expected transition
  -> local success
 ```
 
-`transaction hash != success`.
+Transaction hash != success.
 
-Vale per activation/rotation/revocation, entitlement, sponsorship, payment effects, policy, release/status e recovery state transitions.
+## 17. Active storage bounded
 
-## 14. No super-admin governance
+TTL da solo non basta. Temporary control-plane state usa overwrite/ring/prune/lease/reclaim concreto e converge a un bound di stato attivo.
 
-In production:
+La storia archiviale della chain resta osservabile.
+
+## 18. Verified time
+
+Expiry/freshness usa `VerifiedTimeAnchor`, height/epoch e monotonic local time. Wall clock locale non può riattivare stato vecchio.
+
+## 19. User root compromise
+
+`LOST_DEVICE` e `ROOT_COMPROMISE` sono distinti.
+
+Root compromise usa `UserRootRotation` e nuovo root epoch; una root rubata non viene “recuperata” continuando a usarla.
+
+## 20. No-super-admin governance
+
+Production:
 
 ```text
 ReleaseAuthorization   >= 3-of-5
 ReleaseRevocation      >= 3-of-5
 CriticalSecurityPolicy >= 3-of-5
-RootRotation           >= 3-of-5 + recovery
+ContractUpgrade        >= 3-of-5 + timelock
+GovernanceRootRotation >= 3-of-5 + recovery
 Emergency advisory     scoped + TTL
 ```
 
-Payment, entitlement, emergency e release authorities sono ruoli separati.
+Signer-set transitions sono monotonic/cross-authorized; highest-seen state impedisce rollback.
 
-Una singola production key non può controllare l'intero sistema.
+Una singola Full Access key production che può sostituire il contratto viola il modello.
 
-## 15. Freedom Gateway boundary
+## 21. Gateway boundary
 
 ```text
 external app
@@ -293,89 +291,63 @@ external app
 
 Gateway protegge/diversifica il percorso, non trasforma protocolli esterni in Freedom E2EE.
 
-`DEVICE_RELAY`/`COMMUNITY_RELAY` non diventano automaticamente Internet exit.
+## 22. Censorship resistance
 
-Dettagli: [`GATEWAY.md`](GATEWAY.md).
+Nessun singolo fingerprint/protocol/IP/domain/relay/RPC/provider/transport deve essere requisito permanente.
 
-## 16. Censorship resistance
+Freedom prova alternative quando esiste almeno un carrier utilizzabile; non promette universal bypass.
 
-Invariante:
+## 23. Adaptive Defense
 
-> **nessun singolo fingerprint, protocollo, IP, dominio, relay, RPC, provider o transport deve essere requisito permanente.**
+`SUSPECTED` deriva da incoerenze osservate e resta inferenza, non prova di censura/sorveglianza.
 
-Freedom tenta path/transport differenti quando esiste almeno un carrier utilizzabile.
-
-Non promette universal firewall bypass o funzionamento senza connettività.
-
-## 17. Adaptive Defense
-
-Quando peer activity/control-plane restano disponibili ma il data path fallisce:
+## 24. Release / Share Freedom
 
 ```text
-INTERFERENCE_OR_ROUTE_FAILURE_SUSPECTED
- -> alternate relay/provider/transport/bridge/Shield
+untrusted bytes
+ -> exact hash
+ -> signer-set transition/epoch
+ -> threshold FreedomRelease
+ -> Android signer lineage
+ -> ReleaseStatus + SecurityPolicy proofs
+ -> installer
 ```
 
-È un'inferenza di rete, non prova di censura o sorveglianza.
+First sideload usa pinned BootstrapTrustAnchor indipendente dalla source.
 
-## 18. Release / Share Freedom
+## 25. Payment privacy
 
-```text
-peer / relay / mirror / store
-        -> untrusted artifact bytes
-        -> exact hash
-        -> threshold FreedomRelease signatures
-        -> Android signer/lineage
-        -> ReleaseStatus / SecurityPolicy
-        -> installer
-```
+Payment e entitlement preferiscono un one-time voucher/blind credential + redemption nullifier, evitando linkage diretto quando possibile. Timing correlation può restare.
 
-First sideload usa `BootstrapTrustAnchor` pinned indipendente dalla source.
+## 26. Contact-slot policy
 
-La source dei byte non può ridefinire release signer root, package ID o Android signing anchor.
+`10/20 contact slots` V1 è product policy del client ufficiale, non protocol-interoperability invariant. Il social graph non viene pubblicato per enforcement commerciale.
 
-## 19. Primitive vietate
+## 27. Primitive vietate
 
-Freedom Protocol **MUST NOT** introdurre:
+Lista normativa completa: [`SECURITY_INVARIANTS.md`](SECURITY_INVARIANTS.md).
 
-- global user/device network ID;
-- RootIdentity/DeviceRecordCommitment come routing/contact ID;
-- on-chain messages/mailbox;
-- persistent relay inbox;
-- automatic offline delivery queue;
-- public readable social graph;
-- mandatory central delivery server;
-- mandatory single RPC/provider/relay/egress;
-- master decryption key;
-- single production super-admin key;
-- transaction-hash-is-success semantics;
-- silent security downgrade.
+In particolare: no global network ID, on-chain mailbox/messages, persistent relay inbox, public social graph, mandatory central delivery server, master decryption key, single-key super-admin, tx-hash-is-success, silent downgrade, unbounded temporary active state.
 
-Lista completa: [`SECURITY_INVARIANTS.md`](SECURITY_INVARIANTS.md).
-
-## 20. Control-plane/data-plane split
+## 28. Control-plane / data-plane
 
 ```text
 CONTROL PLANE
-identity authorization / revocation
-rendezvous / recovery
-entitlement / payment attestation
-security policy / release governance
+proof/checkpoint state
+identity authorization/revocation
+rendezvous/recovery
+entitlement/payment redemption
+security/release/contract governance
 
 DATA PLANE
-messages
-files
-voice
-video
+messages/files/voice/video
 relay traffic
 Gateway traffic
-APK artifact bytes
+APK bytes
 ```
 
-Il registro non è nel packet hot path.
-
-## 21. Principio finale
+## 29. Principio finale
 
 > **Nessun server centrale. Nessun super-admin. Niente di opaco. Fiducia nel protocollo. Sicurezza nell'architettura.**
 
-Questo non significa assenza fisica di server/relay/RPC/egress. Significa che nessuno di essi deve essere autorità assoluta, trust anchor unico o requisito permanente.
+Non significa assenza fisica di server/relay/RPC/egress: significa nessuna autorità assoluta o requisito permanente singolo.
