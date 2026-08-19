@@ -1,165 +1,99 @@
 # Freedom — Registration Economics & Anti-Abuse
 
-Status: **canonical design draft**
+Status: **canonical design draft**.
 
-Normative security rules: [`SECURITY_INVARIANTS.md`](SECURITY_INVARIANTS.md).
-Control-plane details: [`CONTROL_PLANE_SECURITY.md`](CONTROL_PLANE_SECURITY.md).
+Normative security: [`SECURITY_INVARIANTS.md`](SECURITY_INVARIANTS.md).
+Control-plane: [`CONTROL_PLANE_SECURITY.md`](CONTROL_PLANE_SECURITY.md).
 
 ## 1. Obiettivo
 
-Freedom deve sostenere una base Free ampia senza trasformare registration/sponsorship in storage/gas exhaustion.
-
-> **il primo utilizzo deve restare gratuito per una persona; creare identity in massa deve avere un costo crescente per un aggressore.**
+Il primo utilizzo deve restare gratuito per una persona, mentre la creazione massiva di record/identity deve avere un costo crescente/bounded per un aggressore.
 
 ## 2. Nessuna write al semplice install
 
 ```text
 install
- -> generate RootRecoveryKey / RootIdentity locally
- -> generate DeviceAuthorizationKey locally
- -> generate DeviceKey locally
- -> generate DeviceRecordCommitment locally
+ -> local RootRecoveryKey/RootIdentity
+ -> local DeviceAuthorizationKey
+ -> local DeviceKey
+ -> local DeviceRecordCommitment/DeviceControlKey
  -> Recovery Kit
  -> 0 mandatory chain writes
 ```
 
-## 3. SponsorshipCommitment
+## 3. Registration V1
+
+Il device record può essere opaque e non richiede di pubblicare RootIdentity ownership.
 
 ```text
-SponsorshipCommitment = H(sponsorship-specific context, domain)
+create opaque DeviceRecord
+ -> sponsorship/fee/anti-abuse checks
+ -> finalized verified state
+ -> peer later authenticates record through DeviceCertificate
 ```
 
-Separato da device authorization, entitlement, payment e pairwise state.
+Un attacker può creare un proprio record, ma non trasformarlo in un device del contatto Alice senza la valid certificate/delegation chain attesa dal peer.
 
-## 4. Sponsored registration
+## 4. Anti-abuse
 
-```text
-NEW OWNERSHIP CONTINUITY
- -> valid ownership/sponsorship proof?
- -> SponsorshipCommitment valid/unused?
- -> anti-abuse proof valid?
- -> relayer rate limit OK?
- -> global bounded budget OK?
- -> submit
- -> finality proof
- -> execution success
- -> resulting state proof
- -> REGISTERED
-```
+Possibili primitive:
 
-Transaction hash != success.
+- adaptive PoW;
+- per-relayer rate/budget limits;
+- storage deposit/lease;
+- bounded sponsorship commitment;
+- multiple fee relayers;
+- per-operation size/rate limits.
 
-## 5. Privacy del proof
+No phone/SMS/payment identity requirement universale.
 
-La registration production non deve richiedere di pubblicare inutilmente lo stesso global RootIdentity identifier insieme a device/payment/social state.
+## 5. Sponsorship privacy
 
-Quando serve dimostrare ownership continuity senza renderla un correlatore universale, usare commitment/credential/nullifier/proof separati per dominio.
+Sponsorship state è domain-separated e non viene riutilizzato come network/contact identity.
 
-Un Testnet proof linkabile deve essere dichiarato come limitazione temporanea.
+Timing/linkage resta un rischio da misurare.
 
-## 6. Adaptive proof-of-work
+## 6. Device/contact quotas
 
-Challenge può legare:
+`1 device / 10 contacts` V1 è product/service policy, non anti-Sybil/security primitive del protocollo.
 
-```text
-challenge
-sponsorship/ownership proof context
-nonce
-expiry
-network/policy epoch
-```
+Non introdurre public social/device graph o una ZK construction non ancora scelta soltanto per hard-enforce monetization.
 
-Difficoltà benchmarkata su device rappresentativi e adattabile sotto abuso.
+Future hard enforcement privacy-preserving richiede design/review separati.
 
-## 7. Relayer multipli
+## 7. Active storage bounded
 
-Più fee relayer indipendenti; ogni relayer ha rate/budget bounds.
+Temporary state usa overwrite/ring/prune/lease/reclaim concreto. TTL alone non soddisfa il requisito.
 
-IP, telefono, payment account o DeviceRecordCommitment non diventano global Freedom identity.
+Una new map key infinita per renewal/epoch è vietata.
 
-## 8. Una sponsorship per ownership continuity
+## 8. Rendezvous anti-spam
 
-Il control-plane impedisce sponsorship iniziali illimitate per la stessa continuity senza pubblicare un global user identifier leggibile.
+Rendezvous write usa derived one-time write key + signed generation-monotonic record. Osservare uno slot non concede overwrite authority.
 
-Reinstall/nuovo device usa Recovery Kit e continuity esistente.
+Rate/size/expiry bounds restano necessari anche con write authentication.
 
-## 9. Active storage bounded
+## 9. Existing-user resilience
 
-Temporary state:
+Registration/sponsorship attack non deve interrompere sessioni già attive o recovery essenziale degli utenti esistenti.
 
-```text
-rendezvous
-RecoveryBeacon
-PurchaseIntent
-anti-abuse challenge/state
-```
+## 10. Metriche prima della mainnet
 
-Ogni record ha:
-
-- size bound;
-- TTL/epoch;
-- rate limit;
-- authorization;
-- **concrete reclaim/overwrite strategy**.
-
-Consentiti: ring/bucket bounded, overwrite, `prune_expired`, lease/rent, refund/bounty bounded.
-
-Vietato creare una nuova map key per ogni rinnovo senza reclaim.
-
-La storia archiviale della chain resta osservabile; il requisito è bounded active state.
-
-## 10. Costo cresce con eventi rari
-
-```text
-message            -> 0 chain writes
-voice/video frame  -> 0 chain writes
-active session     -> 0 heartbeat writes
-normal route       -> 0 recovery writes
-```
-
-## 11. Contact slots
-
-Il target `10 active contacts` è **product policy del client ufficiale**, non anti-Sybil primitive del protocollo.
-
-Non pubblicare social graph per enforceare commercialmente la quota.
-
-Un futuro enforcement anti-tamper richiede credential/nullifier/ZK dedicati e reviewati.
-
-## 12. Budget dinamico
-
-Durante abuso:
-
-```text
-proof difficulty     -> may increase
-per-relayer rate     -> may decrease
-sponsorship budget   -> bounded
-existing users       -> continue communicating
-```
-
-Registration attack non interrompe utenti già attivi/recovery essenziale.
-
-## 13. Metriche prima della mainnet
-
-- bytes per active state object;
-- storage convergence dopo migliaia/milioni logici di renewals;
+- bytes/cost per opaque device record;
+- storage convergence;
+- sponsorship/PoW benchmark;
+- malicious registration spam;
 - prune/refund/bounty behavior;
-- registration/rotation/revocation cost;
-- sponsorship correlation analysis;
-- adaptive PoW benchmarks;
-- Sybil simulations;
-- malicious/stale RPC;
-- failed transaction/state mismatch;
-- device authorization privacy proof behavior.
+- stale/malicious RPC;
+- rendezvous overwrite/front-run;
+- failed tx/state mismatch.
 
-## 14. Invarianti
+## 11. Invarianti
 
 - install = 0 mandatory writes;
-- no global user identifier introdotto per anti-abuse;
-- sponsorship domain-separated;
-- no phone/SMS/payment identity requirement universale;
-- multiple relayers;
-- active temporary storage reclaimable/bounded;
-- existing users independent from new-registration availability;
-- no mailbox/message/media on-chain;
-- contact quota non è social-graph enforcement V1;
-- transaction hash != success.
+- no global user ID introdotto per anti-abuse;
+- opaque record creation does not imply peer authorization;
+- no public social/device graph for V1 quotas;
+- active temporary storage bounded/reclaimable;
+- tx hash != success;
+- no mailbox/message/media state.
