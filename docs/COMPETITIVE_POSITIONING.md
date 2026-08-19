@@ -11,9 +11,9 @@ Questo documento descrive dove Freedom si colloca rispetto ad altri sistemi di c
 Freedom Messenger è il client ufficiale di **Freedom Protocol**, un protocollo di comunicazione privata progettato attorno a quattro proprietà centrali:
 
 1. **comunicazione sincrona** — il protocollo base consegna contenuti solo quando esiste una sessione autenticata attiva; non crea una mailbox/offline queue;
-2. **identità verificabile separata dal percorso** — DeviceID/RootIdentity non dipendono da IP, relay o provider specifici;
-3. **data-plane sostituibile** — direct path, NAT traversal, relay, device/community relay e futuri transport possono essere cambiati senza cambiare l'identità;
-4. **control-plane distribuito di recovery** — il registro verificabile serve per identity, revocation, rendezvous/recovery e piccoli manifest/policy, ma non trasporta messaggi, file, audio o video.
+2. **identità verificabile senza global DeviceID di rete** — RootIdentity per ownership, DeviceKey autorizzate tramite commitment opachi, alias pairwise per le relazioni e token temporanei per il transport;
+3. **data-plane sostituibile** — direct path, NAT traversal, relay, device/community relay e futuri transport possono essere cambiati senza cambiare ownership/contact identity;
+4. **control-plane distribuito di recovery** — il registro verificabile serve per authorization/revocation, rendezvous/recovery e piccoli manifest/policy, ma non trasporta messaggi, file, audio o video.
 
 Formula sintetica:
 
@@ -29,7 +29,7 @@ Esempi:
 
 - giornalisti, ricercatori e operatori in ambienti con rischio di filtraggio o blocco;
 - attivisti e comunità che non vogliono dipendere da un singolo server/provider;
-- professionisti che desiderano sessioni private live e una modalità locale effimera;
+- professionisti che vogliono comunicazioni live senza mailbox o consegna differita;
 - team tecnici o organizzazioni che vogliono poter usare relay propri o infrastruttura compatibile;
 - utenti che preferiscono contatti espliciti via QR/link invece di una directory pubblica o numero telefonico come identità necessaria;
 - utenti che vogliono poter distribuire il client da persona a persona tramite artifact verificati, senza rendere uno store l'unico canale possibile.
@@ -38,7 +38,7 @@ Freedom non è progettato per sostituire necessariamente i messenger generalisti
 
 ## 3. Signal
 
-Signal è un riferimento per comunicazione E2EE production, semplicità d'uso e deployment su larga scala. Signal supporta username per iniziare conversazioni senza condividere il numero con il peer, ma continua a richiedere un numero telefonico per la registrazione. Il servizio Signal facilita anche la consegna asincrona dei messaggi e ha sviluppato Sealed Sender per ridurre i metadata visibili al servizio.
+Signal è un riferimento per comunicazione E2EE production, semplicità d'uso e deployment su larga scala. Signal supporta username per iniziare conversazioni senza condividere il numero con il peer, ma continua a richiedere un numero telefonico per la registrazione. Il servizio Signal facilita anche la consegna asincrona dei messaggi e usa meccanismi come Sealed Sender per ridurre i metadata visibili al servizio.
 
 Fonti ufficiali:
 
@@ -46,8 +46,6 @@ Fonti ufficiali:
 - https://signal.org/blog/sealed-sender/
 
 ### Differenza Freedom
-
-Freedom non cerca di replicare il modello di delivery di Signal.
 
 ```text
 Signal (semplificato)
@@ -90,15 +88,19 @@ pairwise anonymous queues
 relay temporaneamente store-and-forward
 
 Freedom
-overifiable DeviceID / RootIdentity
-pairwise opaque rendezvous/recovery state
+RootIdentity per ownership, non per routing
+opaque DeviceRecordCommitment per control-plane
+pairwise contact aliases / rendezvous state
+transport tokens temporanei
 no offline delivery queue nel protocollo base
 live authenticated session
 ```
 
-Il vantaggio potenziale di Freedom è il control-plane verificabile per identity/revocation/recovery e la semantica live-only. Il rischio tecnico è opposto: un DeviceID e un registro pubblico possono creare nuove superfici di correlazione se slot, timing e metadata non vengono minimizzati correttamente.
+La precedente idea di un `DeviceID` globale è stata rimossa dal modello canonico proprio per evitare una superficie di correlazione non necessaria.
 
-Per questo **SimpleX è il benchmark principale di Freedom per metadata discipline**. Freedom non deve dichiararsi più anonimo di SimpleX senza misure e threat-model evidence.
+Il vantaggio potenziale di Freedom è il control-plane verificabile per device authorization/revocation/recovery e la semantica live-only. Il rischio tecnico resta però reale: commitment stabili, timing del registro, activation/revocation e provider visibility possono creare correlazioni anche senza un nome globale.
+
+Per questo **SimpleX resta il benchmark principale di Freedom per metadata discipline**. Freedom non deve dichiararsi più anonimo di SimpleX senza misure e threat-model evidence.
 
 ## 5. Session
 
@@ -112,7 +114,7 @@ Fonte ufficiale:
 
 Freedom evita intenzionalmente lo storage mailbox/store-and-forward nel protocollo base e tratta il relay come nodo **forward-only**. Inoltre può usare device degli utenti come relay best-effort e mira a cambiare classi di transport/percorso quando il path corrente fallisce.
 
-Session è quindi un benchmark utile per:
+Session è un benchmark utile per:
 
 - rete decentralizzata operativa;
 - onion routing;
@@ -150,11 +152,11 @@ La tabella descrive il modello architetturale, non una classifica di sicurezza a
 |---|---|---|---|---|---|
 | E2EE | sì | sì | sì | sì | sì |
 | Delivery offline nel modello base | **no** | sì | sì, queue temporanee | sì | sì quando i peer tornano disponibili |
-| Identificatore utente globale | DeviceID verificabile | account legato a numero, username opzionale per contatto | **no** | Account ID | identità/contatti applicativi |
+| Identificatore utente/device globale richiesto nel transport | **no**: RootIdentity + commitment opachi + alias pairwise | account legato a numero; username opzionale per contatto | **no** | Account ID | modello proprio di identità/contatti |
 | Server centrale di delivery obbligatorio | **no** | sì come servizio | no singolo server; relay scelti/self-hosted | rete Session distribuita | no |
 | Relay/device community forward-only | **target sì** | non è il modello | relay queue | Session Nodes | peer synchronization |
 | Path/transport switching adattivo | **target core** | non è il focus architetturale | server/Tor configurabili | onion routing | Tor/Bluetooth/Wi-Fi |
-| Control-plane verificabile di identity/recovery | **target sì** | modello Signal | no user identity registry | Account ID/network state | modello Briar |
+| Control-plane verificabile di authorization/recovery | **target sì** | modello Signal | no user identity registry | Account ID/network state | modello Briar |
 | Network interference indicator | **target sì** | non è focus | non equivalente | non equivalente | connettività/Tor controls, non equivalente |
 | Peer-to-peer app distribution verificata | **target Direct build** | store distribution | download channels propri | store/direct secondo progetto | Play/F-Droid/direct download |
 
@@ -178,9 +180,10 @@ Claim da evitare finché non dimostrati:
 La differenziazione credibile è invece la combinazione:
 
 ```text
-verifiable identity
+verifiable RootIdentity / device authorization
++ no global DeviceID in transport
++ pairwise aliases
 + synchronous delivery
-+ ephemeral client mode
 + replaceable routes/relays/transports
 + pairwise recovery control-plane
 + visible network diagnostics
@@ -189,8 +192,6 @@ verifiable identity
 ```
 
 ## 9. Benchmark di sviluppo
-
-Freedom dovrebbe misurarsi contro concorrenti differenti per proprietà differenti:
 
 ```text
 Signal  -> UX, production reliability, security engineering evidence
