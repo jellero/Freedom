@@ -2,7 +2,7 @@
 
 ## 1. Obiettivo
 
-Freedom Messenger non deve competere al lancio sulla quantità di feature. Deve dimostrare in modo affidabile la proposta centrale di Freedom Protocol: **comunicazione privata live, autenticata E2EE, sincrona, senza mailbox centrale e senza dipendenza permanente da un singolo percorso o provider.**
+Freedom Communication non deve competere al lancio sulla quantità di feature. Deve dimostrare in modo affidabile la proposta centrale di Freedom Protocol: **comunicazione privata live, autenticata E2EE, sincrona, senza mailbox centrale e senza dipendenza permanente da un singolo percorso o provider.**
 
 Principio UX:
 
@@ -214,7 +214,7 @@ Non sono prerequisiti della prima release pubblica:
 - browser web integrato;
 - **Freedom Gateway a livello dispositivo**.
 
-Il Gateway è un'evoluzione post-V1 costruita sulle stesse primitive di routing/relay/Shield e non deve rallentare la comunicazione core.
+Il Gateway è un'evoluzione post-V1 costruita sulle stesse primitive di routing/relay/Shield e non deve rallentare Freedom Communication core.
 
 ## 11. Live Groups — V1.5
 
@@ -352,7 +352,7 @@ app traffic
  -> Internet
 ```
 
-### Garanzia diversa dal messenger
+### Garanzia diversa da Freedom Communication
 
 Il Gateway non deve essere presentato come equivalente alla sicurezza della comunicazione Freedom-to-Freedom.
 
