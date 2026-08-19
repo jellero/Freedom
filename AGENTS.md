@@ -16,8 +16,11 @@ These instructions apply to Codex/agentic development in this repository.
 10. `docs/IDENTITY_MODEL.md`
 11. `docs/PROTOCOL.md`
 12. `docs/THREAT_MODEL.md`
-13. `docs/REPOSITORY_GOVERNANCE.md`
-14. subsystem-specific docs.
+13. `docs/ADVANCED_DEVELOPMENT.md`
+14. `core/README.md`
+15. `sim/README.md`
+16. `docs/REPOSITORY_GOVERNANCE.md`
+17. subsystem-specific docs.
 
 Normative MUST/MUST NOT rules override older implementation behavior.
 
@@ -31,23 +34,36 @@ Do not claim a pairwise backup is the latest verified state after total device l
 
 `spec/freedom.cddl` is the source of truth for frozen object field names/shapes.
 
-`spec/ENCODING_PROFILE.md` freezes `Freedom-DCBOR-1` byte semantics. Existing `Freedom-DCBOR-1` expected bytes MUST NOT change silently.
+`spec/ENCODING_PROFILE.md` freezes `Freedom-DCBOR-1`; existing expected bytes MUST NOT change silently.
 
 `spec/vectors/dcbor-v1.json` is the shared byte-level fixture consumed across languages.
 
-`spec/crypto-domains.txt` is the source of truth for fixed SIGN/MAC/AEAD/HASH/KDF protocol domains.
+`spec/crypto-domains.txt` is the source of truth for SIGN/MAC/AEAD/HASH/KDF domains.
 
-All security objects use deterministic canonical encoding + explicit purpose/context binding according to `spec/README.md` and `spec/ENCODING_PROFILE.md`.
+Do not create a second incompatible struct, serializer rule, vector set or crypto label for convenience.
 
-Do not create a second incompatible Markdown/code struct, vector set, serializer rule or ad-hoc crypto label for convenience.
+## Shared core rule
+
+Security-relevant transition logic implemented for host simulation belongs in:
+
+```text
+core/src/main/java/dev/freedom/core/
+```
+
+The Android source set compiles that same source tree. `sim/simctl.py` may own scenario parsing, virtual time, fault injection, process/container orchestration and evidence, but MUST NOT re-implement route/recovery/freshness/rekey/control-plane acceptance rules already present in the shared core.
+
+When a new canonical state machine becomes executable:
+
+1. implement it in shared core;
+2. add core self-tests;
+3. drive it from L1 scenarios;
+4. make Android/platform adapters call the same core when that production flow is implemented.
 
 ## Normative-spec human gate
 
 Agents may propose changes to normative/security files, but MUST NOT autonomously weaken/remove a MUST/MUST NOT, change a trust assumption, cryptographic domain, `Freedom-DCBOR-1` byte rule/vector, canonical signed schema, revocation/recovery/governance/rekey state machine merely to make implementation/tests pass.
 
 A failing test is evidence, not permission to weaken the oracle.
-
-### Branch/PR rule
 
 For normative/security-sensitive changes:
 
@@ -61,105 +77,79 @@ agent branch/worktree
 
 Agents MUST NOT intentionally direct-push such changes to `main`, even if repository settings technically allow it.
 
-The target repository configuration is protected `main` with required PR/code-owner/status checks as documented in `docs/REPOSITORY_GOVERNANCE.md`.
-
 ## Development method
 
-Follow `docs/ADVANCED_DEVELOPMENT.md`.
+Follow `docs/ADVANCED_DEVELOPMENT.md`. Full Android APK install is an integration gate, not the primary protocol loop.
 
-Prefer simulator-first development. Full Android APK install is an integration gate, not the primary protocol loop.
+Use isolated worktrees/branches for parallel tasks. Do not replace executable scenarios with prose-only acceptance criteria.
 
-Use isolated worktrees/branches for parallel tasks.
+## Required fast gates
 
-The deterministic L1 runner is:
+For protocol/core/spec/simulator work run at minimum:
 
 ```text
-python sim/simctl.py --all
+python tools/check_spec_consistency.py
+python tools/check_dev_stack.py
+python tools/check_vectors.py
+python tools/run_core_tests.py
+python sim/simctl.py --all --quiet
+python sim/l3/differential.py --oracle-only
 ```
 
-Do not replace an existing executable scenario with prose-only acceptance criteria.
+For network/routing changes that affect L2 behavior also run on a disposable Docker-capable host:
+
+```text
+python sim/l2/run_docker.py
+```
+
+Do not report a task complete while a relevant gate is failing.
+
+`sim/l3/differential.py --oracle-only` validates only the canonical side. It MUST NOT be reported as real L3 ChainAdapter acceptance. Real L3 requires:
+
+```text
+python sim/l3/differential.py --adapter-cmd "<real NearChainAdapter test driver>"
+```
 
 ## Test discipline
 
 For every bug/security fix:
 
 1. reproduce with a failing test/scenario when feasible;
-2. define expected behavior from canonical spec;
-3. implement smallest coherent fix;
+2. derive expected behavior from canonical spec;
+3. implement the smallest coherent fix in the shared layer;
 4. add regression coverage;
 5. run negative/adversarial cases;
-6. run relevant unit/property/scenario tests;
-7. update threat/docs if the security boundary genuinely changes;
-8. request human review if normative semantics change.
-
-For docs/spec/security/simulator changes run at minimum:
-
-```text
-python tools/check_spec_consistency.py
-python tools/check_vectors.py
-python sim/simctl.py --all --quiet
-```
-
-All three are repository gates; do not report a protocol/spec task as complete while one is failing.
+6. run relevant L0/L1/L2/L3 gates;
+7. update threat/docs only when the security boundary genuinely changes;
+8. request human review for normative semantic changes.
 
 ## Simulation targets
 
-Model endpoints, relay/bridge/egress failure, NAT rebinding, loss/reorder, DNS/TLS/transport blocking, stale/malicious RPC, failed tx, stale bootstrap checkpoint, revocation ambiguity, rendezvous overwrite/front-run, signer rollback, clock faults, storage exhaustion, Relay Sybil/eclipse, first-contact substitution, root compromise-recovery races, stale pairwise backup mirrors, recovery-anchor rollback and release/governance failures.
+Model endpoints, relay/bridge/egress failure, NAT/address rebinding, loss/reorder, DNS/TLS/transport blocking, stale/malicious RPC, failed tx, stale bootstrap checkpoint, revocation ambiguity, rendezvous overwrite/front-run, signer rollback, clock faults, storage exhaustion, Relay Sybil/eclipse, first-contact substitution, root compromise-recovery races, stale pairwise backup mirrors, recovery-anchor rollback and release/governance failures.
 
 ## Pairwise recovery tests
 
-When touching pairwise backup/recovery logic, test at minimum:
-
-```text
-latest bundle + latest anchor -> accept
-old valid bundle + newer anchor -> reject
-missing anchor after total device loss -> no latest-freshness claim
-anchor rollback -> reject
-root-compromise restore -> RecoveryStateKey rotation
-post-restore -> peer re-auth + future rendezvous rotation
-```
-
-Integrity is not a substitute for freshness.
+Test latest bundle + latest anchor, old valid bundle + newer anchor, missing anchor after total device loss, anchor rollback, RecoveryStateKey rotation after root-compromise restore, peer re-authentication and future rendezvous rotation. Integrity is not freshness.
 
 ## Encoding/vector tests
 
-When touching a frozen object or security encoding:
-
-```text
-positive canonical bytes
-strict decoder acceptance
-non-canonical negative rejection
-correct SIGN/MAC/AEAD/HASH/KDF purpose binding
-network/version separation
-```
-
-A cross-language implementation must consume the shared fixtures, not redefine expected bytes locally.
+For frozen security objects test positive canonical bytes, strict decoder acceptance, non-canonical negative rejection, correct domain purpose binding and network/version separation. Cross-language implementations consume the shared fixtures instead of redefining expected bytes locally.
 
 ## Recovery quorum tests
 
-Reject duplicate recovery-key commitments, zero threshold and threshold greater than the number of distinct recovery keys.
-
-A profile claiming independent compromise recovery must be reviewed for custody-domain independence, not just key count.
+Reject duplicate recovery-key commitments, zero threshold and threshold greater than distinct keys. Independent compromise recovery requires custody-domain independence, not only key count.
 
 ## Docker/host safety
 
-Do not give an agent unrestricted access to a production/personal host Docker daemon.
-
-Prefer disposable VM/dedicated CI runner or rootless/isolated runtime.
-
-Do not mount `/var/run/docker.sock` from a sensitive workstation into an agent-controlled container unless that host itself is disposable and contains no sensitive data/credentials.
-
-Production/mainnet/release secrets are never available to autonomous test agents.
+Do not give an agent unrestricted access to a production/personal host Docker daemon. Prefer disposable VM/dedicated CI runner or rootless/isolated runtime. Do not mount a sensitive workstation `/var/run/docker.sock` into an agent-controlled container. Production/mainnet/release secrets are never available to autonomous test agents.
 
 ## Android gates
 
-Host simulation does not replace Android validation for Keystore, lifecycle/background restrictions, permissions, signing/update, real network handover, camera/QR and `VpnService`.
+Host simulation does not replace Android validation for Keystore, lifecycle/background restrictions, permissions, package signing/update, real network handover, camera/QR and `VpnService`.
 
 ## Governance boundaries
 
 Do not automatically change production/mainnet signer sets, release roots, contract governance anchors, migration anchors, user recovery-policy roots, pairwise recovery-anchor semantics or frozen encoding profiles/vectors.
-
-Production governance/custody changes require explicit human review and canonical threshold procedures.
 
 ## Evidence
 
