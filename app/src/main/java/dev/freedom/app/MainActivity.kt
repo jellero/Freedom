@@ -104,7 +104,7 @@ class MainActivity : Activity() {
             statusView.text = "Stato: accesso alla rete locale negato"
             localAddressView.text = "IP locale: permesso rete locale necessario\nPorta: ${FreedomNode.PORT}"
             connectButton.isEnabled = false
-            appendLog("⚠ Freedom M1 richiede l'accesso alla rete locale per collegarsi direttamente agli altri peer")
+            appendLog("⚠ Freedom Communication M1 richiede l'accesso alla rete locale per collegarsi direttamente agli altri peer")
         }
     }
 
@@ -156,13 +156,13 @@ class MainActivity : Activity() {
         scroll.addView(root)
 
         root.addView(TextView(this).apply {
-            text = "Freedom · Android M1"
+            text = "Freedom Communication · Android M1"
             textSize = 27f
             setTextColor(Color.rgb(20, 20, 20))
         })
 
         root.addView(TextView(this).apply {
-            text = "P2P E2EE test client · nessun server di messaggistica"
+            text = "P2P E2EE test client · nessun server centrale di messaggistica"
             textSize = 14f
             setTextColor(Color.DKGRAY)
             setPadding(0, dp(4), 0, dp(18))
@@ -231,7 +231,7 @@ class MainActivity : Activity() {
 
         root.addView(section("MESSAGGI CIFRATI"))
         logView = TextView(this).apply {
-            text = "Avvia Freedom su due telefoni collegati alla stessa rete Wi-Fi.\nSul telefono A inserisci l'IP mostrato dal telefono B."
+            text = "Avvia Freedom Communication su due telefoni collegati alla stessa rete Wi-Fi.\nSul telefono A inserisci l'IP mostrato dal telefono B."
             textSize = 15f
             setTextIsSelectable(true)
             setPadding(dp(10), dp(10), dp(10), dp(10))
