@@ -1,0 +1,37 @@
+name: Specification consistency
+
+on:
+  pull_request:
+    paths:
+      - "README.md"
+      - "AGENTS.md"
+      - "spec/**"
+      - "docs/**"
+      - "tools/check_spec_consistency.py"
+      - ".github/CODEOWNERS"
+      - ".github/workflows/spec-consistency.yml"
+  push:
+    branches: [main]
+    paths:
+      - "README.md"
+      - "AGENTS.md"
+      - "spec/**"
+      - "docs/**"
+      - "tools/check_spec_consistency.py"
+      - ".github/CODEOWNERS"
+      - ".github/workflows/spec-consistency.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  consistency:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Check canonical specification consistency
+        run: python tools/check_spec_consistency.py
