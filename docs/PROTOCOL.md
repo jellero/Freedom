@@ -2,37 +2,46 @@
 
 Status: **design draft**
 
-Questa specifica descrive gli oggetti logici e i flussi minimi del protocollo. Gli encoding binari definitivi e le primitive crittografiche concrete verranno fissati prima dell'interoperabilità pubblica.
+Questa specifica descrive gli oggetti logici e i flussi minimi del protocollo. Gli encoding binari definitivi e le primitive concrete verranno fissati prima dell'interoperabilità pubblica.
 
 ## 1. Principi
 
 - ogni oggetto parsabile è versionato;
-- gli oggetti di identità vengono verificati contro la blockchain;
+- RootIdentity, DeviceIdentity e session keys hanno ruoli separati;
 - le informazioni di routing non autenticano l'identità;
-- la blockchain non trasporta contenuti applicativi;
+- la blockchain/control-plane non trasporta contenuti applicativi o APK;
 - i relay inoltrano, non archiviano;
 - i contenuti applicativi vengono inviati soltanto dentro una sessione autenticata attiva;
-- se il destinatario non è raggiungibile o non esiste una sessione attiva, il messaggio non viene accodato per consegna futura e viene scartato;
-- read-before-write è obbligatorio per il rendezvous;
-- ogni rendezvous on-chain è autosufficiente e non dipende da revisioni precedenti;
-- una sessione attiva gestisce direttamente i propri route update.
+- nessuna consegna offline automatica nel protocollo base;
+- read-before-write è obbligatorio per rendezvous/recovery;
+- una sessione attiva gestisce direttamente i propri route update;
+- installare l'app non implica una write chain;
+- entitlement e pagamento non alterano le primitive E2EE del core.
 
-## 2. Header
+## 2. RootIdentity
 
 ```text
-Header {
-    protocol_version
-    object_type
+RootIdentity {
+    version
+    account_id
+    root_public_key
 }
 ```
 
-Versioni obbligatorie sconosciute devono fallire closed.
+`account_id` può essere derivato/committed dalla root public key secondo l'encoding definitivo.
+
+La RootIdentity serve per:
+
+- recovery ownership;
+- autorizzazione/revoca device;
+- entitlement/licenze;
+- sponsorship state quando necessario.
+
+Non viene usata come chiave di sessione o message key.
 
 ## 3. DeviceID
 
-`DeviceID` è un identificatore stabile a 256 bit generato con entropia crittografica.
-
-Non contiene PII e non è derivato direttamente dalla chiave pubblica corrente.
+`DeviceID` è un identificatore stabile del device generato con entropia crittografica.
 
 ```text
 DeviceRecord {
@@ -42,11 +51,28 @@ DeviceRecord {
     key_epoch
     status
     protocol_version
-    updated_at
 }
 ```
 
-## 4. Key rotation
+Non contiene PII e non è derivato direttamente dalla current public key.
+
+## 4. Device authorization
+
+Un nuovo device recuperato/aggiunto genera una nuova DeviceKey e viene autorizzato dalla RootIdentity:
+
+```text
+ActivateDevice {
+    account_commitment
+    device_commitment
+    entitlement_epoch
+    nonce
+    root_signature
+}
+```
+
+Il control-plane deve poter far rispettare `active_devices <= max_devices` senza richiedere un elenco pubblico leggibile dei DeviceID dell'account.
+
+## 5. Key rotation / revocation
 
 ```text
 RotateDeviceKey {
@@ -58,11 +84,24 @@ RotateDeviceKey {
 }
 ```
 
-Una rotazione valida incrementa l'epoch. La specifica della prova dipende dal modello del contratto chain, ma il client deve sempre poter determinare la chiave corrente e lo stato di revoca.
+Una rotazione valida incrementa l'epoch. Revocation e recovery devono impedire l'uso di chiavi obsolete per nuovi handshake.
 
-`key_epoch` appartiene all'identità del device; non è una revisione del rendezvous.
+## 6. Recovery Kit
 
-## 5. Contact descriptor
+Il formato utente è QR/bundle cifrato + recovery code separato. Il protocollo non impone che la Root private key sia mai pubblicata.
+
+Un restore produce:
+
+```text
+recover RootIdentity
+ -> generate NEW DeviceKey
+ -> ActivateDevice
+ -> resolve entitlement
+```
+
+Dettagli: [`ACCOUNT_RECOVERY_LICENSES.md`](ACCOUNT_RECOVERY_LICENSES.md).
+
+## 7. Contact descriptor
 
 ```text
 FreedomContact {
@@ -74,13 +113,11 @@ FreedomContact {
 }
 ```
 
-La capability non è una identity key e non consente impersonation. È una capability di bootstrap/rendezvous.
+La capability è una capability di bootstrap/rendezvous e non consente impersonation.
 
-Il QR è solo una rappresentazione del descriptor.
+## 8. Pair rendezvous state
 
-## 6. Pair rendezvous state
-
-Dopo il primo handshake i peer derivano:
+Dopo il primo handshake:
 
 ```text
 PairRendezvousState {
@@ -89,22 +126,9 @@ PairRendezvousState {
 }
 ```
 
-Il segreto non viene scritto on-chain.
+Il secret non viene scritto on-chain. Gli slot possono essere direzionali/rotanti e non richiedono la conoscenza del record precedente.
 
-Gli slot possono essere derivati in modo direzionale e rotante:
-
-```text
-slot_local(context)
-slot_remote(context)
-```
-
-La derivazione deve essere deterministica per entrambe le parti nel contesto corrente e non deve richiedere la conoscenza di un record precedente.
-
-Il formato concreto della KDF viene fissato con la crypto suite.
-
-## 7. Rendezvous record
-
-Ogni record on-chain è indipendente. Per il lettore è sempre equivalente a una nuova **rev 0**.
+## 9. Rendezvous record
 
 ```text
 RendezvousRecord {
@@ -114,9 +138,7 @@ RendezvousRecord {
 }
 ```
 
-Il key/slot blockchain è opaco e derivato da capability o pair secret.
-
-Il ciphertext protegge:
+Payload cifrato:
 
 ```text
 RendezvousPayload {
@@ -129,34 +151,42 @@ RendezvousPayload {
 }
 ```
 
-Il payload deve essere autenticato e cifrato.
+Ogni record è autosufficiente; non esiste sequence/revision storica obbligatoria.
 
-Non esiste `sequence`, `revision`, `previous_record_hash` o altro requisito che obblighi il destinatario a conoscere il rendezvous precedente.
-
-## 8. Read-before-write
-
-Algoritmo normativo per A che deve raggiungere B dopo aver perso tutti i route:
+## 10. Read-before-write
 
 ```text
-remote = chain.readRendezvous(remote_slot)
-
-if remote.valid && !remote.expired:
-    try(remote.route_candidates)
-    DO_NOT_WRITE
+remote = read(remote_slot)
+if remote usable -> try(remote), DO_NOT_WRITE
 else:
-    local = chain.readRendezvous(local_slot)
-
-    if local.valid && !local.expired:
-        WAIT_AND_POLL(remote_slot)
-    else:
-        chain.writeRendezvous(local_slot, new_independent_record)
+  local = read(local_slot)
+  if local usable -> WAIT/POLL
+  else -> write(new independent record)
 ```
 
-Il client non deve riscrivere un record soltanto perché non ha ancora ricevuto risposta. Deve rispettare TTL e backoff.
+TTL/backoff impediscono write continue.
 
-Quando serve un nuovo rendezvous, questo viene generato da zero con nuovo nonce/materiale effimero e deve poter essere interpretato senza stato storico del rendezvous precedente.
+## 11. RecoveryBeacon
 
-## 9. Route candidate
+Quando il data-plane è perso:
+
+```text
+RecoveryBeacon {
+    version
+    issued_at
+    expires_at
+    recovery_nonce
+    route_generation
+    state
+    candidate_hints[]?
+}
+```
+
+Il beacon è pairwise/opaco/cifrato e indica attività recente, non presenza globale.
+
+Dettagli: [`ADAPTIVE_DEFENSE.md`](ADAPTIVE_DEFENSE.md).
+
+## 12. Route candidate
 
 ```text
 RouteCandidate {
@@ -169,18 +199,9 @@ RouteCandidate {
 }
 ```
 
-L'endpoint è una struttura trasporto-specifica. Per UDP/TCP può comprendere IP e porta.
+Candidate iniziali: `LOCAL`, `OBSERVED`, `DIRECT`, `RELAY`; future classi possono includere shielded/bridge/obfuscated transport.
 
-Candidate type iniziali:
-
-```text
-LOCAL
-OBSERVED
-DIRECT
-RELAY
-```
-
-## 10. Relay candidate
+## 13. Relay candidate
 
 ```text
 RelayCandidate {
@@ -194,7 +215,7 @@ RelayCandidate {
 
 Un relay candidate non implica fiducia nel relay.
 
-## 11. Route update in-session
+## 14. Route update in-session
 
 ```text
 RouteUpdate {
@@ -206,15 +227,9 @@ RouteUpdate {
 }
 ```
 
-Questo oggetto viaggia dentro la sessione autenticata.
+Viaggia nella sessione autenticata. Finché almeno un path è valido non si usa la blockchain per aggiornare il routing della coppia.
 
-Il `sequence` di `RouteUpdate` appartiene alla sessione attiva e serve a ordinamento/anti-replay. Non è una revisione blockchain.
-
-Finché almeno un percorso valido permette di scambiare `RouteUpdate`, non si usa la blockchain per aggiornare il routing della coppia.
-
-## 12. Handshake
-
-L'handshake produce:
+## 15. Handshake
 
 ```text
 SessionContext {
@@ -231,40 +246,9 @@ SessionContext {
 }
 ```
 
-Il transcript deve includere:
+Il transcript lega almeno network/protocol version, entrambi i DeviceID/epoch, ephemeral keys, nonce, suite e session_id. Entrambi verificano la current public key tramite `ChainAdapter`/cache verificata secondo freshness policy.
 
-```text
-network_id
-protocol_version
-A_device_id
-B_device_id
-A_key_epoch
-B_key_epoch
-A_ephemeral_key
-B_ephemeral_key
-A_nonce
-B_nonce
-crypto_suite
-session_id
-```
-
-Entrambi gli endpoint verificano la controparte usando la current public key risolta tramite `ChainAdapter`.
-
-## 13. Blockchain freshness durante l'handshake
-
-Prima del primo handshake con un DeviceID sconosciuto, il client deve risolvere il record chain.
-
-Per contatti già noti può usare cache verificata entro una policy di freshness, ma deve rivalidare quando:
-
-- l'epoch remoto cambia;
-- una firma non verifica;
-- riceve un'indicazione di key rotation;
-- la cache supera il limite previsto;
-- la sessione viene ristabilita dopo un periodo lungo.
-
-La policy concreta verrà definita con il chain adapter.
-
-## 14. Encrypted frame
+## 16. Encrypted frame / replay
 
 ```text
 EncryptedFrame {
@@ -275,33 +259,9 @@ EncryptedFrame {
 }
 ```
 
-L'inner frame autenticato contiene:
+Sequence monotono per direzione e protetto da AEAD. Reject di replay e memoria bounded.
 
-```text
-InnerFrame {
-    frame_type
-    session_id
-    sequence
-    payload
-}
-```
-
-Il sequence è monotono per direzione e protetto dall'AEAD.
-
-Questo sequence appartiene esclusivamente alla sessione crittografica e non ha alcuna relazione con i rendezvous on-chain.
-
-## 15. Replay protection
-
-Requisiti:
-
-- reject dei sequence già accettati nella sessione;
-- finestra limitata se il trasporto ammette reorder;
-- memoria bounded;
-- nessun reset senza transizione autenticata di sessione.
-
-Il rendezvous on-chain non usa sequence storico: freshness e validità derivano dallo stato chain verificato, dallo slot atteso, da `expires_at` e dall'autenticazione del payload.
-
-## 16. Text message
+## 17. Text message
 
 ```text
 ChatMessage {
@@ -315,9 +275,9 @@ ChatMessage {
 }
 ```
 
-Il messaggio è valido solo dentro una sessione autenticata attiva. Un tentativo di invio senza sessione attiva deve fallire e il payload non deve essere inserito in una coda di retry/offline delivery.
+Valido solo dentro una sessione autenticata attiva. Nessuna queue di retry/offline delivery.
 
-## 17. Delivery ACK
+## 18. ACK
 
 ```text
 MessageAck {
@@ -328,48 +288,25 @@ MessageAck {
 }
 ```
 
-ACK iniziali:
+ACK: `RECEIVED`, `READ` opzionale. `RECEIVED` non implica persistenza su disco.
 
-```text
-RECEIVED
-READ   // opzionale
-```
-
-`RECEIVED` conferma la ricezione durante la sessione attiva; non implica persistenza su disco.
-
-## 18. Synchronous / offline behavior
-
-Freedom è sincrono by design e non implementa un global offline store né una mailbox locale di consegna futura.
-
-Se non esiste una sessione autenticata attiva o il remote device non è raggiungibile:
+## 19. Synchronous / offline behavior
 
 ```text
 SEND
   |
-  +-- active authenticated session? -- no --> DISCARD
+  +-- active authenticated session? -- no --> DISCARD/FAIL
   |
-  +-- yes --> transmit --> ACK / session result
+  +-- yes --> transmit --> ACK/session result
 ```
 
-Il messaggio non viene depositato sulla blockchain, sui relay o in una coda locale in attesa che il peer torni online.
+Nessun deposito su blockchain, relay persistente o mailbox locale futura.
 
-La perdita della sessione durante un invio può causare la perdita del messaggio in-flight. Un eventuale nuovo invio richiede un'azione esplicita dell'utente o una semantica applicativa definita sopra il protocollo base; non esiste retry asincrono implicito.
+## 20. Live / ephemeral mode
 
-### 18.1 Live / ephemeral mode
+In Live mode il client può evitare cronologia persistente, backup/preview plaintext e distruggere session state/key al termine. Non può impedire al peer remoto o a un OS compromesso di copiare ciò che riceve.
 
-I client Freedom possono offrire una modalità **Live** in cui la conversazione locale esiste soltanto durante la presenza attiva dell'utente nella chat/sessione.
-
-In modalità Live:
-
-- i messaggi della sessione non vengono aggiunti alla cronologia persistente;
-- nessun contenuto della conversazione viene incluso in backup automatici;
-- uscendo dalla chat, chiudendo l'app o terminando la sessione, il client elimina lo stato locale della conversazione Live;
-- le chiavi di sessione effimere vengono distrutte quando la sessione termina;
-- notifiche e preview non devono introdurre copie persistenti del plaintext.
-
-Questa proprietà riguarda il comportamento del client Freedom locale. Non può impedire a un peer remoto, a un sistema operativo compromesso o a un dispositivo di acquisire autonomamente screenshot, registrazioni o copie del contenuto ricevuto.
-
-## 19. Relay packet
+## 21. Relay packet
 
 ```text
 RelayPacket {
@@ -382,23 +319,9 @@ RelayPacket {
 }
 ```
 
-Il relay deve rigettare:
+Buffer/size/TTL/hop/quota bounded. Nessuna `StoreRequest` nel protocollo base.
 
-- packet troppo grandi;
-- TTL scaduti;
-- hop limit esaurito;
-- quota superata;
-- token/capability non validi quando richiesti.
-
-## 20. Relay storage semantics
-
-Un relay può mantenere soltanto buffer necessari al forwarding immediato.
-
-Non esiste una `StoreRequest` nel protocollo base.
-
-La perdita del relay può causare perdita dei pacchetti in volo; il livello endpoint può segnalare il fallimento all'interno della sessione, ma non crea una coda di consegna asincrona.
-
-## 21. Attachment
+## 22. Attachment
 
 ```text
 AttachmentManifest {
@@ -411,53 +334,120 @@ AttachmentManifest {
 }
 ```
 
-Gli attachment vengono trasferiti soltanto quando esiste una sessione/route attiva. Nessun chunk viene depositato automaticamente sulla blockchain o su relay persistenti.
+Trasferimento solo con sessione/route attiva; niente storage persistente automatico.
 
-## 22. Call signaling
+## 23. Call signaling
 
 ```text
-CallInvite {
-    call_id
-    media_capabilities
-    transport_capabilities
-}
+CallInvite
+CallAccept
+CallCandidate
+CallEnd
+```
 
-CallAccept {
-    call_id
-    selected_capabilities
-    candidates[]
-}
+Il signaling viaggia E2EE; media keys separate dalle messaging keys.
 
-CallCandidate {
-    call_id
-    candidate
-}
+## 24. Presence
 
-CallEnd {
-    call_id
-    reason
+Presence è off-chain e opportunistica. Non genera heartbeat blockchain continui.
+
+## 25. Entitlement
+
+```text
+FreedomEntitlement {
+    version
+    account_commitment
+    tier
+    entitlement_epoch
+    max_devices
+    issued_at
+    expires_at?
+    policy_version
+    status
 }
 ```
 
-Il signaling viaggia E2EE. Le media key sono separate dalle message key.
+Policy iniziale Free: 1 active device, 10 active contacts. La contact list resta locale/cifrata; eventuali contact-slot commitment non devono rivelare il social graph.
 
-## 23. Presence
-
-Presence è off-chain e opportunistica.
+## 26. PurchaseIntent / PaymentAttestation
 
 ```text
-Presence {
-    state
-    capabilities
+PurchaseIntent {
+    purchase_ref_hash
+    account_commitment
+    product
+    amount
+    currency_or_asset
+    provider
     expires_at
 }
+
+PaymentAttestation {
+    provider
+    provider_transaction_commitment
+    purchase_ref_hash
+    amount
+    currency_or_asset
+    status
+    observed_at
+    worker_id
+    signature
+}
 ```
 
-Non deve generare scritture chain continue.
+Il callback di pagamento nel client non è prova autoritativa. PayPal può essere verificato da worker outbound-only; crypto può essere verificata on-chain quando compatibile.
 
-## 24. Errors
+Dettagli: [`PAYMENTS.md`](PAYMENTS.md).
 
-Classi minime:
+## 27. EmergencyBulletin / SecurityPolicy / FreedomRelease
+
+```text
+EmergencyBulletin {
+    bulletin_id
+    severity
+    issued_at
+    expires_at
+    geographic_scope?
+    payload_hash
+    signatures[]
+}
+
+SecurityPolicy {
+    policy_epoch
+    min_supported_version
+    min_secure_version
+    vulnerable_versions[]
+    disabled_features[]
+    severity
+    reason_hash
+    remediation_release
+    signatures[]
+}
+
+FreedomRelease {
+    version_code
+    package_id
+    artifact_sha256
+    artifact_size
+    signing_cert_fingerprint
+    source_descriptors[]
+    signatures[]
+}
+```
+
+L'APK resta off-chain. La posizione utente per bulletin geografici resta locale. Policy critiche dovrebbero supportare threshold signatures.
+
+Dettagli: [`EMERGENCY_UPDATES.md`](EMERGENCY_UPDATES.md).
+
+## 28. Sponsored registration proof
+
+La registrazione iniziale può richiedere una prova anti-abuso/adaptive PoW firmata/contestualizzata e validata dal relayer/contratto secondo policy.
+
+La sponsorship deve essere bounded per RootIdentity, relayer e budget globale.
+
+Dettagli: [`REGISTRATION_ECONOMICS.md`](REGISTRATION_ECONOMICS.md).
+
+## 29. Error classes
 
 ```text
 MALFORMED
@@ -472,72 +462,85 @@ RENDEZVOUS_EXPIRED
 RELAY_REFUSED
 PEER_OFFLINE
 SESSION_REKEY_REQUIRED
+DEVICE_LIMIT_REACHED
+ENTITLEMENT_INVALID
+PAYMENT_PENDING
+SECURITY_UPDATE_REQUIRED
 ```
 
-## 25. Resource limits
+## 30. Resource limits
 
-Ogni implementazione deve avere limiti espliciti per:
+Ogni implementazione deve limitare frame/handshake size, route candidates, relay buffer, connessioni, write frequency, rendezvous retry/backoff, recovery writes, sponsorship rate e temporary state.
 
-- frame size;
-- handshake object size;
-- route candidates per record;
-- relay buffer;
-- connessioni simultanee;
-- write frequency on-chain;
-- retry/backoff del rendezvous e della creazione route;
-- buffer bounded dei soli messaggi in-flight durante una sessione attiva.
-
-## 26. Chain abstraction
-
-Interfaccia concettuale:
+## 31. Chain abstraction
 
 ```text
 ChainAdapter {
+    registerRoot
     registerDevice
     resolveDevice
     rotateDeviceKey
     revokeDevice
-    readRendezvous
-    writeRendezvous
+    activateDeviceSlot
+    revokeDeviceSlot
+    resolveEntitlement
+    read/writeRendezvous
+    read/writeRecoveryBeacon
+    readPurchaseIntent
+    readPaymentAttestation
+    readEmergencyBulletins
+    readSecurityPolicy
+    readReleaseManifest
     verifyState
 }
 ```
 
 La prima implementazione usa NEAR Testnet.
 
-## 27. First executable milestones
+## 32. Milestone eseguibili
 
-### M1 — identity
+### M1 — identity/recovery
 
-- generazione DeviceID;
-- identity key nel keystore;
-- registrazione su NEAR Testnet;
-- resolve DeviceID;
-- QR contact descriptor;
-- key rotation/revocation di test.
+- RootIdentity + DeviceIdentity;
+- Recovery Kit;
+- install senza write;
+- sponsored registration;
+- DeviceID resolve/rotation/revocation;
+- QR contact.
 
-### M2 — rendezvous
+### M2 — rendezvous/recovery
 
 - capability bootstrap;
 - opaque slots;
 - read-before-write;
 - TTL;
-- rendezvous indipendenti sempre interpretabili come rev 0;
-- route payload cifrato.
+- RecoveryBeacon bounded.
 
 ### M3 — secure communication
 
 - mutual authentication;
-- direct debug route;
-- encrypted text;
-- ACK;
-- replay rejection;
-- nessuna coda offline;
+- encrypted text/ACK;
+- no offline queue;
 - fresh session on reconnect.
 
 ### M4 — network paths
 
-- candidate observation;
 - NAT traversal;
-- route update in-session;
-- relay forward-only.
+- route update;
+- relay forward-only;
+- Adaptive Defense.
+
+### M5 — account/commercial control plane
+
+- entitlement;
+- max_devices;
+- Free contact policy;
+- PayPal/crypto payment adapters;
+- payment attestation idempotency.
+
+### M6 — safety/update plane
+
+- EmergencyBulletin;
+- SecurityPolicy;
+- FreedomRelease;
+- multi-source artifact verification.
