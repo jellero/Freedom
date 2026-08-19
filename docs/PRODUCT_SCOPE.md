@@ -16,10 +16,11 @@ La prima release pubblica è focalizzata sul **1:1**.
 
 Funzioni essenziali:
 
-- RootIdentity + DeviceIdentity inizializzate localmente;
+- RootIdentity + DeviceKey inizializzate localmente;
+- DeviceRecordCommitment opaco per authorization/revocation, senza global DeviceID di rete;
 - Recovery Kit esportabile: QR/bundle cifrato + recovery code;
 - registrazione sponsorizzata quando serve, senza wallet NEAR obbligatorio;
-- aggiunta contatto tramite QR/link;
+- aggiunta contatto-persona tramite QR/link con alias pairwise dopo handshake;
 - **Share Freedom / Install QR** per permettere a un nuovo utente di ottenere l'app partendo da un client esistente;
 - build Direct capace di indicare/servire un artifact verificato tramite peer locale, relay o mirror;
 - build Play che usa il percorso di install/update conforme allo store;
@@ -42,21 +43,24 @@ Funzioni essenziali:
 - Emergency Shield Free con quota da dimensionare con dati reali;
 - blocco contatto e requisiti store minimi.
 
-L'utente non deve essere obbligato a comprendere account NEAR, gas, RPC, NAT, relay o primitive crittografiche nell'uso normale.
+L'utente non deve essere obbligato a comprendere account NEAR, gas, RPC, NAT, relay, commitment o primitive crittografiche nell'uso normale.
+
+Dettagli identità: [`IDENTITY_MODEL.md`](IDENTITY_MODEL.md).
 
 ## 3. Recovery e multi-device
-
-Il reset del telefono non deve distruggere ownership/licenza se l'utente possiede il Recovery Kit.
 
 ```text
 Recovery Kit
  -> RootIdentity
  -> NEW DeviceKey
+ -> NEW DeviceRecordCommitment
  -> device activation
  -> entitlement restore
 ```
 
 La chain fa rispettare `max_devices`; il restore non deve permettere di usare una licenza su telefoni illimitati.
+
+Un contatto nella rubrica rappresenta una persona/RootIdentity. Se la stessa persona autorizza più device, non consuma più contact slot.
 
 Dettagli: [`ACCOUNT_RECOVERY_LICENSES.md`](ACCOUNT_RECOVERY_LICENSES.md).
 
@@ -66,6 +70,7 @@ Il limite Free base è **10 contatti attivi**.
 
 - non è un limite lifetime;
 - eliminare/disattivare un contatto libera uno slot;
+- un contatto rappresenta una persona, non ogni device;
 - la lista contatti resta locale e cifrata;
 - non pubblicare social graph in chiaro;
 - eventuale enforcement anti-tampering deve usare commitment/slot opachi.
@@ -91,7 +96,7 @@ La funzione è opt-in nei client ufficiali e deve rispettare limiti configurabil
 
 Un device relay non deve necessariamente avere un IP pubblico: può essere utile tramite NAT mapping, transport alternativi o connessioni outbound già stabilite verso il fabric Freedom.
 
-Essere relay non concede accesso a plaintext, session keys o identità delle conversazioni inoltrate oltre ai metadata strettamente necessari al forwarding.
+Essere relay non concede accesso a plaintext o session keys. Il relay usa token/capability di circuito temporanei e non deve ricevere RootIdentity/device commitment quando non necessari.
 
 ## 6. Share Freedom / distribuzione peer-to-peer dell'app
 
@@ -132,7 +137,7 @@ signing certificate / authorized lineage
 SecurityPolicy
 ```
 
-Per il primo sideload deve esistere un trust anchor indipendente dal peer/relay: store, bootstrap autenticato, release root verificato out-of-band o verifier con root pinned. Un QR ricevuto non può ridefinire da solo quale chiave sia la chiave ufficiale Freedom.
+Per il primo sideload deve esistere un trust anchor indipendente dal peer/relay: store, bootstrap autenticato, release root verificato out-of-band o verifier con root pinned.
 
 Dettagli: [`APP_DISTRIBUTION.md`](APP_DISTRIBUTION.md).
 
@@ -171,7 +176,7 @@ Core Free:
 - route health;
 - RPC/provider fallback;
 - relay/path fallback;
-- recovery rendezvous;
+- recovery rendezvous pairwise;
 - `peer recently active + data path unavailable`;
 - route switch automatico;
 - stessa diagnosi tecnica di Pro;
@@ -203,7 +208,9 @@ Non sono prerequisiti della prima release pubblica:
 - bridge/non-public pool avanzato;
 - padding avanzato;
 - update swarm completo se esiste già un canale sicuro di distribuzione V1;
-- incentivi economici/tokenizzati ai relay oltre al bonus contatti.
+- incentivi economici/tokenizzati ai relay oltre al bonus contatti;
+- browser web integrato;
+- gateway Internet a livello dispositivo.
 
 ## 11. Live Groups — V1.5
 
@@ -254,8 +261,6 @@ Non usare mesh P2P illimitata per gruppi grandi. Per media multi-party usare for
 
 L'installazione non produce automaticamente una write on-chain.
 
-Sponsored registration:
-
 ```text
 RootIdentity
  -> anti-abuse proof / adaptive PoW
@@ -273,7 +278,9 @@ Dettagli: [`REGISTRATION_ECONOMICS.md`](REGISTRATION_ECONOMICS.md).
 
 ```text
 V1 — Launch
-  RootIdentity + Recovery Kit
+  RootIdentity + DeviceKey + opaque device record
+  pairwise contacts / aliases
+  Recovery Kit
   sponsored registration
   Share Freedom / Install QR
   verified peer/relay app bootstrap (Direct build)
@@ -285,7 +292,6 @@ V1 — Launch
   voice messages
   audio/video call
   Live mode
-  QR/link contacts
   basic Adaptive Defense
   Network Indicator
   payment/entitlement foundation
@@ -322,12 +328,14 @@ Blocker prima del Creator Pilot:
 - onboarding con configurazione tecnica manuale;
 - crash riproducibili;
 - session establishment inaffidabile;
-- perdita/corruzione RootIdentity/DeviceIdentity;
+- perdita/corruzione RootIdentity/DeviceKey;
+- reintroduzione di un global DeviceID nei transport/frame senza necessità reviewata;
+- alias pairwise correlabili per errore tra contatti;
 - Recovery Kit non verificato end-to-end;
 - chiamate 1:1 instabili;
 - relay che persiste payload oltre i limiti previsti;
 - device relay che consuma risorse fuori policy;
-- Relay Contributor facilmente farmabile con toggle/non-contributo;
+- Relay Contributor facilmente farmabile;
 - Install QR che accetta una release non verificabile;
 - possibilità per peer/relay/mirror di sostituire package ID o signing root senza failure;
 - downgrade a versione dichiarata vulnerabile;
