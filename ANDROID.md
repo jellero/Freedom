@@ -3,13 +3,17 @@
 Status: **implementation roadmap for the canonical specification**
 
 Normative security rules: [`docs/SECURITY_INVARIANTS.md`](docs/SECURITY_INVARIANTS.md).
+Control-plane security: [`docs/CONTROL_PLANE_SECURITY.md`](docs/CONTROL_PLANE_SECURITY.md).
+Advanced development method: [`docs/ADVANCED_DEVELOPMENT.md`](docs/ADVANCED_DEVELOPMENT.md).
 
-Android è la prima piattaforma di implementazione. Questo documento descrive il target architetturale, non attribuisce automaticamente al codice corrente le proprietà della specifica.
+Android è la prima piattaforma di prodotto, ma **non è il loop principale di sviluppo del protocollo**. Protocol, routing, control-plane verifier, release verifier e relay logic devono essere host-side/simulator-first; APK/emulator/device sono gate di integrazione piattaforma.
 
 ## 1. Identity stack
 
 ```text
+RootRecoveryKey
 RootIdentity
+DeviceAuthorizationKey / delegation
 DeviceCertificate
 DeviceKey
 DeviceRecordCommitment
@@ -17,42 +21,44 @@ PairwiseContactAlias
 TransportToken
 ```
 
-Non esiste un `DeviceID` globale richiesto dal client o dal wire protocol.
+No global DeviceID.
 
 ## 2. Prima installazione
 
 ```text
 Install Freedom
- -> generate RootIdentity
+ -> generate RootRecoveryKey / RootIdentity
+ -> generate DeviceAuthorizationKey + delegation
  -> generate DeviceKey
- -> generate opaque DeviceRecordCommitment
- -> secure storage / Android Keystore
- -> generate Recovery Kit
+ -> opaque DeviceRecordCommitment
+ -> RecoveryStateKey
+ -> Recovery Kit
  -> 0 mandatory chain writes
 ```
+
+## 3. Control-plane state
 
 Quando serve stato verificabile:
 
 ```text
-anti-abuse proof
- -> sponsored registration/activation
- -> wait finality
- -> verify execution/resulting state
- -> issue/use DeviceCertificate
- -> READY
+anti-abuse/device proof
+ -> submit
+ -> verify finality checkpoint
+ -> verify execution
+ -> verify resulting state proof
+ -> DeviceCertificate / READY
 ```
 
-`tx hash` non significa `READY`.
+`tx hash` o singola risposta RPC non significano `READY`.
 
-## 3. DeviceCertificate
-
-Android deve gestire e verificare:
+## 4. DeviceCertificate
 
 ```text
 DeviceCertificate {
     version
     network_id
     root_identity_commitment_or_proof
+    authorization_epoch
     device_public_key
     key_epoch
     protocol_version
@@ -60,156 +66,101 @@ DeviceCertificate {
     issued_at
     expires_at
     certificate_id
-    root_authorization_signature
+    authorization_signature
 }
 ```
 
-Il certificato consente handshake offline-verifiable. Chain/cache serve per revocation/freshness, senza RPC obbligatoria nel packet hot path.
+Verifica offline; revocation/freshness da cache/control-plane proof verificati.
 
-## 4. Contact QR / pairwise identity
+## 5. Device authorization privacy
+
+Production target: `DeviceAuthorizationProof`/slot nullifier senza mapping pubblico RootIdentity→device.
+
+Se una build Testnet usa proof linkabile, debug/telemetry/documentazione devono dichiararlo esplicitamente.
+
+## 6. Recovery
+
+Recovery Kit usa >=128-bit recovery entropy, memory-hard KDF e AEAD.
+
+Root compromise usa `UserRootRotation`; non è equivalente a device restore.
+
+Pairwise state:
 
 ```text
-FreedomContact {
-    version
-    network_id
-    root_identity_proof
-    contact_capability
-    bootstrap_device_certificate?
-    bootstrap_route_hints[]?
-    expires_at?
-}
+surviving device transfer
+or
+encrypted PairwiseRecoveryBundle
 ```
 
-Dopo handshake:
+Se manca pairwise backup, ownership torna ma i contatti richiedono re-bootstrap.
+
+## 7. Contact bootstrap
 
 ```text
-PairSecret
-PairwiseContactAlias
-PairRendezvousSecret
+FreedomContact
+ -> BOOTSTRAP_UNVERIFIED
+ -> handshake
+ -> optional safety code/fingerprint/out-of-band verification
+ -> CONTACT_VERIFIED
 ```
 
-Alias differenti per relazioni differenti.
+Descriptor substitution prima del primo bootstrap è una minaccia distinta da QR copy/replay.
 
-## 5. Secure session
+## 8. Secure session
 
 ```text
-verify expected RootIdentity/contact
- -> verify DeviceCertificate
+verify expected contact
+ -> verify delegation + DeviceCertificate
  -> verify DeviceKey possession
- -> apply revocation/freshness policy
- -> authenticated ephemeral key exchange
- -> E2EE ACTIVE
+ -> verified revocation/freshness
+ -> bind both handshake offer sets
+ -> strongest-allowed version/suite selection
+ -> fresh ephemeral E2EE
 ```
 
-Il transcript lega pairwise context, certificate proof/hash, epochs, ephemeral keys, nonces, suite e session ID.
+## 9. Forward secrecy / rekey
 
-È vietato accettare una chiave semplicemente perché firma correttamente se non è legata al contatto atteso.
-
-## 6. Forward secrecy / rekey
-
-Android deve implementare:
-
-- ephemeral key exchange per nuova sessione;
-- forward secrecy tra sessioni;
+- FS per sessione;
 - traffic-key lifetime bounded per tempo/frame/byte;
-- authenticated rekey prima dei limiti;
-- messaging/media keys separate;
-- failure esplicita se un rekey obbligatorio non può essere completato.
+- authenticated rekey;
+- control/messaging keys separate da media keys;
+- failure esplicita se rekey required fallisce.
 
-Ratchet standard/reviewato: target successivo per post-compromise security.
+## 10. Transport semantics
 
-## 7. Messaging sincrono
-
-```text
-SEND
-  |
-  +-- active authenticated session? -- no --> FAIL / DISCARD
-  |
-  `-- yes --> transmit --> ACK/session result
-```
-
-Nessun retry offline implicito e nessuna queue di delivery futura.
-
-## 8. Rendezvous
+Ogni adapter dichiara:
 
 ```text
-known route?
-  yes -> connect
-  no
-
-read pairwise remote rendezvous
-  usable -> try, no write
-  empty
-
-read local rendezvous
-  valid -> wait/poll
-  empty -> publish one bounded offer
+RELIABLE_ORDERED_STREAM
+UNRELIABLE_DATAGRAM
 ```
 
-Slot derivati da `PairRendezvousSecret`.
+Text/control/rekey usano reliable semantics o reliability layer esplicito. Media può usare datagram separati senza bloccare chat/control.
 
-## 9. Route / transport
+## 11. Messaging sincrono
 
 ```text
-DIRECT
-OBSERVED
-NAT_TRAVERSAL
-RELAY
-BRIDGE
-SHIELDED / MULTI_HOP
-PLUGGABLE / OBFUSCATED TRANSPORT
+active authenticated session? yes -> transmit
+active authenticated session? no  -> FAIL / DISCARD
 ```
 
-```text
-TransportAdapter
-  connect()
-  probe_capabilities()
-  health()
-  classify_failure()
-  close()
-```
+No offline retry queue.
 
-## 10. Relay mode
+## 12. Rendezvous / storage
 
-`DEVICE_RELAY` è opt-in e resource-bounded:
+Pairwise slots, read-before-write, bounded size/TTL.
 
-```text
-relay_enabled
-wifi_only
-charging_only
-battery_minimum
-metered_network_allowed
-max_bandwidth
-max_concurrent_circuits
-max_memory
-max_cpu
-background_policy
-```
+TTL non basta: il contract/runtime deve implementare overwrite/ring/prune/lease/reclaim e active-state bound.
 
-Relay mode:
+## 13. Relay mode
 
-- non salva conversazioni;
-- usa circuit token temporanei;
-- non riceve identity globali quando non necessari;
-- non diventa open Internet proxy;
-- può qualificare Relay Contributor.
+`DEVICE_RELAY` opt-in/resource-bounded. RelayDescriptor firmato, provenance-aware selection, no assumption `N relay IDs = N operators`, no Internet egress.
 
-## 11. Attachments / voice / video
+## 14. Shield
 
-Trasferimento solo dentro sessione/route attiva.
+Production `SHIELDED` richiede [`docs/SHIELD.md`](docs/SHIELD.md): real circuit setup, per-hop keys, layered forwarding, Sybil/provenance tests.
 
-Voice/video:
-
-```text
-CallInvite
-CallAccept
-CallCandidate
-CallEnd
-```
-
-Signaling E2EE; media keys separate e soggette a key lifetime/rekey.
-
-## 12. Network Indicator / Adaptive Defense
+## 15. Network Indicator / Adaptive Defense
 
 ```text
 NORMAL
@@ -219,125 +170,78 @@ SUSPECTED
 UNAVAILABLE
 ```
 
-`SUSPECTED` deriva da osservazioni/inferenze implementate; non significa “sei monitorato”.
+`SUSPECTED` è inferenza, non sorveglianza/censura provata.
 
-Fallback possibili:
-
-```text
-same transport / different endpoint
- -> different provider
- -> relay / bridge
- -> different transport family
- -> Shield / multi-hop
-```
-
-## 13. Share Freedom / first sideload
+## 16. Share Freedom
 
 ```text
-Share Freedom
- -> Install QR
- -> peer / relay / mirror / store
- -> exact artifact hash
- -> threshold FreedomRelease signatures
+Install QR
+ -> untrusted bytes
+ -> exact hash
+ -> verified signer-set epoch/transition
+ -> threshold FreedomRelease
  -> Android signer lineage
- -> ReleaseStatus / SecurityPolicy
+ -> ReleaseStatus/SecurityPolicy proof
  -> installer
 ```
 
-Per il primo sideload il `Freedom Bootstrap Verifier` usa root pinned:
+First sideload usa BootstrapTrustAnchor pinned.
+
+## 17. Governance client state
+
+Android conserva anti-rollback state:
 
 ```text
-expected_package_id
-release_signer_set_root_commitment
-android_signing_root_or_lineage_anchor
-minimum verifier policy
+highest_verified_checkpoint
+highest_signer_set_epoch
+highest_policy_epoch
+highest_release_status_epoch
+accepted_contract_lineage
 ```
 
-Il peer/QR non può ridefinire queste root.
+Wall clock locale non può riattivare policy/certificati vecchi; usare VerifiedTimeAnchor/height/epoch.
 
-## 14. Freedom Gateway — post-V1
-
-Gateway è separato da Freedom Communication e `DEVICE_RELAY`.
+## 18. Gateway — post-V1
 
 ```text
-Chrome / Firefox / selected apps
- -> Android VpnService
- -> Freedom Gateway
- -> path / transport selector
- -> explicit Egress
- -> Internet
+apps -> VpnService -> Freedom Gateway -> path/Shield -> explicit Egress -> Internet
 ```
 
-Modalità:
+DNS/leak controls, visible split tunnel, strict/kill-switch, no silent direct fallback.
+
+Target Free managed Gateway iniziale: `100 MB/day`, separato da Communication/Emergency Shield.
+
+## 19. Simulator-first development
+
+Loop primario:
 
 ```text
-OFF
-SELECTED_APPS
-WHOLE_DEVICE
+core source
+ -> host-side compile/test
+ -> multi-process/container simulation
+ -> NAT/firewall/RPC/clock/storage chaos
+ -> regression matrix
 ```
 
-Requisiti:
+Non produrre/installare APK per ogni iterazione protocol/control-plane.
 
-- consenso esplicito;
-- DNS/leak controls;
-- split tunneling visibile;
-- kill-switch/strict mode;
-- no silent fallback direct in strict mode;
-- current egress/path status;
-- `DEVICE_RELAY != INTERNET_EGRESS`.
+Docker/Codex lab dettagliato in [`docs/ADVANCED_DEVELOPMENT.md`](docs/ADVANCED_DEVELOPMENT.md).
 
-Target Free managed Gateway iniziale:
+## 20. Quando Android è obbligatorio
 
-```text
-100 MB / giorno
-```
+APK/emulator/physical device gate per:
 
-Quota separata da Freedom Communication ed Emergency Shield.
+- Android Keystore;
+- process death/restart;
+- lifecycle/background/Doze;
+- permissions/notifications;
+- package signing/update;
+- camera/QR;
+- real network handover;
+- `VpnService`;
+- vendor-specific socket/background behavior.
 
-## 15. Maximum Reachability / censorship lab
-
-Policy futura:
-
-```text
-MAXIMUM_REACHABILITY
-  bounded warm alternatives
-  independent providers
-  transport-family rotation
-  non-public bridge when available
-  parallel connect within resource policy
-  aggressive bounded failover
-```
-
-Test riproducibili:
-
-- block known relay IPs;
-- block one provider ASN;
-- block UDP/QUIC;
-- protocol fingerprint block;
-- DNS/SNI filtering;
-- active-probe simulation;
-- loss/latency/reordering;
-- partial allowlist;
-- RPC/provider block.
-
-Nessun claim “passa tutti i firewall”.
-
-## 16. Secure storage
-
-Separare almeno:
-
-- RootIdentity/private material;
-- DeviceKey / DeviceCertificate;
-- device authorization state;
-- pairwise contacts/rendezvous secrets;
-- session state secondo policy;
-- network cache;
-- Gateway config;
-- release/signer-set/SecurityPolicy state.
-
-Non loggare private/session/rendezvous/Gateway tunnel keys.
-
-## 17. Module target
+## 21. Module target
 
 ```text
 app/
@@ -346,85 +250,89 @@ core/
   protocol/
   session/
   routing/
-  adaptive/
-chain/
-  ChainAdapter
-  near/
+  controlplane/
+  release/
 transport/
   direct/
   nat/
   relay/
   bridge/
-  pluggable/
+  shield/
+sim/
+  node/
+  chain/
+  nat/
+  censor/
+  clock/
+  scenario/
+  oracle/
 gateway/
   android-vpn/
   tunnel/
   egress/
-release/
-  verifier/
-  bootstrap/
 platform-android/
 ```
 
-## 18. Test gates
+## 22. Test gates
 
-Minimo prima dell'interoperabilità pubblica:
+Host/sim first:
 
 ```text
-assemble
-unit tests
-protocol serialization/test vectors
-DeviceCertificate positive/negative tests
-expected-contact handshake negative tests
-forward-secrecy/rekey tests
-replay/downgrade tests
-control-plane Failure/finality/state-mismatch tests
-Keystore instrumentation tests
-release/bootstrap verification tests
-transport resource-bound tests
+canonical vectors
+DeviceCertificate/delegation tests
+privacy authorization proof tests
+first-contact substitution
+handshake offer-stripping/downgrade
+FS/rekey/replay
+stream/datagram reorder/loss
+checkpoint/state proof
+malicious/stale/forked RPC
+storage reclaim convergence
+RootRotation/pairwise recovery
+relay Sybil/eclipse
+Shield circuits
+release/signer/contract rollback
+payment voucher/nullifier
 ```
 
-Successivamente:
+Android gates:
 
 ```text
-DPI/firewall simulation
-relay failover/load tests
-Gateway DNS/leak tests
-multi-device/recovery tests
-fuzzing
+Keystore instrumentation
+process/background tests
+network handover
+package signing/update
+camera/QR
+VpnService DNS/IPv4/IPv6 leaks
 ```
 
-## 19. Roadmap Android
+## 23. Roadmap
 
 ```text
-A1  RootIdentity + DeviceKey + opaque device record
-A2  Recovery Kit + sponsored registration
-A3  DeviceCertificate offline-verifiable
-A4  NearChainAdapter + verified finality/state
-A5  person/contact QR + pairwise alias
-A6  device rotation/revocation/freshness
-A7  pairwise rendezvous + read-before-write
-A8  expected-contact authenticated session
-A9  forward secrecy + bounded key lifetime/rekey
-A10 synchronous text + ACK
-A11 route update / NAT
-A12 relay / DEVICE_RELAY
-A13 attachments
-A14 voice/video
-A15 Share Freedom + BootstrapTrustAnchor
-A16 Network Indicator / Adaptive Defense
-A17 transport abstraction / bridge support
-A18 store/direct release polish
+A1  core identity hierarchy + Recovery Kit
+A2  DeviceAuthorizationProof / DeviceCertificate
+A3  control-plane checkpoint/state verifier
+A4  pairwise contact + first-contact verification UX
+A5  pairwise recovery / multi-device
+A6  anti-downgrade authenticated session
+A7  FS/rekey + transport semantic split
+A8  synchronous text/ACK
+A9  route/NAT simulator
+A10 RelayDescriptor / DEVICE_RELAY
+A11 attachments/media
+A12 Shield circuit prototype + simulator
+A13 Share Freedom + governance rollback protection
+A14 Adaptive Defense / Network Indicator
+A15 Android integration gates
 
 POST-V1 GATEWAY
-G1  explicit egress protocol
-G2  selected-app VpnService
-G3  whole-device + DNS/leak controls
-G4  managed quota + 100 MB/day Free target
-G5  egress failover/diversity
-G6  shielded multi-hop Gateway
-G7  pluggable anti-censorship transports
-G8  bridge anti-enumeration
-G9  DPI/firewall lab
-G10 Maximum Reachability
+G1 explicit egress
+G2 selected-app VpnService
+G3 whole-device + DNS/leak controls
+G4 managed quota
+G5 egress/transport diversity
+G6 Shielded Gateway
+G7 anti-censorship transports/bridges
+G8 DPI/firewall lab
+G9 Maximum Reachability
 ```
