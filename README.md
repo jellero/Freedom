@@ -2,7 +2,11 @@
 
 **Powered by Freedom Protocol**
 
+> **Nessun server centrale. Nessun super-admin. Niente di opaco. Fiducia nel protocollo. Sicurezza nell'architettura.**
+>
 > **Synchronous. Ephemeral. Endpoint-to-endpoint.**
+
+Freedom può usare relay, egress, RPC e altri nodi fisici, ma **nessuno di essi deve essere un'autorità assoluta o un requisito permanente**. La fiducia non viene concessa a un singolo operatore: deriva da primitive crittografiche, firme verificabili, policy esplicite e un'architettura progettata per rendere i componenti infrastrutturali sostituibili.
 
 Freedom è un progetto di comunicazione privata e resilienza di rete costruito attorno a una scelta precisa: **la conversazione Freedom esiste quando le persone sono presenti nello stesso momento**.
 
@@ -574,5 +578,9 @@ G8  Maximum Reachability
 ## Principio finale
 
 Freedom non è definito da una blockchain, da un relay specifico, da una VPN o da un'app Android.
+
+> **Nessun server centrale. Nessun super-admin. Niente di opaco. Fiducia nel protocollo. Sicurezza nell'architettura.**
+
+Questo non significa assenza fisica di server, relay o egress: significa che **nessuno di essi deve essere un'autorità assoluta, un trust anchor unico o un requisito permanente**.
 
 > **Freedom Communication punta a proteggere la comunicazione endpoint-to-endpoint. Freedom Gateway punta a mantenere utilizzabile il percorso di rete quando l'ambiente prova a limitarlo. Le due proprietà condividono il fabric, ma non vanno mai confuse nelle garanzie di sicurezza.**
