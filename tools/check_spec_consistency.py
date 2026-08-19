@@ -19,9 +19,11 @@ REQUIRED_FILES = [
     "README.md",
     "spec/README.md",
     "spec/freedom.cddl",
+    "spec/crypto-domains.txt",
     "docs/SECURITY_INVARIANTS.md",
     "docs/CONTROL_PLANE_SECURITY.md",
     "docs/REVOCATION.md",
+    "docs/PAIRWISE_RECOVERY.md",
     "docs/IDENTITY_MODEL.md",
     "docs/PROTOCOL.md",
     "docs/THREAT_MODEL.md",
@@ -42,6 +44,7 @@ REQUIRED_CDDL_OBJECTS = [
     "rendezvous-record",
     "recovery-beacon",
     "pairwise-recovery-bundle",
+    "pairwise-recovery-anchor",
     "relay-descriptor",
     "provenance-attestation",
     "handshake-offer",
@@ -62,10 +65,51 @@ REQUIRED_CDDL_OBJECTS = [
     "bootstrap-trust-anchor",
 ]
 
+REQUIRED_CRYPTO_DOMAINS = [
+    "SIGN FREEDOM/DEVICE_AUTHORIZATION_DELEGATION",
+    "SIGN FREEDOM/DEVICE_CERTIFICATE",
+    "SIGN FREEDOM/DEVICE_REVOCATION",
+    "SIGN FREEDOM/AUTHORIZATION_REVOCATION",
+    "SIGN FREEDOM/USER_RECOVERY_POLICY",
+    "SIGN FREEDOM/USER_ROOT_ROTATION",
+    "SIGN FREEDOM/RENDEZVOUS_RECORD",
+    "SIGN FREEDOM/RECOVERY_BEACON",
+    "SIGN FREEDOM/RELAY_DESCRIPTOR",
+    "SIGN FREEDOM/FREEDOM_RELEASE",
+    "SIGN FREEDOM/RELEASE_STATUS",
+    "SIGN FREEDOM/SECURITY_POLICY",
+    "SIGN FREEDOM/SIGNER_SET_TRANSITION",
+    "SIGN FREEDOM/CONTRACT_UPGRADE",
+    "SIGN FREEDOM/CHAIN_MIGRATION",
+    "SIGN FREEDOM/PAIRWISE_RECOVERY_ANCHOR",
+    "MAC FREEDOM/HANDSHAKE_TRANSCRIPT",
+    "MAC FREEDOM/REKEY_INIT",
+    "MAC FREEDOM/REKEY_COMMIT",
+    "MAC FREEDOM/REKEY_ACK",
+    "AEAD FREEDOM/CONTROL_FRAME",
+    "AEAD FREEDOM/MEDIA_FRAME",
+    "AEAD FREEDOM/RENDEZVOUS_PAYLOAD",
+    "AEAD FREEDOM/RECOVERY_BEACON_PAYLOAD",
+    "AEAD FREEDOM/PAIRWISE_RECOVERY_BUNDLE",
+    "HASH FREEDOM/RENDEZVOUS_SLOT",
+    "HASH FREEDOM/PAIRWISE_RECOVERY_BUNDLE_ID",
+    "KDF FREEDOM/PAIR_RENDEZVOUS_SECRET",
+    "KDF FREEDOM/RENDEZVOUS_WRITE_KEY",
+    "KDF FREEDOM/SESSION_TRAFFIC",
+]
+
 NORMATIVE_DOCS_REQUIRING_SCHEMA_LINK = [
     "docs/SECURITY_INVARIANTS.md",
     "docs/CONTROL_PLANE_SECURITY.md",
     "docs/REVOCATION.md",
+    "docs/PAIRWISE_RECOVERY.md",
+    "docs/IDENTITY_MODEL.md",
+    "docs/PROTOCOL.md",
+]
+
+NORMATIVE_DOCS_REQUIRING_DOMAIN_LINK = [
+    "docs/SECURITY_INVARIANTS.md",
+    "docs/CONTROL_PLANE_SECURITY.md",
     "docs/IDENTITY_MODEL.md",
     "docs/PROTOCOL.md",
 ]
@@ -112,10 +156,42 @@ def main() -> int:
         if not re.search(rf"(?m)^\s*{re.escape(name)}\s*=\s*\{{", cddl):
             fail(errors, f"canonical CDDL object missing: {name}")
 
+    domains_text = read("spec/crypto-domains.txt")
+    domain_lines = {
+        line.strip()
+        for line in domains_text.splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    }
+    for domain in REQUIRED_CRYPTO_DOMAINS:
+        if domain not in domain_lines:
+            fail(errors, f"required crypto domain missing: {domain}")
+
+    allowed_classes = {"SIGN", "MAC", "AEAD", "HASH", "KDF"}
+    seen_domain_names: dict[str, str] = {}
+    for line in sorted(domain_lines):
+        parts = line.split()
+        if len(parts) != 2:
+            fail(errors, f"invalid crypto-domain registry line: {line!r}")
+            continue
+        domain_class, domain_name = parts
+        if domain_class not in allowed_classes:
+            fail(errors, f"invalid crypto-domain class {domain_class!r}: {line!r}")
+        if not domain_name.startswith("FREEDOM/"):
+            fail(errors, f"crypto-domain must start with FREEDOM/: {line!r}")
+        previous = seen_domain_names.get(domain_name)
+        if previous is not None and previous != domain_class:
+            fail(errors, f"same crypto domain reused across classes: {domain_name} ({previous}, {domain_class})")
+        seen_domain_names[domain_name] = domain_class
+
     for rel in NORMATIVE_DOCS_REQUIRING_SCHEMA_LINK:
         text = read(rel)
         if "spec/freedom.cddl" not in text and "../spec/freedom.cddl" not in text:
             fail(errors, f"normative document does not link canonical CDDL: {rel}")
+
+    for rel in NORMATIVE_DOCS_REQUIRING_DOMAIN_LINK:
+        text = read(rel)
+        if "spec/crypto-domains.txt" not in text and "../spec/crypto-domains.txt" not in text:
+            fail(errors, f"normative document does not link crypto domain registry: {rel}")
 
     # Scan specification/documentation only; legacy implementation may intentionally
     # still contain spike-era terminology until it is replaced by the canonical core.
@@ -134,6 +210,16 @@ def main() -> int:
         if "PairwiseRecoveryBundle" in text and re.search(r"(?m)^\s*contacts\[\]\s*$", text):
             fail(errors, f"{path.relative_to(ROOT)} reintroduces plaintext contacts[] recovery schema")
 
+    # Pairwise recovery semantics must preserve the integrity-vs-freshness distinction.
+    pairwise = read("docs/PAIRWISE_RECOVERY.md")
+    for required_phrase in (
+        "integrity != freshness",
+        "PairwiseRecoveryAnchor",
+        "PAIRWISE_BACKUP_ROLLBACK_OR_MISMATCH",
+    ):
+        if required_phrase not in pairwise:
+            fail(errors, f"PAIRWISE_RECOVERY.md missing required semantic marker: {required_phrase}")
+
     # SVGs are source-controlled documentation and should remain XML-well-formed.
     for svg in (ROOT / "docs" / "assets").glob("*.svg"):
         try:
@@ -141,12 +227,14 @@ def main() -> int:
         except ET.ParseError as exc:
             fail(errors, f"invalid SVG/XML {svg.relative_to(ROOT)}: {exc}")
 
-    # Ensure public README points at the new canonical documents.
+    # Ensure public README points at canonical public documents without internal lab details.
     for required_reference in (
         "spec/freedom.cddl",
+        "spec/crypto-domains.txt",
         "docs/SECURITY_INVARIANTS.md",
         "docs/CONTROL_PLANE_SECURITY.md",
         "docs/REVOCATION.md",
+        "docs/PAIRWISE_RECOVERY.md",
         "docs/SHIELD.md",
     ):
         if required_reference not in readme:
