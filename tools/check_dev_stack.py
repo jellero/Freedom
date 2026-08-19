@@ -65,7 +65,7 @@ def main() -> int:
     l3_readme = (ROOT / "sim" / "l3" / "README.md").read_text(encoding="utf-8")
     for marker in (
         "real NEAR Sandbox adapter implemented",
-        "not real L3 acceptance",
+        "production light-client verification still separate",
         "light-client",
         "near/l3-adapter/Cargo.toml",
     ):
