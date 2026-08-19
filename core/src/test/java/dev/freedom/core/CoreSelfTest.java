@@ -5,6 +5,7 @@ public final class CoreSelfTest {
         testRouteRecoveryKeepsIdentity();
         testPairwiseRollback();
         testBootstrapFreshness();
+        testVerifiedMutation();
         testRekeyLostAck();
         System.out.println("Freedom core self-tests passed.");
     }
@@ -43,6 +44,18 @@ public final class CoreSelfTest {
         check(cp.verifiedHeight() == 101, "verified height not retained");
         check(!cp.verifyCheckpoint(100, true), "highest-seen rollback accepted");
         check("CONTROL_PLANE_ROLLBACK".equals(cp.lastReason()), "wrong rollback error");
+    }
+
+    private static void testVerifiedMutation() {
+        FreedomCore.MutationVerificationState mutation = new FreedomCore.MutationVerificationState();
+        check(!mutation.verify(true, false, true, true, 1), "failed execution accepted");
+        check("CONTROL_PLANE_EXECUTION_FAILED".equals(mutation.lastReason()), "wrong execution failure class");
+        check(!mutation.verify(true, true, true, false, 1), "state mismatch accepted");
+        check("CONTROL_PLANE_STATE_MISMATCH".equals(mutation.lastReason()), "wrong state mismatch class");
+        check(mutation.verify(true, true, true, true, 2), "verified mutation rejected");
+        check(mutation.committedVersion() == 2, "committed state version not retained");
+        check(!mutation.verify(true, true, true, true, 1), "resulting-state rollback accepted");
+        check("CONTROL_PLANE_ROLLBACK".equals(mutation.lastReason()), "wrong mutation rollback class");
     }
 
     private static void testRekeyLostAck() {
