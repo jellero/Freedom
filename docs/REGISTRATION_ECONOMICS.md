@@ -4,8 +4,6 @@
 
 Freedom deve poter sostenere una base Free molto grande senza trasformare la registrazione in un vettore con cui un attaccante può obbligare il treasury a pagare storage/gas illimitati.
 
-Principio:
-
 > **il primo utilizzo deve essere gratuito per una persona; creare identità in massa deve avere un costo computazionale ed economico crescente per un aggressore.**
 
 ## 2. Nessuna write al semplice install
@@ -13,22 +11,21 @@ Principio:
 ```text
 install
  -> generate RootIdentity locally
- -> generate DeviceIdentity locally
+ -> generate DeviceKey locally
+ -> generate DeviceRecordCommitment locally
  -> Recovery Kit
  -> 0 mandatory chain writes
 ```
 
 Una installazione abbandonata non deve consumare storage permanente del protocollo.
 
-La prima registrazione on-chain avviene quando serve realmente rendere l'identità verificabile per l'uso del protocollo.
+La prima registrazione on-chain avviene quando serve realmente rendere verificabile la RootIdentity/device authorization per l'uso del protocollo.
+
+Dettagli identità: [`IDENTITY_MODEL.md`](IDENTITY_MODEL.md).
 
 ## 3. Sponsored registration
 
 Freedom può sponsorizzare il costo delle operazioni essenziali Free tramite fee relayer/treasury.
-
-La sponsorship non è una primitive illimitata. Una richiesta di nuova RootIdentity deve superare policy anti-abuso prima che un relayer paghi la transaction.
-
-Pipeline concettuale:
 
 ```text
 NEW ROOT IDENTITY
@@ -51,9 +48,7 @@ nonce
 expiry/context
 ```
 
-La difficoltà deve essere sufficientemente bassa per un singolo utente legittimo su hardware economico, ma aumentare il costo di milioni di registrazioni automatiche.
-
-La difficoltà può essere adattata in base a pressione/abuso osservato, con limiti massimi che evitino di escludere device deboli.
+La difficoltà deve essere bassa per un singolo utente legittimo su hardware economico, ma aumentare il costo di milioni di registrazioni automatiche.
 
 Il valore concreto non deve essere fissato senza benchmark reali su dispositivi Android rappresentativi.
 
@@ -61,9 +56,9 @@ Il valore concreto non deve essere fissato senza benchmark reali su dispositivi 
 
 Più fee relayer indipendenti possono sponsorizzare nuove registrazioni.
 
-Ogni relayer applica limiti bounded per finestra temporale e budget. Il blocco/rate-limit di un singolo relayer non deve diventare censura globale perché altri relayer compatibili possono esistere.
+Ogni relayer applica limiti bounded per finestra temporale e budget. Il blocco/rate-limit di un singolo relayer non deve diventare censura globale.
 
-I limiti possono considerare segnali anti-abuso locali senza trasformare IP, numero di telefono o account commerciale in identità Freedom.
+I limiti possono considerare segnali anti-abuso locali senza trasformare IP, numero di telefono, account commerciale o DeviceRecordCommitment in identità pubblica Freedom.
 
 ## 6. Una sponsorship per RootIdentity
 
@@ -71,11 +66,9 @@ La chain deve poter determinare che una RootIdentity ha già ricevuto la propria
 
 Un reinstall/nuovo telefono usa il Recovery Kit e la RootIdentity esistente; non deve creare una nuova RootIdentity per ottenere una nuova sponsorship.
 
-Nuove DeviceIdentity autorizzate sono soggette al `max_devices` dell'entitlement.
+Nuove DeviceKey/DeviceRecordCommitment autorizzate sono soggette al `max_devices` dell'entitlement.
 
 ## 7. Budget globale/dinamico
-
-Treasury e relayer possono definire un budget massimo di sponsorship per intervallo.
 
 Quando il traffico di registrazione supera drasticamente il baseline:
 
@@ -90,24 +83,25 @@ Un attacco alle nuove registrazioni non deve interrompere comunicazioni o recove
 
 ## 8. Storage minimale e bounded
 
-Lo stato permanente deve essere ridotto al minimo necessario:
-
 ```text
 PERMANENT
-root/account commitment quando necessario
-current identity key/commitment
-key epoch
-status
+root commitment quando necessario
+opaque current device record commitment
+current device public key / key epoch / status
 entitlement/device-slot summary quando necessario
+
+TEMPORARY
+rendezvous
+recovery beacon
+purchase intent
+route hints
 ```
 
-Stato operativo come rendezvous, recovery beacon, purchase intent e route hint deve essere temporaneo, riutilizzabile/sovrascrivibile o reclaimable quando il modello della chain lo consente.
+Non memorizzare messaggi, media, history, social graph, alias pairwise leggibili o presenza continua.
 
-Non memorizzare messaggi, media, history, social graph o presenza continua.
+Un commitment opaco riduce la leggibilità ma non elimina correlazioni temporali: activation/revocation/rendezvous devono essere misurati anche come pattern osservabili.
 
 ## 9. Costo cresce con eventi rari, non con comunicazioni
-
-Invarianti economiche:
 
 ```text
 message            -> 0 chain writes
@@ -116,7 +110,7 @@ active session     -> 0 presence heartbeat writes
 normal route       -> 0 recovery writes
 ```
 
-Chain writes sono legate a eventi rari del control-plane: registrazione, key rotation/revocation, device activation, rendezvous di recovery, recovery beacon, entitlement/payment state.
+Chain writes sono legate a eventi rari del control-plane: registration, key rotation/revocation, device activation, rendezvous/recovery, entitlement/payment state.
 
 ## 10. Free tier anti-abuse
 
@@ -124,19 +118,20 @@ Policy prodotto iniziale:
 
 - 1 RootIdentity sponsorizzata;
 - 1 device attivo Free;
-- 10 contatti attivi Free;
+- 10 contatti-persona attivi Free;
 - messaging/calls core non limitati in base al numero di messaggi per finanziare la chain;
 - Emergency Shield limitato in base a capacità/costo reale;
-- recovery essenziale non viene usato come leva commerciale.
+- recovery essenziale non usato come leva commerciale.
 
 Il limite contatti non sostituisce l'anti-Sybil ma aumenta il costo di abuso su larga scala senza rendere inutilizzabile il piano Free.
 
 ## 11. Metriche da misurare prima di mainnet
 
-- byte reali per record serializzato;
-- costo medio registrazione/rotation/revocation;
-- storage effettivo per 100k / 1M identità;
+- byte reali per Root/device record serializzato;
+- costo medio registration/rotation/revocation;
+- storage effettivo per 100k / 1M RootIdentity/device record;
 - costo e latenza dei recovery beacon;
+- correlabilità temporale tra activation/revocation/rendezvous;
 - distribuzione hardware per benchmark PoW;
 - attacchi simulati a relayer/sponsorship;
 - costo mensile treasury per utenti Free reali vs identità abusive.
