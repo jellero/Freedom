@@ -9,13 +9,15 @@ These instructions apply to Codex/agentic development in this repository.
 3. `docs/REVOCATION.md`
 4. `docs/PAIRWISE_RECOVERY.md`
 5. `spec/README.md`
-6. `spec/freedom.cddl`
-7. `spec/crypto-domains.txt`
-8. `docs/IDENTITY_MODEL.md`
-9. `docs/PROTOCOL.md`
-10. `docs/THREAT_MODEL.md`
-11. `docs/REPOSITORY_GOVERNANCE.md`
-12. subsystem-specific docs.
+6. `spec/ENCODING_PROFILE.md`
+7. `spec/freedom.cddl`
+8. `spec/crypto-domains.txt`
+9. `spec/vectors/dcbor-v1.json`
+10. `docs/IDENTITY_MODEL.md`
+11. `docs/PROTOCOL.md`
+12. `docs/THREAT_MODEL.md`
+13. `docs/REPOSITORY_GOVERNANCE.md`
+14. subsystem-specific docs.
 
 Normative MUST/MUST NOT rules override older implementation behavior.
 
@@ -25,19 +27,23 @@ Do not introduce global user/device network IDs, on-chain messages/mailbox, pers
 
 Do not claim a pairwise backup is the latest verified state after total device loss unless freshness is provided by surviving trusted state or the canonical independent monotonic recovery anchor.
 
-## Canonical schema and crypto domains
+## Canonical schema / bytes / crypto domains
 
 `spec/freedom.cddl` is the source of truth for frozen object field names/shapes.
 
+`spec/ENCODING_PROFILE.md` freezes `Freedom-DCBOR-1` byte semantics. Existing `Freedom-DCBOR-1` expected bytes MUST NOT change silently.
+
+`spec/vectors/dcbor-v1.json` is the shared byte-level fixture consumed across languages.
+
 `spec/crypto-domains.txt` is the source of truth for fixed SIGN/MAC/AEAD/HASH/KDF protocol domains.
 
-All security objects use deterministic canonical encoding + explicit purpose/context binding according to `spec/README.md`.
+All security objects use deterministic canonical encoding + explicit purpose/context binding according to `spec/README.md` and `spec/ENCODING_PROFILE.md`.
 
-Do not create a second incompatible Markdown/code struct or ad-hoc crypto label for convenience.
+Do not create a second incompatible Markdown/code struct, vector set, serializer rule or ad-hoc crypto label for convenience.
 
 ## Normative-spec human gate
 
-Agents may propose changes to normative/security files, but MUST NOT autonomously weaken/remove a MUST/MUST NOT, change a trust assumption, cryptographic domain, canonical signed schema, revocation/recovery/governance/rekey state machine merely to make implementation/tests pass.
+Agents may propose changes to normative/security files, but MUST NOT autonomously weaken/remove a MUST/MUST NOT, change a trust assumption, cryptographic domain, `Freedom-DCBOR-1` byte rule/vector, canonical signed schema, revocation/recovery/governance/rekey state machine merely to make implementation/tests pass.
 
 A failing test is evidence, not permission to weaken the oracle.
 
@@ -65,6 +71,14 @@ Prefer simulator-first development. Full Android APK install is an integration g
 
 Use isolated worktrees/branches for parallel tasks.
 
+The deterministic L1 runner is:
+
+```text
+python sim/simctl.py --all
+```
+
+Do not replace an existing executable scenario with prose-only acceptance criteria.
+
 ## Test discipline
 
 For every bug/security fix:
@@ -78,13 +92,15 @@ For every bug/security fix:
 7. update threat/docs if the security boundary genuinely changes;
 8. request human review if normative semantics change.
 
-Run at minimum:
+For docs/spec/security/simulator changes run at minimum:
 
 ```text
 python tools/check_spec_consistency.py
+python tools/check_vectors.py
+python sim/simctl.py --all --quiet
 ```
 
-when changing docs/spec/security architecture.
+All three are repository gates; do not report a protocol/spec task as complete while one is failing.
 
 ## Simulation targets
 
@@ -104,6 +120,20 @@ post-restore -> peer re-auth + future rendezvous rotation
 ```
 
 Integrity is not a substitute for freshness.
+
+## Encoding/vector tests
+
+When touching a frozen object or security encoding:
+
+```text
+positive canonical bytes
+strict decoder acceptance
+non-canonical negative rejection
+correct SIGN/MAC/AEAD/HASH/KDF purpose binding
+network/version separation
+```
+
+A cross-language implementation must consume the shared fixtures, not redefine expected bytes locally.
 
 ## Recovery quorum tests
 
@@ -127,7 +157,7 @@ Host simulation does not replace Android validation for Keystore, lifecycle/back
 
 ## Governance boundaries
 
-Do not automatically change production/mainnet signer sets, release roots, contract governance anchors, migration anchors, user recovery-policy roots or pairwise recovery-anchor semantics.
+Do not automatically change production/mainnet signer sets, release roots, contract governance anchors, migration anchors, user recovery-policy roots, pairwise recovery-anchor semantics or frozen encoding profiles/vectors.
 
 Production governance/custody changes require explicit human review and canonical threshold procedures.
 
