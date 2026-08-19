@@ -1,0 +1,13 @@
+[package]
+name = "freedom-control-plane-contract"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.93"
+repository = "https://github.com/jellero/Freedom"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+near-sdk = "=5.29.0"
