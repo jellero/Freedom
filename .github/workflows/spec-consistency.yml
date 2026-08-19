@@ -56,6 +56,9 @@ jobs:
       - name: Run deterministic L1 simulator against shared core
         run: python sim/simctl.py --all --quiet --no-build --evidence-dir build/sim-evidence
 
+      - name: Validate L3 canonical differential oracle vectors
+        run: python sim/l3/differential.py --oracle-only
+
   l2-docker-network:
     runs-on: ubuntu-latest
     timeout-minutes: 8
