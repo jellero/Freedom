@@ -8,31 +8,32 @@ Normative security rules: [`SECURITY_INVARIANTS.md`](SECURITY_INVARIANTS.md).
 
 Freedom monetizza capacità, comodità e servizi professionali; non contenuto o fiducia crittografica.
 
-- nessuna vendita di messaggi o conversation metadata;
+- nessuna vendita di messaggi/conversation metadata;
 - nessuna pubblicità basata sul contenuto E2EE;
 - nessuna master key;
 - nessun server centrale necessario per leggere/conservare/consegnare messaggi;
-- pagare non rende la crittografia di Freedom Communication più forte.
+- pagare non rende Freedom Communication crittograficamente “più autentica”.
 
 > **monetizzare capacità, comodità e servizi professionali; non la conversazione.**
 
 > **la censura non deve diventare un paywall.**
 
-## 2. Due superfici economiche
+## 2. Superfici economiche
 
 ```text
 Freedom Communication -> core E2EE/live
+Freedom Shield        -> capacità/path protection managed avanzata
 Freedom Gateway       -> capacità rete/egress/anti-censura gestita
 ```
 
 ## 3. Core Free
 
-Target iniziale:
+Target iniziale client ufficiale:
 
 - RootIdentity + Recovery Kit;
 - DeviceKey/DeviceCertificate autorizzati;
 - 1 device attivo;
-- 10 contatti attivi;
+- 10 contatti attivi come product policy locale;
 - sessioni E2EE live;
 - no mailbox/offline delivery;
 - direct + community/device relay quando disponibili;
@@ -44,27 +45,41 @@ Target iniziale:
 - operazioni chain essenziali sponsorizzabili;
 - Gateway managed: target 100 MB/giorno quando disponibile.
 
-La lista contatti resta locale/cifrata.
-
-## 4. Relay Contributor
+## 4. Contact slots: product policy, non trust rule
 
 ```text
-FREE                     10 contatti attivi
-FREE + RELAY CONTRIBUTOR 20 contatti attivi
+FREE                     10 contact slots
+FREE + RELAY CONTRIBUTOR 20 contact slots
 ```
+
+V1:
+
+- la lista contatti resta locale/cifrata;
+- il limite viene applicato dal client ufficiale come product/entitlement policy;
+- non si pubblica il social graph solo per rendere il limite anti-tamper;
+- un peer remoto non rifiuta una sessione perché il client mittente ha modificato la propria quota;
+- un futuro enforcement resistente a client modificati richiede credential/nullifier/ZK privacy-preserving separati.
+
+Quindi il limite contatti non è una security/interoperability primitive del Freedom Protocol.
+
+## 5. Relay Contributor
 
 Il +10 richiede contributo utile, bounded e privacy-preserving; il toggle non basta.
 
-Se il benefit scade, i contatti non vengono cancellati e le sessioni non vengono terminate: si blocca solo l'aggiunta di nuovi contatti finché l'utente rientra nella quota o si riqualifica.
+Se il benefit scade:
 
-## 5. Freedom Plus / Shield
+- contatti non cancellati;
+- sessioni non terminate;
+- client ufficiale impedisce nuove aggiunte sopra quota finché l'utente rientra o si riqualifica.
+
+## 6. Freedom Plus / Shield
 
 Può offrire:
 
 - più contatti/device;
-- più relay capacity/priorità;
+- più managed relay capacity;
 - Always-Shielded;
-- multi-hop;
+- multi-hop quando il circuit protocol definito in `SHIELD.md` è realmente implementato;
 - provider/path diversity;
 - pre-warmed candidates;
 - failover parallelo;
@@ -72,12 +87,13 @@ Può offrire:
 - Maximum Resilience;
 - limiti file/media superiori;
 - recovery/multi-device avanzati;
-- Gateway quota/egress/regioni superiori;
-- Maximum Reachability con resource budget più alto.
+- Gateway quota/egress/regioni superiori.
 
-Non compra una E2EE “più forte” o una diagnosi più onesta.
+Pagare non modifica l'identità del peer o la forza base dell'E2EE.
 
-## 6. Freedom Gateway Free
+Prima del claim production `SHIELDED`, il vero circuit setup/per-hop key/layered forwarding deve superare i gate di [`SHIELD.md`](SHIELD.md).
+
+## 7. Freedom Gateway Free
 
 ```text
 FREEDOM GATEWAY FREE
@@ -87,9 +103,7 @@ carry-over              = no salvo policy futura
 priority                = standard
 ```
 
-È un target di prodotto, non un limite wire-protocol immutabile.
-
-Va ricalibrato su costo egress, geografia, overhead anti-censura, abuso e multi-hop.
+Target di prodotto, non parametro wire-protocol.
 
 Non consuma automaticamente quota Gateway:
 
@@ -99,19 +113,11 @@ Freedom Communication community/device relay
 private relay/egress dell'utente/organizzazione
 ```
 
-Emergency Shield Communication resta un budget separato.
+Emergency Shield Communication resta budget separato.
 
-## 7. Freedom Gateway premium / Business
+## 8. Gateway premium / Business
 
-Plus/Shield può offrire:
-
-- quota managed molto superiore;
-- egress/provider/region diversity;
-- multi-hop Gateway;
-- bridge/non-public pools;
-- transport rotation/failover più aggressivi;
-- candidate pre-warmed;
-- Maximum Reachability.
+Plus/Shield può offrire quota superiore, egress/provider/region diversity, multi-hop Gateway, bridge/non-public pools e Maximum Reachability.
 
 Business:
 
@@ -119,16 +125,11 @@ Business:
 PRIVATE_EGRESS
 BUSINESS_EGRESS
 custom quotas
-region/policy dedicated pools
 private deployment
 SLA
 ```
 
-## 8. Entitlement privacy
-
-La licenza appartiene alla continuità della RootIdentity ma il control-plane non deve riutilizzare `root_commitment` come identificatore universale.
-
-Usare:
+## 9. Entitlement privacy
 
 ```text
 FreedomEntitlement {
@@ -142,90 +143,64 @@ FreedomEntitlement {
 }
 ```
 
-`EntitlementCommitment` è domain-separated da:
+`EntitlementCommitment` è domain-separated da device/payment/sponsorship/pairwise state.
+
+`max_devices` può essere enforceato dal control-plane tramite privacy-preserving device-slot proof.
+
+`base_contact_slots` V1 resta policy locale del client ufficiale.
+
+## 10. Payment privacy
+
+Payment flow preferito:
 
 ```text
-DeviceAuthorizationCommitment
-PaymentBindingCommitment
-SponsorshipCommitment
-pairwise identity/rendezvous
+provider payment
+ -> verified PaymentAttestation
+ -> one-time EntitlementVoucher / blind credential
+ -> redemption nullifier
+ -> verified entitlement state
 ```
 
-Il restore segue:
+Questo evita di mettere necessariamente payment transaction e `EntitlementCommitment` nello stesso oggetto pubblico.
 
-```text
-Recovery Kit
- -> RootIdentity
- -> new DeviceKey/DeviceRecordCommitment
- -> verified activation
- -> DeviceCertificate
- -> resolve EntitlementCommitment proof/state
-```
-
-## 9. Pagamenti provider-agnostic
-
-Metodi previsti:
-
-```text
-PayPal
-native crypto
-stablecoin
-future providers
-```
-
-Il payment binding usa `PaymentBindingCommitment`, non RootIdentity/device/pairwise identifiers in plaintext.
-
-Callback client != prova economica. L'entitlement viene mostrato attivo solo dopo finalità/esecuzione/state verification.
+Timing correlation può restare possibile e non viene negata.
 
 Dettagli: [`PAYMENTS.md`](PAYMENTS.md).
 
-## 10. NEAR / gas / treasury
+## 11. NEAR / gas / treasury
 
 L'utente compra Freedom, non NEAR.
 
-Treasury/fee relayer possono sponsorizzare rare operazioni control-plane. Il costo non cresce con messaggi/chiamate/frame media.
+Treasury/fee relayer possono sponsorizzare rare operazioni control-plane. Il costo non cresce con messaggi/chiamate/media frames.
 
-## 11. Sponsored registration
+## 12. Sponsored registration
 
 ```text
-valid RootIdentity
- -> SponsorshipCommitment domain-separated
+valid ownership continuity
+ -> SponsorshipCommitment
  -> anti-abuse proof
- -> rate limit/budget
+ -> rate/budget
  -> finalized verified registration
 ```
 
-Nessun SMS, carta, PayPal o numero telefonico obbligatorio per identità Free.
+Nessun SMS, carta, PayPal o telefono obbligatorio per identity Free.
 
-## 12. Anti-dark-pattern
+## 13. Anti-dark-pattern
 
 Freedom non deve:
 
 - chiamare “censura” una normale perdita rete per vendere Pro;
 - degradare route Free funzionanti;
 - nascondere diagnostica fondamentale ai Free;
-- usare paura/sorveglianza non dimostrata come leva commerciale;
-- mostrare paywall prima delle contromisure Free disponibili in incidente;
+- usare paura/sorveglianza non dimostrata;
+- mostrare paywall prima delle contromisure Free disponibili;
 - cancellare contatti quando scade Relay Contributor;
-- confondere quota Gateway esaurita con sicurezza Communication;
-- bloccare Freedom Communication perché il Gateway Internet è esaurito.
-
-## 13. Relay/Gateway economy
-
-```text
-DIRECT                    -> nessun relay
-DEVICE / COMMUNITY RELAY  -> best effort + Relay Contributor
-EMERGENCY SHIELD FREE     -> capacità Communication managed bounded
-MANAGED RELAY             -> servizio opzionale
-SHIELDED / MULTI-HOP      -> capacità privacy/resilience premium
-MAXIMUM RESILIENCE        -> Communication path diversity premium
-GATEWAY FREE              -> target 100 MB/day managed egress
-GATEWAY PREMIUM           -> quota/path/egress superiori
-PRIVATE/BUSINESS EGRESS   -> capacità dedicata/custom
-```
+- confondere quota Gateway con sicurezza Communication;
+- bloccare Communication perché il Gateway è esaurito;
+- presentare Shield come anonimato assoluto.
 
 ## 14. Vincolo di indipendenza
 
-La monetizzazione non rende obbligatori un singolo payment provider, account server, store, RPC, relay, egress o soggetto commerciale.
+Monetizzazione non rende obbligatori un singolo payment provider, account server, store, RPC, relay, egress o soggetto commerciale.
 
-Un client compatibile deve poter usare Freedom Protocol/Freedom Communication anche se i servizi commerciali ufficiali sono indisponibili.
+Un client compatibile deve poter usare Freedom Protocol/Communication anche se i servizi commerciali ufficiali sono indisponibili.
