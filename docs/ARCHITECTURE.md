@@ -60,6 +60,8 @@ Il control-plane è fondamentale come **funzione distribuita e verificabile** de
 
 ### Freedom Communication
 
+![Freedom Communication architecture](assets/freedom-communication.svg)
+
 ```text
 Freedom endpoint A
       <==== authenticated E2EE ====>
@@ -67,6 +69,8 @@ Freedom endpoint B
 ```
 
 Le session key restano agli endpoint. Relay, RPC e provider di rete non sono trust anchor della conversazione.
+
+Il percorso selezionato può cambiare tra direct, NAT, relay, bridge, Shield o multi-hop senza cambiare la relazione autenticata tra i peer. Il route layer trasporta la sessione; non definisce l'identità del contatto.
 
 ### Freedom Gateway
 
@@ -426,7 +430,7 @@ Un Relay Contributor non deve trasformare inconsapevolmente il proprio telefono 
 
 ## 15. Freedom Gateway
 
-Freedom Gateway è post-V1 e usa le primitive di path/transport già sviluppate per il messenger.
+Freedom Gateway è post-V1 e usa le primitive di path/transport già sviluppate per Freedom Communication.
 
 ```text
 Android app traffic
