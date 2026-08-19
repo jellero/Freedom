@@ -1,0 +1,84 @@
+name: Android
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      FREEDOM_KEYSTORE_BASE64: ${{ secrets.FREEDOM_KEYSTORE_BASE64 }}
+      FREEDOM_KEYSTORE_PASSWORD: ${{ secrets.FREEDOM_KEYSTORE_PASSWORD }}
+      FREEDOM_KEY_ALIAS: ${{ secrets.FREEDOM_KEY_ALIAS }}
+      FREEDOM_KEY_PASSWORD: ${{ secrets.FREEDOM_KEY_PASSWORD }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+
+      - name: Set up and validate Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Install Android SDK 37
+        shell: bash
+        run: |
+          set +o pipefail
+          yes | sdkmanager --licenses >/dev/null
+          set -o pipefail
+          sdkmanager --channel=3 "platforms;android-37.0" "build-tools;36.0.0"
+
+      - name: Test, lint, and assemble
+        run: ./gradlew --no-daemon --stacktrace testDebugUnitTest lintDebug assembleDebug
+
+      - name: Run Android Keystore instrumentation tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          script: ./gradlew --no-daemon connectedDebugAndroidTest
+
+      - name: Assemble stable signed Testnet APK
+        if: env.FREEDOM_KEYSTORE_BASE64 != ''
+        shell: bash
+        run: |
+          printf '%s' "$FREEDOM_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/freedom-testnet.jks"
+          export FREEDOM_KEYSTORE_PATH="$RUNNER_TEMP/freedom-testnet.jks"
+          ./gradlew --no-daemon assembleRelease
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: freedom-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload stable signed Testnet APK
+        if: env.FREEDOM_KEYSTORE_BASE64 != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: freedom-testnet-signed-apk
+          path: app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+          retention-days: 30

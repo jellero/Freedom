@@ -1,5 +1,7 @@
 # Freedom — Threat Model
 
+> Questo modello descrive il target Freedom Communication. Per i metadati pubblici e i limiti specifici della mailbox NEAR attuale, vedi [`IMPLEMENTATION_STATUS.md`](IMPLEMENTATION_STATUS.md).
+
 ## 1. Assunzioni
 
 Freedom assume una rete non fidata.

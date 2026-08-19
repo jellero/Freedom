@@ -2,6 +2,7 @@ package dev.freedom.app.crypto
 
 import java.nio.ByteBuffer
 import java.security.KeyFactory
+import java.security.AlgorithmParameters
 import java.security.KeyPair
 import java.security.KeyPairGenerator
 import java.security.MessageDigest
@@ -10,7 +11,10 @@ import java.security.PublicKey
 import java.security.SecureRandom
 import java.security.Signature
 import java.security.spec.ECGenParameterSpec
+import java.security.spec.ECPoint
+import java.security.spec.ECPublicKeySpec
 import java.security.spec.X509EncodedKeySpec
+import java.security.interfaces.ECPublicKey
 import javax.crypto.Cipher
 import javax.crypto.KeyAgreement
 import javax.crypto.Mac
@@ -29,7 +33,7 @@ object Crypto {
     }
 
     fun fingerprint(publicKey: PublicKey): String =
-        sha256(publicKey.encoded).joinToString(":") { "%02X".format(it) }
+        sha256(compressP256PublicKey(publicKey)).joinToString(":") { "%02X".format(it) }
 
     fun ephemeralEcKeyPair(): KeyPair {
         val generator = KeyPairGenerator.getInstance("EC")
@@ -39,6 +43,86 @@ object Crypto {
 
     fun decodeEcPublicKey(encoded: ByteArray): PublicKey =
         KeyFactory.getInstance("EC").generatePublic(X509EncodedKeySpec(encoded))
+
+    fun decodeCompressedP256PublicKey(encoded: ByteArray): PublicKey {
+        require(encoded.size == 33 && (encoded[0] == 2.toByte() || encoded[0] == 3.toByte()))
+        val curve = org.bouncycastle.jce.ECNamedCurveTable.getParameterSpec("secp256r1")
+        val point = curve.curve.decodePoint(encoded).normalize()
+        val parameters = AlgorithmParameters.getInstance("EC").apply {
+            init(ECGenParameterSpec("secp256r1"))
+        }.getParameterSpec(java.security.spec.ECParameterSpec::class.java)
+        return KeyFactory.getInstance("EC").generatePublic(
+            ECPublicKeySpec(
+                ECPoint(point.affineXCoord.toBigInteger(), point.affineYCoord.toBigInteger()),
+                parameters
+            )
+        )
+    }
+
+    fun compressP256PublicKey(publicKey: PublicKey): ByteArray {
+        val key = publicKey as? ECPublicKey
+            ?: throw IllegalArgumentException("Chiave pubblica P-256 non valida")
+        val x = key.w.affineX.toUnsignedFixed(32)
+        val prefix = if (key.w.affineY.testBit(0)) 0x03 else 0x02
+        return byteArrayOf(prefix.toByte()) + x
+    }
+
+    fun encryptChainMessage(
+        recipientPublicKey: ByteArray,
+        senderDeviceId: String,
+        recipientDeviceId: String,
+        messageId: String,
+        expiresAtNs: Long,
+        plaintext: ByteArray
+    ): ChainMessageEnvelope {
+        require(plaintext.isNotEmpty() && plaintext.size <= 3_900) { "Messaggio troppo lungo" }
+        val ephemeral = ephemeralEcKeyPair()
+        val shared = ecdh(ephemeral.private, decodeCompressedP256PublicKey(recipientPublicKey))
+        val salt = chainMessageSalt(senderDeviceId, recipientDeviceId, messageId)
+        val key = hkdfSha256(shared, salt, CHAIN_MESSAGE_INFO, 32)
+        val nonce = randomBytes(12)
+        val aad = chainMessageAad(senderDeviceId, recipientDeviceId, messageId, expiresAtNs)
+        return ChainMessageEnvelope(
+            ephemeralPublicKey = compressP256PublicKey(ephemeral.public),
+            nonce = nonce,
+            ciphertext = aesGcmEncrypt(key, nonce, aad, plaintext)
+        )
+    }
+
+    fun decryptChainMessage(
+        privateKey: PrivateKey,
+        senderDeviceId: String,
+        recipientDeviceId: String,
+        messageId: String,
+        expiresAtNs: Long,
+        ephemeralPublicKey: ByteArray,
+        nonce: ByteArray,
+        ciphertext: ByteArray
+    ): ByteArray {
+        val shared = ecdh(privateKey, decodeCompressedP256PublicKey(ephemeralPublicKey))
+        val salt = chainMessageSalt(senderDeviceId, recipientDeviceId, messageId)
+        val key = hkdfSha256(shared, salt, CHAIN_MESSAGE_INFO, 32)
+        val aad = chainMessageAad(senderDeviceId, recipientDeviceId, messageId, expiresAtNs)
+        return aesGcmDecrypt(key, nonce, aad, ciphertext)
+    }
+
+    private fun chainMessageSalt(
+        senderDeviceId: String,
+        recipientDeviceId: String,
+        messageId: String
+    ): ByteArray = sha256(
+        senderDeviceId.hexToBytes(),
+        recipientDeviceId.hexToBytes(),
+        messageId.hexToBytes()
+    )
+
+    private fun chainMessageAad(
+        senderDeviceId: String,
+        recipientDeviceId: String,
+        messageId: String,
+        expiresAtNs: Long
+    ): ByteArray = senderDeviceId.hexToBytes() + recipientDeviceId.hexToBytes() +
+        messageId.hexToBytes() + longBytes(expiresAtNs)
 
     fun sign(privateKey: PrivateKey, data: ByteArray): ByteArray {
         val signature = Signature.getInstance("SHA256withECDSA")
@@ -118,4 +202,25 @@ object Crypto {
     fun longBytes(value: Long): ByteArray = ByteBuffer.allocate(Long.SIZE_BYTES).putLong(value).array()
 
     fun intBytes(value: Int): ByteArray = ByteBuffer.allocate(Int.SIZE_BYTES).putInt(value).array()
+
+    private fun String.hexToBytes(): ByteArray {
+        require(length % 2 == 0 && all { it.isDigit() || it.lowercaseChar() in 'a'..'f' })
+        return chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+    }
+
+    private fun java.math.BigInteger.toUnsignedFixed(size: Int): ByteArray {
+        val bytes = toByteArray().let {
+            if (it.size > 1 && it[0] == 0.toByte()) it.copyOfRange(1, it.size) else it
+        }
+        require(bytes.size <= size)
+        return ByteArray(size - bytes.size) + bytes
+    }
+
+    private val CHAIN_MESSAGE_INFO = "Freedom on-chain message v1".toByteArray(Charsets.UTF_8)
 }
+
+data class ChainMessageEnvelope(
+    val ephemeralPublicKey: ByteArray,
+    val nonce: ByteArray,
+    val ciphertext: ByteArray
+)

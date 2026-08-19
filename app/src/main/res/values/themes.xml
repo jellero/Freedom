@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Freedom" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/freedom_primary</item>
+        <item name="colorOnPrimary">@color/freedom_on_primary</item>
+        <item name="colorPrimaryContainer">@color/freedom_primary_container</item>
+        <item name="colorOnPrimaryContainer">@color/freedom_on_primary_container</item>
+        <item name="colorSecondary">@color/freedom_secondary</item>
+        <item name="colorSecondaryContainer">@color/freedom_secondary_container</item>
+        <item name="colorSurface">@color/freedom_surface</item>
+        <item name="colorSurfaceVariant">@color/freedom_surface_variant</item>
+        <item name="colorOnSurface">@color/freedom_on_surface</item>
+        <item name="colorOnSurfaceVariant">@color/freedom_on_surface_variant</item>
+        <item name="colorOutline">@color/freedom_outline</item>
+        <item name="colorError">@color/freedom_error</item>
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowActionModeOverlay">true</item>
+        <item name="android:navigationBarColor">@color/freedom_surface</item>
+        <item name="android:statusBarColor">@color/freedom_surface</item>
+        <item name="materialAlertDialogTheme">@style/ThemeOverlay.Freedom.Dialog</item>
+    </style>
+
+    <style name="ThemeOverlay.Freedom.Dialog" parent="ThemeOverlay.Material3.MaterialAlertDialog">
+        <item name="shapeAppearanceOverlay">@style/ShapeAppearanceOverlay.Freedom.Dialog</item>
+    </style>
+
+    <style name="ShapeAppearanceOverlay.Freedom.Dialog" parent="">
+        <item name="cornerSize">28dp</item>
+    </style>
+</resources>

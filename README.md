@@ -1,5 +1,7 @@
 # Freedom Communication
 
+> **Nota sul codice corrente:** l'APK Android `0.5.0-alpha` usa ancora una mailbox cifrata blockchain-only su NEAR Testnet e non è conforme alla specifica sincrona descritta sotto. Vedi [`docs/IMPLEMENTATION_STATUS.md`](docs/IMPLEMENTATION_STATUS.md) per comportamento, costi e limiti reali.
+
 **Powered by Freedom Protocol**
 
 > **Nessun server centrale. Nessun super-admin. Niente di opaco. Fiducia nel protocollo. Sicurezza nell'architettura.**

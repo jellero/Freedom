@@ -1,5 +1,7 @@
 # Freedom — Protocol Specification
 
+> **Specifica target.** Il protocollo alpha attualmente eseguibile è descritto in [`IMPLEMENTATION_STATUS.md`](IMPLEMENTATION_STATUS.md) e non deve essere presentato come conforme a questo draft.
+
 Status: **design draft**
 
 Questa specifica descrive gli oggetti logici e i flussi minimi del protocollo. Gli encoding binari definitivi e le primitive concrete verranno fissati prima dell'interoperabilità pubblica.

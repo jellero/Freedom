@@ -1,5 +1,7 @@
 # Freedom — Blockchain Layer
 
+> **Specifica target.** Il contratto Testnet `0.4.0` implementa ancora registry e mailbox cifrata; vedi [`IMPLEMENTATION_STATUS.md`](IMPLEMENTATION_STATUS.md).
+
 ## 1. Scelta iniziale
 
 La prima implementazione blockchain di Freedom usa **NEAR Testnet** attraverso `ChainAdapter`.

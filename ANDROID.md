@@ -1,5 +1,7 @@
 # Freedom Android
 
+> Il codice eseguibile corrente non è più lo spike IP/TCP descritto dalla roadmap storica: è l'alpha blockchain-only documentata in [`docs/IMPLEMENTATION_STATUS.md`](docs/IMPLEMENTATION_STATUS.md). La specifica canonica sottostante resta il target futuro e non va confusa con l'APK attuale.
+
 ## Stato
 
 Android è la prima piattaforma di implementazione.

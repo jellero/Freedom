@@ -1,5 +1,7 @@
 # Freedom — Architecture
 
+> **Specifica target.** L'implementazione Android/NEAR corrente diverge in modo esplicito; vedi [`IMPLEMENTATION_STATUS.md`](IMPLEMENTATION_STATUS.md).
+
 ## 1. Definizione
 
 Freedom è un sistema di comunicazione sincrona e resilienza di rete che separa esplicitamente:
