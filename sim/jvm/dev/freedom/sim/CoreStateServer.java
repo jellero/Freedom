@@ -118,7 +118,8 @@ public final class CoreStateServer {
         s.put("verified_height", nullString(model.controlPlane.verifiedHeight()));
         s.put("control_last_rejected", Boolean.toString(model.controlPlane.lastRejected()));
         s.put("control_last_reason", nullString(model.controlPlane.lastReason()));
-        s.put("mutation_committed", Boolean.toString(model.mutation.committed()));
+        s.put("mutation_last_accepted", Boolean.toString(model.mutation.lastAccepted()));
+        s.put("mutation_has_committed_state", Boolean.toString(model.mutation.hasCommittedState()));
         s.put("mutation_last_reason", nullString(model.mutation.lastReason()));
         s.put("mutation_committed_version", Long.toString(model.mutation.committedVersion()));
         s.put("key_epoch", Long.toString(model.rekey.keyEpoch()));
