@@ -34,7 +34,8 @@ La prima implementazione del registro usa una blockchain, ma il traffico applica
       | direct / NAT / relay / shielded path           |
       +================ E2EE ===========================+
                                |
-                      optional relay peers
+                     optional relay nodes
+            VPS / server / VM / community / device
 ```
 
 Il registro è fondamentale come **funzione distribuita e verificabile** del trust model attuale. NEAR è soltanto la prima implementazione tramite `ChainAdapter` e deve essere sostituibile.
@@ -275,7 +276,44 @@ Dettagli: [`ADAPTIVE_DEFENSE.md`](ADAPTIVE_DEFENSE.md).
 
 ## 12. Relay architecture
 
-Un relay Freedom è un endpoint di forwarding transitivo.
+Un relay Freedom è **una macchina o un dispositivo che esegue software di forwarding Freedom**.
+
+Può essere fisicamente:
+
+```text
+VPS / VM
+server dedicato
+mini PC / Raspberry Pi
+community node
+managed node
+private organization node
+telefono / tablet / desktop Freedom opt-in
+```
+
+Un normale dispositivo Freedom può quindi svolgere due ruoli contemporanei ma logicamente separati:
+
+```text
+ENDPOINT  -> sessioni del proprio utente
+RELAY     -> inoltro ciphertext di altri circuiti
+```
+
+Il ruolo relay non concede accesso alle chiavi E2EE delle sessioni inoltrate.
+
+```text
+RelayCandidate {
+    relay_id
+    relay_class
+    endpoint
+    transport
+    capability_token?
+    capacity_hint?
+    expires_at
+}
+```
+
+Classi iniziali: `DEDICATED`, `COMMUNITY`, `DEVICE`, `PRIVATE`, `MANAGED`.
+
+Un `DEVICE` relay non richiede necessariamente una porta pubblica permanente. Può essere utile tramite NAT mapping, trasporti compatibili o connessioni outbound/circuiti già stabiliti.
 
 ```text
 RelayPacket {
@@ -297,9 +335,25 @@ Requisiti:
 - TTL breve;
 - quote per peer/connessione;
 - possibilità di interrompere il servizio localmente;
-- nessuna fiducia necessaria per l'autenticità del contenuto.
+- nessuna fiducia necessaria per l'autenticità del contenuto;
+- `DEVICE_RELAY` opt-in e bounded da policy batteria/rete/CPU/RAM/banda.
 
 Un relay può osservare metadati necessari al forwarding e può droppare o ritardare pacchetti. Per questo non viene trattato come componente fidato.
+
+### 12.1 Relay Contributor
+
+Policy iniziale Free:
+
+```text
+Free                    10 contatti attivi
+Free + Relay Contributor 20 contatti attivi
+```
+
+Il bonus di +10 contatti è temporaneo e richiede contributo relay utile secondo policy verificabile; il semplice toggle non è sufficiente.
+
+La prova deve essere privacy-preserving e non pubblicare peer serviti, social graph o contenuto inoltrato. La scadenza del bonus non cancella automaticamente i contatti sopra quota; impedisce nuove aggiunte finché la quota effettiva non torna sufficiente.
+
+Dettagli: [`RELAYS.md`](RELAYS.md).
 
 ## 13. Synchronous delivery
 
@@ -429,9 +483,11 @@ Il registro distribuito non è nel packet hot path.
 
 I servizi commerciali ufficiali possono offrire capacità relay gestita, percorsi privacy, Freedom Shield/Maximum Resilience, funzionalità Plus, SDK, deployment e supporto Business.
 
-Questi servizi non devono diventare requisiti del protocollo. Un client compatibile deve poter continuare a stabilire e recuperare sessioni Freedom anche se l'infrastruttura commerciale ufficiale non è disponibile, quando esiste un percorso compatibile.
+I device/community relay possono contribuire capacità best-effort alla rete; un utente Free qualificato come Relay Contributor riceve +10 slot contatto senza diventare Pro.
 
-Vedi [`MONETIZATION.md`](MONETIZATION.md).
+Questi servizi e incentivi non devono diventare requisiti del protocollo. Un client compatibile deve poter continuare a stabilire e recuperare sessioni Freedom anche se l'infrastruttura commerciale ufficiale non è disponibile, quando esiste un percorso compatibile.
+
+Vedi [`MONETIZATION.md`](MONETIZATION.md) e [`RELAYS.md`](RELAYS.md).
 
 ## 22. Proprietà architetturali
 
@@ -444,7 +500,9 @@ Freedom mira a mantenere queste invarianti:
 - comunicazione sincrona senza mailbox di rete;
 - registro distribuito non necessario per ogni pacchetto o ogni cambio route;
 - relay incapace di leggere il contenuto;
+- relay eseguibile anche da dispositivi Freedom senza ottenere autorità sull'identità;
 - direct path non obbligatorio;
 - componenti di bootstrap, RPC, relay e fee relayer sostituibili;
 - recovery beacon pairwise e temporanei, non presenza globale continua;
+- reward relay privacy-preserving e non farmabile tramite semplice toggle;
 - scritture on-chain proporzionali agli eventi di identità e ai casi di perdita completa del route/recovery, non al volume della comunicazione.
