@@ -4,7 +4,6 @@
 ; Field names and object shapes in this file are the single source of truth.
 ; Security semantics are defined by docs/SECURITY_INVARIANTS.md and subsystem docs.
 ; Encoding target: deterministic CBOR profile with frozen test vectors before public interoperability.
-;
 ; Every signature MUST use the domain-separated signing input documented in spec/README.md.
 
 uint64 = uint
@@ -12,7 +11,6 @@ bytes16 = bstr .size 16
 bytes32 = bstr .size 32
 bytes64 = bstr .size 64
 network-id = tstr
-object-type = tstr
 
 ; ---- Identity / device authorization ---------------------------------------------------------
 
@@ -45,8 +43,6 @@ device-certificate = {
   authorization_signature: bstr
 }
 
-; The control-plane does not need to know which RootIdentity owns this record.
-; Security validity comes from the peer-verified DeviceCertificate.
 device-record = {
   version: uint,
   device_record_commitment: bytes32,
@@ -98,6 +94,18 @@ user-root-rotation = {
   recovery_quorum_proof: bstr / null
 }
 
+encrypted-recovery-bundle = {
+  version: uint,
+  kdf_id: tstr,
+  kdf_params: bstr,
+  salt: bstr,
+  nonce: bstr,
+  root_recovery_secret_ciphertext: bstr,
+  ? recovery_state_key_ciphertext: bstr,
+  root_identity_fingerprint: bytes32,
+  bundle_integrity: bstr
+}
+
 ; ---- Pairwise contact / rendezvous -----------------------------------------------------------
 
 freedom-contact = {
@@ -110,8 +118,6 @@ freedom-contact = {
   ? expires_after_height: uint64
 }
 
-; write_public_key is deterministically derived from the pairwise rendezvous secret,
-; direction and epoch. slot_id is H(domain || write_public_key || epoch || direction).
 rendezvous-record = {
   version: uint,
   slot_id: bytes32,
@@ -158,6 +164,15 @@ route-candidate = {
   expires_after_height: uint64
 }
 
+route-update = {
+  version: uint,
+  sequence: uint64,
+  candidates: [* route-candidate],
+  relay_candidates: [* relay-candidate],
+  issued_at_height: uint64,
+  expires_after_height: uint64
+}
+
 relay-descriptor = {
   version: uint,
   relay_public_key: bstr,
@@ -189,6 +204,17 @@ relay-candidate = {
   descriptor_hash: bytes32,
   ? capability_token: bstr,
   ? capacity_hint: uint64
+}
+
+relay-contribution-proof = {
+  version: uint,
+  relay_commitment: bytes32,
+  contribution_epoch: uint64,
+  ? availability_commitment: bytes32,
+  ? forwarding_commitment: bytes32,
+  policy_version: uint,
+  expires_after_height: uint64,
+  attestations: [* bstr]
 }
 
 ; ---- Handshake / session / rekey -------------------------------------------------------------
@@ -264,6 +290,99 @@ state-migration-proof = {
   verification_artifact: bstr
 }
 
+chain-migration-manifest = {
+  version: uint,
+  from_adapter: tstr,
+  to_adapter: tstr,
+  from_final_checkpoint_hash: bytes32,
+  state_migration_proof_hash: bytes32,
+  new_network_anchor: bytes32,
+  activation_epoch: uint64,
+  activation_height: uint64,
+  governance_signatures: [* bstr]
+}
+
+contract-upgrade-manifest = {
+  version: uint,
+  governance_epoch: uint64,
+  current_code_hash: bytes32,
+  new_code_hash: bytes32,
+  migration_program_hash: bytes32,
+  activation_height: uint64,
+  rollback_floor: uint64,
+  signatures: [* bstr]
+}
+
+; ---- Entitlement / payments -----------------------------------------------------------------
+
+freedom-entitlement = {
+  version: uint,
+  entitlement_commitment: bytes32,
+  tier: tstr,
+  entitlement_epoch: uint64,
+  ? max_devices_product_policy: uint,
+  ? base_contact_slots_product_policy: uint,
+  issued_at_height: uint64,
+  ? expires_after_height: uint64,
+  policy_version: uint,
+  status: "ACTIVE" / "SUSPENDED" / "EXPIRED"
+}
+
+purchase-intent = {
+  version: uint,
+  purchase_ref_hash: bytes32,
+  payment_binding_commitment: bytes32,
+  product: tstr,
+  amount_minor: uint64,
+  currency_or_asset: tstr,
+  provider: tstr,
+  expires_after_height: uint64,
+  status: tstr
+}
+
+payment-descriptor = {
+  version: uint,
+  provider: tstr,
+  payment_target: tstr,
+  supported_products: [* tstr],
+  currencies_or_assets: [* tstr],
+  config_version: uint64,
+  ? expires_after_height: uint64,
+  issuer_signature: bstr
+}
+
+payment-attestation = {
+  version: uint,
+  provider: tstr,
+  provider_transaction_commitment: bytes32,
+  purchase_ref_hash: bytes32,
+  amount_minor: uint64,
+  currency_or_asset: tstr,
+  status: tstr,
+  observed_at_height: uint64,
+  worker_id: bytes32,
+  signature: bstr
+}
+
+entitlement-voucher = {
+  version: uint,
+  voucher_commitment: bytes32,
+  product: tstr,
+  entitlement_delta: bstr,
+  issued_at_height: uint64,
+  expires_after_height: uint64,
+  issuer_epoch: uint64,
+  signature_or_blind_credential: bstr
+}
+
+entitlement-redemption = {
+  version: uint,
+  voucher_nullifier: bytes32,
+  entitlement_commitment_or_proof: bstr,
+  redemption_epoch: uint64,
+  proof: bstr
+}
+
 ; ---- Release / governance -------------------------------------------------------------------
 
 freedom-release = {
@@ -283,6 +402,21 @@ freedom-release = {
   issued_at_height: uint64,
   signer_set_epoch: uint64,
   bootstrap_freshness_floor: bootstrap-freshness-floor,
+  signatures: [* bstr]
+}
+
+freedom-release-locator = {
+  locator_version: uint,
+  release_id: tstr,
+  release_nonce: bytes32,
+  manifest_hash: bytes32,
+  artifact_sha256: bytes32,
+  package_id: tstr,
+  version_code: uint64,
+  channel: tstr,
+  issued_at_height: uint64,
+  ? expires_after_height: uint64,
+  signer_set_epoch: uint64,
   signatures: [* bstr]
 }
 
@@ -318,6 +452,33 @@ security-policy = {
   signatures: [* bstr]
 }
 
+emergency-bulletin = {
+  version: uint,
+  bulletin_id: bytes32,
+  severity: tstr,
+  issued_at_height: uint64,
+  expires_after_height: uint64,
+  ? geographic_scope: bstr,
+  ? topic: tstr,
+  ? min_app_version: uint64,
+  ? min_protocol_version: uint,
+  payload_hash: bytes32,
+  issuer_set_epoch: uint64,
+  signatures: [* bstr]
+}
+
+signer-set = {
+  version: uint,
+  signer_set_epoch: uint64,
+  role: tstr,
+  public_keys: [1* bstr],
+  threshold: uint,
+  valid_from_height: uint64,
+  ? expires_after_height: uint64,
+  ? previous_set_commitment: bytes32,
+  ? governance_recovery_set_commitment: bytes32
+}
+
 signer-set-transition = {
   version: uint,
   role: tstr,
@@ -330,6 +491,17 @@ signer-set-transition = {
   next_set_acceptance_signatures: [* bstr]
 }
 
+governance-recovery-manifest = {
+  version: uint,
+  role: tstr,
+  failed_signer_set_epoch: uint64,
+  recovery_set_commitment: bytes32,
+  next_set_commitment: bytes32,
+  activation_height: uint64,
+  recovery_timelock_blocks: uint64,
+  recovery_threshold_signatures: [* bstr]
+}
+
 bootstrap-trust-anchor = {
   version: uint,
   verifier_policy_version: uint,
@@ -340,4 +512,26 @@ bootstrap-trust-anchor = {
   minimum_manifest_version: uint,
   accepted_contract_or_controlplane_anchor: bytes32,
   bootstrap_freshness_floor: bootstrap-freshness-floor
+}
+
+peer-transfer-capability = {
+  version: uint,
+  transfer_nonce: bytes32,
+  release_id: tstr,
+  artifact_sha256: bytes32,
+  source_endpoint: tstr,
+  expires_after_height: uint64,
+  ? max_downloads: uint
+}
+
+freedom-install-descriptor = {
+  version: uint,
+  channel: tstr,
+  package_id: tstr,
+  release_id: tstr,
+  release_locator_hash: bytes32,
+  release_manifest_hash: bytes32,
+  source_hints: [* tstr],
+  ? peer_transfer_capability: peer-transfer-capability,
+  expires_after_height: uint64
 }
