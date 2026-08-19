@@ -53,9 +53,12 @@ public final class CoreSelfTest {
         check(!mutation.verify(true, true, true, false, 1), "state mismatch accepted");
         check("CONTROL_PLANE_STATE_MISMATCH".equals(mutation.lastReason()), "wrong state mismatch class");
         check(mutation.verify(true, true, true, true, 2), "verified mutation rejected");
+        check(mutation.hasCommittedState(), "verified mutation did not create committed state");
         check(mutation.committedVersion() == 2, "committed state version not retained");
         check(!mutation.verify(true, true, true, true, 1), "resulting-state rollback accepted");
         check("CONTROL_PLANE_ROLLBACK".equals(mutation.lastReason()), "wrong mutation rollback class");
+        check(mutation.hasCommittedState(), "failed follow-up mutation erased prior committed state");
+        check(mutation.committedVersion() == 2, "failed follow-up mutation rolled back committed version");
     }
 
     private static void testRekeyLostAck() {
