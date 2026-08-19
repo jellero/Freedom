@@ -2,165 +2,190 @@
 
 ## 1. Scelta iniziale
 
-La prima implementazione blockchain di Freedom usa **NEAR Testnet**.
+La prima implementazione blockchain di Freedom usa **NEAR Testnet** attraverso `ChainAdapter`.
 
-La scelta non rende NEAR parte del protocollo applicativo. Tutto l'accesso alla chain passa attraverso `ChainAdapter`.
+NEAR non è parte del wire protocol applicativo e deve poter essere sostituito senza cambiare DeviceID, session format o semantica della comunicazione.
 
-Obiettivi del layer:
+La chain è un **control-plane distribuito e verificabile**. Non trasporta messaggi, media, chiamate o APK.
 
-- registrare l'identità crittografica dei device;
-- permettere key rotation e revocation;
-- fornire rendezvous di fallback;
-- minimizzare numero e frequenza delle scritture;
-- non memorizzare messaggi, media o cronologie;
-- non diventare necessario durante una sessione attiva.
+Funzioni previste:
 
-## 2. ChainAdapter
+- identity registry;
+- key rotation/revocation;
+- fallback rendezvous e recovery beacon;
+- RootIdentity/account ownership commitment;
+- entitlement/licenze e limiti device;
+- PurchaseIntent/PaymentAttestation minimali;
+- emergency/security bulletin;
+- signed release manifest/policy;
+- stato economico bounded necessario alla sponsorship.
+
+## 2. Separazione RootIdentity / DeviceIdentity
+
+```text
+RootIdentity   -> recovery, ownership, entitlement, device authorization
+DeviceIdentity -> autenticazione operativa del singolo endpoint
+```
+
+Il `DeviceID` continua a identificare un device nel protocollo di sessione. La RootIdentity non viene usata come chiave di chat.
+
+Dettagli: [`ACCOUNT_RECOVERY_LICENSES.md`](ACCOUNT_RECOVERY_LICENSES.md).
+
+## 3. Installazione locale senza write obbligatoria
+
+Il semplice install non deve generare automaticamente costo/stato on-chain:
+
+```text
+install
+ -> generate RootIdentity locally
+ -> generate DeviceIdentity locally
+ -> generate Recovery Kit
+ -> 0 mandatory chain writes
+```
+
+La prima registrazione avviene quando l'identità deve diventare verificabile per l'uso effettivo del protocollo e può essere sponsorizzata secondo la policy anti-abuso.
+
+Questo evita di pagare storage per installazioni mai utilizzate.
+
+## 4. ChainAdapter
+
+Interfaccia concettuale estesa:
 
 ```text
 interface ChainAdapter {
-    registerDevice(record)
-    resolveDevice(deviceId)
-    rotateDeviceKey(deviceId, newKey, proof)
-    revokeDevice(deviceId, proof)
+    registerRoot(...)
+    registerDevice(...)
+    resolveDevice(...)
+    rotateDeviceKey(...)
+    revokeDevice(...)
+    activateDeviceSlot(...)
+    revokeDeviceSlot(...)
+    resolveEntitlement(...)
 
-    readRendezvous(slot)
-    writeRendezvous(slot, record)
+    readRendezvous(...)
+    writeRendezvous(...)
+    readRecoveryBeacon(...)
+    writeRecoveryBeacon(...)
 
-    verifyState(proofOrResponse)
+    readPurchaseIntent(...)
+    readPaymentAttestation(...)
+
+    readEmergencyBulletins(...)
+    readSecurityPolicy(...)
+    readReleaseManifest(...)
+
+    verifyState(...)
 }
 ```
 
 La logica core non deve importare SDK NEAR direttamente.
 
-## 3. Device registry
+## 5. Device registry
 
-Stato concettuale:
+Stato concettuale minimale:
 
 ```text
 devices[DeviceID] = DeviceRecord
-```
 
-```text
 DeviceRecord {
     version
     identity_public_key
     key_epoch
     status
     protocol_version
-    updated_at
 }
 ```
 
-Il key del mapping è il `DeviceID`; non è necessario ripeterlo nel value on-chain se l'encoding del contratto non lo richiede.
+Il mapping deve essere compatto. Non memorizzare PII, contatti, route persistenti o history.
 
-## 4. Device registration
+## 6. Sponsored registration / anti-Sybil
 
-Al primo avvio:
+Freedom può sponsorizzare la prima registrazione Free tramite fee relayer/treasury, ma non deve offrire write illimitate a chiunque.
+
+Pipeline:
 
 ```text
-1. generate DeviceID
-2. generate identity key pair
-3. private key -> platform secure storage
-4. public key + DeviceID -> NEAR Testnet registry
-5. wait for confirmed state
-6. app becomes READY
+new RootIdentity
+ -> valid signature
+ -> adaptive anti-abuse proof
+ -> sponsorship not already consumed
+ -> relayer rate limit
+ -> global sponsorship budget
+ -> register
 ```
 
-La private key non deve essere esportata per eseguire la registrazione.
+La policy iniziale prevede:
 
-## 5. Key rotation
+- installazione locale gratuita senza write;
+- una prima RootIdentity sponsorizzabile;
+- proof-of-work leggero/adattivo o primitive equivalente;
+- fee relayer multipli con rate limit indipendenti;
+- budget globale bounded;
+- nessuna dipendenza obbligatoria da SMS, PayPal o numero di telefono per l'anti-Sybil.
 
-Il record è stabile per DeviceID.
+Un attacco alle nuove registrazioni non deve interrompere gli utenti già registrati.
+
+Dettagli: [`REGISTRATION_ECONOMICS.md`](REGISTRATION_ECONOMICS.md).
+
+## 7. Key rotation e revocation
 
 ```text
 epoch 1 -> PK1
 epoch 2 -> PK2
-epoch 3 -> PK3
+...
 ```
 
-Una rotazione non cambia DeviceID.
+Una rotazione incrementa `key_epoch` senza cambiare DeviceID. Un device revocato deve risultare non valido per nuovi handshake.
 
-Il `key_epoch` appartiene allo stato dell'identità e serve a distinguere la chiave attualmente autorizzata. Non è una revisione del rendezvous.
+La RootIdentity recuperata può autorizzare la sostituzione/revoca di device secondo la policy di recovery.
 
-Il contratto deve impedire rollback non autorizzati a epoch precedenti.
+## 8. Entitlement e limiti device
 
-## 6. Revocation
-
-Un device revocato deve risultare inequivocabilmente non valido per nuovi handshake.
+La licenza appartiene alla RootIdentity/account commitment.
 
 ```text
-status = REVOKED
+FreedomEntitlement {
+    account_commitment
+    tier
+    entitlement_epoch
+    max_devices
+    expires_at?
+    status
+}
 ```
 
-La policy di recovery/ownership dell'identità verrà definita separatamente; non va inventata dentro il transport protocol.
+La chain deve far rispettare:
 
-## 7. Rendezvous non è routing persistente
+```text
+active_devices <= max_devices
+```
+
+Policy iniziale: Free = 1 device attivo; i tier pagati possono avere più slot secondo il piano.
+
+Gli slot devono essere progettati con commitment opachi, evitando un elenco pubblico `Account -> DeviceID[]`.
+
+## 9. Contatti Free e privacy
+
+Il piano Free prevede 10 contatti attivi, ma la lista contatti **non deve essere pubblicata in chiaro sulla chain**.
+
+La rubrica resta locale/cifrata. Se è necessario enforcement resistente a client modificati, usare slot/commitment opachi che permettano il conteggio senza pubblicare il social graph.
+
+## 10. Rendezvous
 
 Freedom non scrive continuamente IP o route on-chain.
 
-La blockchain è l'ultima fase del recovery di percorso:
+Ordine generale:
 
 ```text
-known direct route?
-  yes -> use it
-  no
-
-known NAT candidate?
-  yes -> try it
-  no
-
-known relay candidate?
-  yes -> try it
-  no
-
-chain rendezvous
+known route -> try
+NAT candidate -> try
+relay/shielded candidate -> try
+all fail -> chain rendezvous/recovery
 ```
 
-## 8. Primo rendezvous
+Il primo contatto usa una `rendezvous_capability` casuale; dopo handshake i peer derivano `PairRendezvousSecret` e slot opachi/direzionali.
 
-Il QR può fornire una capability casuale:
-
-```text
-rendezvous_capability = random(256 bit)
-```
-
-Lo slot del primo contatto può essere derivato da capability + direzione + contesto temporale/protocollare.
-
-Il formato deve evitare un mapping pubblico semplice del tipo:
-
-```text
-AliceDeviceID -> BobDeviceID
-```
-
-La capability può essere:
-
-- one-time;
-- temporanea;
-- rigenerabile dall'utente.
-
-## 9. Rendezvous successivi
-
-Dopo una sessione autenticata, A e B derivano un pair secret.
-
-```text
-PairRendezvousSecret = KDF(authenticated_session_material, context)
-```
-
-Il secret viene memorizzato localmente e non pubblicato.
-
-Gli slot possono essere derivati in modo direzionale e rotante:
-
-```text
-slot_A(context)
-slot_B(context)
-```
-
-La derivazione dello slot deve permettere a ciascuna parte di sapere autonomamente dove leggere il record corrente senza conoscere o recuperare il record precedente.
-
-## 10. Record rendezvous: sempre autosufficiente
-
-Ogni rendezvous scritto sulla chain è un record indipendente. Dal punto di vista di chi lo legge è sempre equivalente a una **rev 0**: non richiede la conoscenza di una revisione precedente, di un contatore precedente o di uno storico locale.
+Ogni `RendezvousRecord` è autosufficiente:
 
 ```text
 RendezvousRecord {
@@ -170,170 +195,147 @@ RendezvousRecord {
 }
 ```
 
-Il contratto non ha bisogno di interpretare `ciphertext`.
-
-Il payload cifrato contiene i route candidate attuali, un nonce casuale del rendezvous e il materiale effimero necessario a provare la connessione.
-
-```text
-RendezvousPayload {
-    rendezvous_nonce
-    route_candidates[]
-    relay_candidates[]
-    ephemeral_transport_public_key
-    ...
-}
-```
-
-Non esiste un `sequence` o un `revision` del rendezvous.
+Il payload cifrato può contenere route/relay candidate e materiale effimero. Non esiste una revisione storica obbligatoria.
 
 ## 11. Read-before-write
 
-Questa è una regola core del progetto.
-
 ```text
 remote = READ(remote_slot)
-
-if remote usable:
-    CONNECT(remote)
-    return
+if remote usable -> CONNECT, DO_NOT_WRITE
 
 local = READ(local_slot)
-
-if local usable:
-    // abbiamo già annunciato: non riscrivere
-    WAIT_AND_POLL(remote_slot)
-    return
-
-WRITE(local_slot, current_offer)
-WAIT_AND_POLL(remote_slot)
+if local usable -> WAIT/POLL
+else -> WRITE(new independent record)
 ```
 
-Un timeout di connessione non autorizza una nuova write immediata. Il client applica backoff e scrive nuovamente soltanto quando il record locale non è più utilizzabile, per esempio perché scaduto o perché il relativo slot non contiene più un'offerta valida.
+TTL e backoff limitano write inutili.
 
-## 12. Concorrenza
+## 12. Recovery beacon / Adaptive Defense
 
-Gli slot sono direzionali. Se A e B perdono il route nello stesso istante possono entrambi pubblicare una sola offerta nei rispettivi slot senza collisione.
+Quando tutte le route falliscono, peer già autenticati possono pubblicare `RecoveryBeacon` pairwise, cifrati, opachi e a TTL breve.
 
-La regola resta sempre read-before-write: prima di pubblicare, ciascun endpoint verifica se esiste già informazione utile.
+Il beacon indica attività recente, non presenza globale continua.
 
-Non serve eleggere un leader e non serve coordinare revisioni.
+Se entrambi i peer sono recentemente attivi sul control-plane ma il data-plane non funziona, il client può classificare probabile route failure/interferenza e tentare path/relay/transport alternativi.
 
-## 13. Expiration
+Dettagli: [`ADAPTIVE_DEFENSE.md`](ADAPTIVE_DEFENSE.md).
 
-Un rendezvous è temporaneo.
+## 13. Payment state
+
+La chain non processa necessariamente il pagamento fiat; conserva solo stato minimo/verificabile necessario a collegare un acquisto all'entitlement.
 
 ```text
-expires_at = short TTL
+PurchaseIntent {
+    purchase_ref_hash
+    account_commitment
+    product
+    amount
+    provider
+    expires_at
+}
+
+PaymentAttestation {
+    provider_transaction_commitment
+    purchase_ref_hash
+    amount
+    status
+    worker_id
+    signature
+}
 ```
 
-Dopo la riconnessione non viene cancellato esplicitamente: la cancellazione costerebbe una scrittura aggiuntiva senza beneficio necessario.
+PayPal può essere verificato da worker privati outbound-only senza API pubblica Freedom. Crypto verificabile on-chain può attivare direttamente l'entitlement.
 
-I client ignorano record scaduti.
+Nessun merchant secret deve stare nell'APK.
 
-Il record successivo, quando necessario, è un nuovo rendezvous autosufficiente e non una revisione incrementale del precedente.
+Dettagli: [`PAYMENTS.md`](PAYMENTS.md).
 
-## 14. Freshness senza revisioni
+## 14. Emergency bulletins e release manifest
 
-La validità di un rendezvous non dipende da uno storico locale.
-
-Il client controlla almeno:
-
-- che lo slot letto sia quello atteso;
-- che il record provenga da stato chain considerato sufficientemente finalizzato/verificato;
-- che `expires_at` non sia trascorso;
-- che il ciphertext sia autenticabile e decifrabile nel contesto atteso;
-- che il `rendezvous_nonce` e il materiale effimero siano validi per il tentativo corrente.
-
-Un vecchio record scaduto viene ignorato. Non esiste `lastAcceptedSequence` per il rendezvous.
-
-## 15. Metadata minimization
-
-On-chain non devono comparire in chiaro, salvo necessità tecnica non evitabile:
-
-- IP associato a DeviceID;
-- porta associata a DeviceID;
-- lista contatti;
-- conversation ID;
-- message ID;
-- stato online globale;
-- nome/email/telefono;
-- payload applicativo.
-
-Gli endpoint di rete vivono nel ciphertext del rendezvous.
-
-## 16. RPC strategy
-
-Un client non deve codificare un unico endpoint RPC come requisito permanente.
-
-`NearChainAdapter` deve supportare:
-
-- lista di provider configurabile;
-- rotazione/fallback;
-- timeout;
-- confronto di risposte quando necessario;
-- progressiva integrazione di verifica light-client/proof dove disponibile e appropriata.
-
-Gli RPC trasportano dati chain; non costituiscono l'identità dell'utente.
-
-## 17. Fee model
-
-Su testnet vengono usate risorse di test.
-
-Per mainnet la policy economica è una decisione separata. Possibili modelli:
-
-- piccola riserva nativa per device;
-- meta-transazioni pagate da relayer indipendenti;
-- combinazione dei due.
-
-Un eventuale relayer di fee non deve poter firmare al posto del DeviceID né diventare obbligatorio per il protocollo.
-
-Il client store non deve essere trasformato inutilmente in wallet/trading application.
-
-## 18. Contract scope
-
-Il primo contratto Freedom deve essere piccolo.
-
-API concettuale:
+La chain può distribuire piccoli oggetti firmati:
 
 ```text
-register_device
-get_device
-rotate_device_key
-revoke_device
-get_rendezvous
-put_rendezvous
+EmergencyBulletin
+SecurityPolicy
+FreedomRelease
 ```
 
-Non implementare nel contratto:
+Per bulletin geografici, la posizione utente resta locale e viene confrontata localmente con lo scope.
 
-- chat;
-- inbox;
-- file storage;
-- social graph;
-- presence continua;
+L'APK non viene memorizzato on-chain. La chain contiene hash, versione, signing fingerprint e source descriptors; il file può arrivare da store, mirror temporanei, peer/relay o futuri transport.
+
+Dettagli: [`EMERGENCY_UPDATES.md`](EMERGENCY_UPDATES.md).
+
+## 15. Security governance
+
+Release manifest e policy critiche production dovrebbero supportare firme threshold/multi-key e rotazione/revoca delle signing key.
+
+Una security policy non deve diventare un kill-switch commerciale: preferire la disabilitazione selettiva della superficie vulnerabile mantenendo recovery/update disponibili quando sicuro.
+
+## 16. Metadata minimization
+
+On-chain non devono comparire in chiaro, salvo necessità non evitabile:
+
+- IP/porta associati a DeviceID;
+- lista contatti/social graph;
+- posizione precisa utente;
+- conversation/message ID;
+- presence globale continua;
+- email/telefono;
+- dati PayPal identificativi;
+- payload applicativo;
+- APK binary.
+
+## 17. RPC strategy
+
+`NearChainAdapter` deve supportare più provider, fallback, timeout, confronto/verifica di stato e progressiva proof/light-client verification dove appropriata.
+
+Nessun RPC è un trust anchor dell'identità.
+
+## 18. Fee/gas/storage model
+
+L'utente compra servizi Freedom, non NEAR.
+
+Le operazioni essenziali possono essere sponsorizzate da treasury/fee relayer. L'utente non deve possedere obbligatoriamente wallet/saldo NEAR.
+
+Il costo deve crescere con identità realmente usate ed eventi rari, non con il traffico applicativo:
+
+```text
+message            -> 0 chain writes
+media/call frames  -> 0 chain writes
+active session     -> 0 heartbeat writes
+```
+
+Scritture possibili: registrazione, rotation/revocation, device activation, rendezvous/recovery, entitlement/payment state, policy/release publishing.
+
+Lo storage permanente deve essere minimale; stato temporaneo deve essere bounded e reclaimable/riutilizzabile quando possibile.
+
+## 19. Contract scope
+
+Il contratto non implementa:
+
+- chat/inbox;
+- media/file storage;
+- social graph pubblico;
+- presenza continua;
 - relay payload;
-- content moderation.
+- APK storage.
 
-## 19. Storage bounds
+Ogni endpoint di write deve avere bounds, autorizzazione e protezioni contro storage exhaustion.
 
-Il rendezvous deve avere una strategia bounded.
+## 20. Testnet acceptance criteria aggiornati
 
-Gli slot vengono riutilizzati/sovrascritti quando il record precedente non è più utilizzabile. Ogni nuovo contenuto è comunque un record indipendente, non una nuova revisione logica del precedente.
+Prima della mainnet devono essere testati almeno:
 
-La gestione fisica dello storage e dei depositi NEAR sarà definita nel contratto in modo da non permettere scritture gratuite illimitate.
-
-## 20. Testnet milestone
-
-Acceptance criteria del primo chain milestone:
-
-- due Android generano DeviceID distinti;
-- entrambi registrano la public key su NEAR Testnet;
-- A risolve B e viceversa;
-- key rotation cambia epoch senza cambiare DeviceID;
-- revocation viene osservata dal client;
-- QR produce una rendezvous capability;
-- A può pubblicare un record cifrato autosufficiente;
-- B può trovarlo e decifrarlo senza conoscere alcun record precedente;
-- un secondo tentativo legge il record esistente e non genera una write inutile;
-- un nuovo rendezvous dopo scadenza non dipende da sequence/revision precedenti;
-- nessun message body compare in stato chain.
+- RootIdentity/DeviceIdentity separate;
+- install senza write automatica;
+- sponsored registration con anti-abuse e rate limit;
+- device rotation/revocation;
+- recovery su nuovo device senza clonare la DeviceKey;
+- enforcement `max_devices`;
+- rendezvous read-before-write;
+- RecoveryBeacon bounded;
+- PurchaseIntent/attestation idempotenti;
+- entitlement ripristinabile dalla RootIdentity;
+- bulletin/security/release manifest verificabili;
+- nessun message body, contatto leggibile, posizione utente o APK nello stato chain.
