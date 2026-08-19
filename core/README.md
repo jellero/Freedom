@@ -28,6 +28,12 @@ BootstrapFreshnessState
   proof-validity gate
   highest-seen rollback rejection
 
+MutationVerificationState
+  tx hash/submission is not success
+  finality + execution + resulting-state proof + exact transition
+  failed follow-up operation does not erase prior committed state
+  resulting-state rollback rejected
+
 RekeyState
   STABLE -> INIT_SENT -> NEW_KEY_PENDING_ACK -> STABLE(next epoch)
   exact +1 epoch
@@ -56,6 +62,10 @@ The simulator's Python code is orchestration, virtual time, faults and assertion
 
 The Android source set compiles `core/src/main/java` directly. Platform-specific code must call these state machines rather than copying their rules into Activities/services when the canonical implementation replaces the old spike.
 
+## Control-plane relationship
+
+The shared core defines client-side acceptance semantics. A real `NearChainAdapter` must supply verified facts/proofs and pass `sim/l3/differential.py`; the core does not treat RPC responses as trusted state by itself.
+
 ## Change discipline
 
 A security-relevant core behavior change requires:
@@ -64,4 +74,5 @@ A security-relevant core behavior change requires:
 2. core self-test/regression;
 3. L1 scenario coverage where applicable;
 4. vectors when wire/crypto-domain semantics change;
-5. human review for normative semantic changes.
+5. L2/L3 coverage when routing/control-plane behavior is affected;
+6. human review for normative semantic changes.
