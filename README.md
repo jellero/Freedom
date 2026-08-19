@@ -4,7 +4,7 @@
 
 Freedom è un protocollo decentralizzato di comunicazione che permette a dispositivi identificati crittograficamente di stabilire sessioni sicure senza dipendere da un server centrale di messaggistica.
 
-La blockchain non trasporta messaggi, file, audio o video. Viene usata come prima implementazione di un **registro distribuito e verificabile** per identità, key rotation/revocation e rendezvous di fallback quando due dispositivi online non dispongono più di un percorso valido per raggiungersi.
+La blockchain non trasporta messaggi, file, audio, video o APK. Viene usata come prima implementazione di un **control-plane distribuito e verificabile** per identità, key rotation/revocation, rendezvous/recovery, entitlement, policy di sicurezza e piccoli manifest firmati.
 
 Il traffico applicativo viaggia fuori dalla blockchain, direttamente tra endpoint oppure attraverso relay transitivi che inoltrano ciphertext senza possedere le chiavi della conversazione.
 
@@ -24,11 +24,17 @@ Il traffico applicativo viaggia fuori dalla blockchain, direttamente tra endpoin
 - nessun messaggio persistito nella rete Freedom;
 - nessun messaggio o media memorizzato sulla blockchain;
 - relay `forward-only`, con buffer limitati e temporanei;
-- nessun singolo server, relay, RPC, provider, IP o percorso deve essere requisito permanente per il funzionamento del protocollo;
+- nessun singolo server, relay, RPC, provider, payment provider, IP o percorso deve essere requisito permanente;
 - rilevamento di route failure/interferenza probabile attraverso segnali indipendenti, incluso il caso **peer recentemente attivo sul control-plane ma data-plane indisponibile**;
 - recovery automatico attraverso route/relay/transport alternativi quando disponibili;
 - indicatore di rete visibile e cliccabile che spiega agli utenti Free e Pro cosa Freedom ha osservato e quali contromisure sta applicando;
 - quota limitata di Emergency Shield anche per il tier Free quando l'infrastruttura gestita è necessaria e disponibile;
+- recovery dell'account tramite RootIdentity e Recovery Kit senza dipendere da un account server centrale;
+- entitlement/licenze ripristinabili con controllo on-chain del numero di device attivi;
+- pagamenti provider-agnostic tramite PayPal, crypto e futuri adapter senza rendere il provider parte del trust model;
+- registrazione Free sponsorizzabile ma protetta da anti-abuse/rate limit/budget bounded;
+- emergency bulletin e security policy verificabili;
+- aggiornamenti applicativi autenticati da manifest firmati e distribuibili da sorgenti sostituibili;
 - protocollo indipendente da Android, iOS, store e servizi commerciali ufficiali;
 - possibilità di sostituire la blockchain tramite un adapter senza cambiare il protocollo applicativo.
 
@@ -41,7 +47,7 @@ Per la consegna di un messaggio applicativo deve esistere una sessione autentica
 ## Architettura in una frase
 
 ```text
-DeviceID -> verifiable registry -> rendezvous fallback -> route -> authenticated E2EE live session -> messages/media
+RootIdentity -> DeviceID -> verifiable registry -> rendezvous/recovery -> route -> authenticated E2EE live session -> messages/media
 ```
 
 ## Registro distribuito e blockchain
@@ -51,39 +57,61 @@ Freedom necessita della **funzione** di un registro distribuito e verificabile p
 - risolvere `DeviceID -> identity_public_key`;
 - verificare key rotation e revocation;
 - pubblicare/leggere rendezvous di fallback quando tutte le route note sono perse;
-- coordinare recovery pairwise temporaneo quando il data-plane è perso e serve distinguere peer offline da peer recentemente attivo ma non raggiungibile sul percorso corrente.
+- coordinare recovery pairwise temporaneo quando il data-plane è perso;
+- verificare entitlement e limiti device senza account server obbligatorio;
+- pubblicare piccoli manifest/policy firmati per sicurezza, emergenze e update.
 
 Questa funzione è fondamentale per il trust model attuale. **NEAR non è fondamentale come tecnologia specifica.**
 
 La prima implementazione usa **NEAR Testnet** attraverso un'interfaccia `ChainAdapter`.
 
-NEAR non fa parte del wire protocol Freedom: è la prima implementazione del registro decentralizzato. Il core deve poter supportare adapter differenti senza cambiare DeviceID, session protocol o formato dei messaggi.
-
-```text
-ChainAdapter
-  |- NearChainAdapter      <- prima implementazione
-  |- ...                   <- future implementazioni
-```
+NEAR non fa parte del wire protocol Freedom: è la prima implementazione del registro/control-plane decentralizzato. Il core deve poter supportare adapter differenti senza cambiare DeviceID, session protocol o formato dei messaggi.
 
 Durante una sessione attiva il registro non è nel packet hot path e non viene interrogato o scritto per ogni messaggio.
 
-## Ruolo del registro
+## RootIdentity, recovery e licenze
 
-### Device identity
+Freedom separa ownership/recovery dal singolo device:
 
 ```text
-DeviceRecord {
-    device_id
-    identity_public_key
-    key_epoch
-    status
-    protocol_version
-}
+RootIdentity   -> recovery / entitlement / device authorization
+DeviceIdentity -> handshake e identità operativa del device
+Session keys   -> comunicazione effimera
 ```
 
-Il `DeviceID` è stabile e non coincide con l'hash della chiave pubblica, così una chiave può essere ruotata o revocata senza cambiare identità.
+Il semplice install genera RootIdentity, DeviceIdentity e Recovery Kit localmente e **non richiede una write blockchain immediata**.
 
-### Rendezvous
+Il Recovery Kit prevede QR/bundle cifrato + recovery code separato. Dopo reset/nuovo telefono viene recuperata la RootIdentity, ma viene generata una **nuova DeviceKey**.
+
+La licenza segue la RootIdentity e la chain fa rispettare un limite `max_devices`; il restore non deve permettere di clonare la stessa licenza su telefoni illimitati.
+
+Policy iniziale Free: **1 device attivo e 10 contatti attivi**. Il limite contatti riguarda slot attivi liberabili; la rubrica resta locale/cifrata e non diventa un social graph pubblico.
+
+Dettagli: [`docs/ACCOUNT_RECOVERY_LICENSES.md`](docs/ACCOUNT_RECOVERY_LICENSES.md).
+
+## Registrazione Free ed economia anti-abuso
+
+Freedom può sponsorizzare le operazioni essenziali Free senza obbligare l'utente a possedere NEAR.
+
+La sponsorship non è illimitata:
+
+```text
+new RootIdentity
+ -> signature valida
+ -> proof anti-abuse / PoW leggero adattivo
+ -> sponsorship non già consumata
+ -> rate limit del relayer
+ -> budget globale bounded
+ -> register
+```
+
+Fee relayer multipli devono poter coesistere. Un attacco alle nuove registrazioni non deve interrompere gli utenti già registrati.
+
+Il costo blockchain deve crescere con identità realmente usate ed eventi rari, **mai con il numero di messaggi, chiamate o frame media**.
+
+Dettagli: [`docs/REGISTRATION_ECONOMICS.md`](docs/REGISTRATION_ECONOMICS.md).
+
+## Ruolo del registro — rendezvous e recovery
 
 Il registro viene usato per ristabilire un percorso solo quando non esiste più alcuna route Freedom valida tra due endpoint online.
 
@@ -95,15 +123,13 @@ Regola fondamentale:
 3. se non esiste -> WRITE del proprio rendezvous
 ```
 
-Appena viene ristabilita una sessione, gli aggiornamenti di endpoint, NAT candidate e relay candidate passano direttamente nel canale E2EE. La chain non viene più aggiornata finché esiste almeno un percorso valido.
+Appena viene ristabilita una sessione, gli aggiornamenti di endpoint, NAT candidate e relay candidate passano direttamente nel canale E2EE.
 
 ### Recovery beacon
 
 Freedom non pubblica una presenza globale continua. Dopo la perdita completa del data path, due peer già autenticati possono usare slot pairwise opachi per pubblicare un `RecoveryBeacon` cifrato e a TTL breve.
 
 Un beacon indica **attività recente**, non presenza assoluta in tempo reale.
-
-Se entrambi i peer risultano recentemente attivi sul control-plane ma la route corrente non trasporta pacchetti, il client può classificare il caso come probabile interferenza/route failure e attivare contromisure di routing.
 
 ```text
 peer recently active       yes
@@ -125,13 +151,9 @@ Dettagli: [`docs/ADAPTIVE_DEFENSE.md`](docs/ADAPTIVE_DEFENSE.md).
 
 Freedom non deve nascondere completamente lo stato della rete come un messenger generalista.
 
-Principio UX:
-
 > **Semplice quando tutto funziona. Trasparente quando qualcosa cerca di impedirti di comunicare.**
 
-Il client ufficiale prevede un **Freedom Network Indicator** piccolo, sempre accessibile e cliccabile. Una possibile rappresentazione usa un pallino multicolore accompagnato sempre da testo/icona accessibili.
-
-Stati concettuali:
+Il client ufficiale prevede un **Freedom Network Indicator** piccolo, sempre accessibile e cliccabile.
 
 ```text
 NORMAL       percorso funzionante
@@ -160,9 +182,7 @@ FreedomContact {
 }
 ```
 
-`rendezvous_capability` è casuale e può essere monouso o temporanea. Serve a evitare che il primo rendezvous debba esporre pubblicamente una relazione leggibile tra due DeviceID.
-
-Dopo il primo handshake autenticato, i due endpoint derivano un `PairRendezvousSecret` locale usato per generare slot on-chain opachi e rotanti per le riconnessioni successive.
+`rendezvous_capability` è casuale e può essere monouso o temporanea. Dopo il primo handshake autenticato, i due endpoint derivano un `PairRendezvousSecret` locale usato per generare slot on-chain opachi e rotanti.
 
 ## Routing, privacy di rete e censura
 
@@ -173,32 +193,13 @@ DeviceID -> chi sei
 RouteCandidate -> come posso raggiungerti adesso
 ```
 
-Un route candidate può contenere:
-
-```text
-RouteCandidate {
-    transport
-    endpoint
-    nat_mapping
-    relay_hint
-    priority
-    expires_at
-}
-```
-
 Un indirizzo IP non è un'identità Freedom e non deve diventare un identificatore stabile del device.
 
-La comunicazione diretta è efficiente ma espone necessariamente gli endpoint di rete ai peer. Per questo Freedom deve permettere policy in cui il direct path sia disabilitato e il traffico passi attraverso relay o percorsi schermati quando la privacy di rete è prioritaria.
-
-Ordine di tentativo e policy non sono fissi universalmente: il client può scegliere tra direct, NAT traversal, relay e percorsi privacy in base a disponibilità, rischio e preferenze dell'utente.
-
-Se tutte le route conosciute falliscono, il rendezvous distribuito viene usato per recuperare nuovi candidate.
+La comunicazione diretta è efficiente ma espone gli endpoint di rete ai peer. Il client deve poter preferire relay o percorsi schermati quando la privacy di rete è prioritaria.
 
 ## Censorship resistance / path diversity
 
 Freedom non promette invisibilità assoluta o disponibilità contro un avversario capace di interrompere completamente la connettività. L'obiettivo è evitare **single points of control**.
-
-Il protocollo deve poter degradare e cambiare percorso quando tecnicamente possibile:
 
 ```text
 direct path blocked     -> altro route
@@ -208,9 +209,7 @@ provider unavailable    -> provider alternativo
 transport filtrato      -> transport alternativo
 ```
 
-Bootstrap, RPC, relay, fee relayer e provider devono essere multipli e sostituibili. Nessuno deve autenticare un DeviceID solo perché controlla il percorso di rete.
-
-Quando il peer è recentemente attivo sul control-plane ma il data-plane fallisce, Freedom può aumentare aggressivamente la path diversity anziché limitarsi a considerare il peer offline.
+Bootstrap, RPC, relay, fee relayer e provider devono essere multipli e sostituibili.
 
 ## Relay
 
@@ -220,145 +219,112 @@ Un relay Freedom è un nodo di transito, non un server di messaggistica.
 Alice -> ciphertext -> Relay -> ciphertext -> Bob
 ```
 
-Un relay:
-
-- non possiede le chiavi E2EE;
-- non conserva la conversazione;
-- non crea mailbox persistenti;
-- usa buffer piccoli, limitati e con TTL;
-- può essere sostituito durante la sessione;
-- deve applicare limiti di banda, memoria e connessioni.
+Un relay non possiede le chiavi E2EE, non crea mailbox persistenti, usa buffer limitati/temporanei e può essere sostituito durante la sessione.
 
 Principio: **forward, not store**.
 
-## Sessione sicura
+## Sessione sicura e messaggistica sincrona
 
-Una route non autentica un peer. Dopo aver trovato un percorso, gli endpoint eseguono un handshake autenticato bilateralmente.
-
-La chiave pubblica attesa viene risolta dal `DeviceID` tramite `ChainAdapter`. Entrambe le parti devono dimostrare il possesso della private key corrispondente.
-
-Il transcript dell'handshake deve legare almeno:
-
-- entrambi i DeviceID;
-- key epoch;
-- chiavi effimere;
-- nonce;
-- versione protocollo;
-- suite crittografica;
-- identificatore della sessione.
-
-Il progetto deve usare primitive e protocolli crittografici standard, non crittografia proprietaria.
-
-## Messaggistica sincrona
-
-Una volta stabilita la sessione:
+Una route non autentica un peer. Gli endpoint eseguono un handshake autenticato bilateralmente usando la current identity key verificata.
 
 ```text
 Alice <============================> Bob
           authenticated E2EE
 ```
 
-Messaggi, ACK, file metadata, signaling chiamate e route update vengono trasportati nel canale sicuro.
-
 Se non esiste una sessione autenticata attiva o il peer non è raggiungibile, il protocollo base non deposita il messaggio sulla blockchain, sui relay o in una coda locale per consegna futura.
 
-I client possono offrire una modalità **Live** in cui la cronologia della sessione non viene persistita e lo stato locale della conversazione viene eliminato alla chiusura/uscita secondo la policy del client.
+I client possono offrire modalità **Live** senza cronologia persistente locale secondo policy.
 
 ## Scope prodotto
 
-Il primo lancio di Freedom Messenger è deliberatamente focalizzato sul **1:1**. Il V1 deve rendere estremamente affidabili onboarding, contatto, sessione, messaggi, media, messaggi vocali, chiamata audio, videochiamata, modalità Live e Network Indicator prima di ampliare il prodotto.
+Il primo lancio di Freedom Messenger è deliberatamente focalizzato sul **1:1**: onboarding, contatto, sessione, messaggi, media, vocali, chiamata, videochiamata, Live mode e Network Indicator.
 
-I gruppi non sono un blocker del lancio. Arrivano successivamente come **Live Groups / Live Rooms**: sessioni multi-party sincrone, senza mailbox condivisa e senza consegna automatica della cronologia agli utenti assenti.
-
-Voce e video multi-party sono una fase successiva e devono usare un'architettura scalabile con infrastruttura media sostituibile/non autoritativa, invece di trasformare un singolo SFU in un requisito permanente del protocollo.
+I gruppi arrivano successivamente come **Live Groups / Live Rooms**, senza mailbox condivisa o consegna automatica della cronologia agli utenti assenti.
 
 Dettagli: [`docs/PRODUCT_SCOPE.md`](docs/PRODUCT_SCOPE.md).
 
+## Pagamenti
+
+Freedom è payment-provider agnostic:
+
+```text
+PaymentAdapter
+|- PayPal
+|- crypto native
+|- stablecoin
+|- future providers
+```
+
+L'utente compra servizi Freedom, non NEAR.
+
+Per PayPal, l'app può aprire il checkout ospitato/in-app senza contattare un server Freedom pubblico. La prova economica non può essere il semplice callback del client: worker privati **outbound-only** possono interrogare PayPal, riconciliare un `purchase_ref` opaco e pubblicare una `PaymentAttestation` on-chain.
+
+Per crypto verificabile direttamente dalla chain, il pagamento può attivare l'entitlement senza worker esterno.
+
+Nessun `client_secret` merchant deve essere inserito nell'APK.
+
+Dettagli: [`docs/PAYMENTS.md`](docs/PAYMENTS.md).
+
 ## Gas e fee relayer
 
-Le rare operazioni on-chain possono richiedere fee della chain. Freedom può supportare **fee relayer indipendenti** che sponsorizzano il gas senza possedere l'identità dell'utente.
+Le rare operazioni on-chain possono richiedere fee. Freedom può supportare **fee relayer indipendenti** che sponsorizzano il gas senza possedere l'identità dell'utente.
 
-Requisiti:
+L'utente Free non deve essere obbligato a comprare NEAR. Treasury/relayer possono sostenere registrazione e operazioni essenziali secondo budget e anti-abuse.
 
-- la private identity key resta sul device;
-- nessuna private key del relayer dentro l'APK/client;
-- un relayer non può firmare come DeviceID;
-- più relayer devono poter coesistere;
-- il blocco di un singolo relayer non deve bloccare il protocollo;
-- messaggi, ACK, file, audio, video e route update in-session non generano transazioni on-chain;
-- eventuali recovery beacon producono write solo in condizioni di failure/recovery e non diventano heartbeat continui.
+Messaggi, ACK, file, audio, video e route update in-session non generano transazioni on-chain.
+
+## Emergency bulletin e aggiornamenti sicuri
+
+Freedom può pubblicare on-chain piccoli `EmergencyBulletin`, `SecurityPolicy` e `FreedomRelease` firmati.
+
+Le notifiche possono essere geolocalizzate senza pubblicare la posizione dell'utente: il matching tra area del bulletin e posizione/area selezionata avviene localmente.
+
+La blockchain **non ospita l'APK**. Pubblica hash, versione, signing fingerprint e sorgenti. L'APK può arrivare da store, mirror temporanei/dinamici, peer Freedom, relay/update node o futuri transport; la sorgente non è fidata, il manifest firmato sì.
+
+Per policy critiche si preferiscono firme threshold/multi-key. Non deve esistere un kill-switch commerciale arbitrario: una versione vulnerabile può disabilitare selettivamente la superficie insicura mantenendo recovery e update quando sicuri.
+
+Dettagli: [`docs/EMERGENCY_UPDATES.md`](docs/EMERGENCY_UPDATES.md).
 
 ## Monetizzazione
 
-Freedom non deve monetizzare il contenuto delle conversazioni o richiedere storage centrale dei messaggi.
-
-Principio economico:
-
 > **monetizzare capacità, comodità e servizi professionali; non la conversazione.**
-
-Principio commerciale aggiuntivo:
 
 > **la censura non deve diventare un paywall.**
 
-Possibili linee:
+Free comprende core E2EE, 1 device attivo, 10 contatti attivi, Network Indicator, resilienza base ed Emergency Shield con capacità gestita limitata.
 
-- core messaging/live E2EE gratuito;
-- resilienza base, Network Indicator e route fallback nel core gratuito;
-- **Emergency Shield Free** con capacità gestita limitata quando necessaria per tentare il bypass di un blocco;
-- **Freedom Plus / Shield** per capacità relay gestita superiore, Always-Shielded, percorsi privacy/multi-hop, path diversity più ampia, candidate pre-warmed, failover parallelo e **Maximum Resilience**;
-- **Freedom Business** per SDK, deployment, relay dedicati, supporto e SLA;
-- relay community/best-effort e relay gestiti a pagamento opzionale;
-- fee relayer per gas sostituibili e non autoritativi.
+Freedom Plus / Shield può offrire contatti/slot device superiori, capacità relay maggiore, Always-Shielded, multi-hop, pre-warming, failover parallelo e Maximum Resilience.
 
-La monetizzazione non deve trasformare Freedom in un servizio dipendente da un singolo soggetto commerciale. Il piano Pro non deve comprare una cifratura più forte, una diagnosi tecnica più onesta o il diritto esclusivo al recovery di base.
-
-La quota Emergency Shield definitiva deve essere determinata dopo misure reali di costo/banda/abuso; non va fissato un numero arbitrario di messaggi prima dei test.
+Freedom Business può offrire SDK, deployment, relay dedicati, supporto e SLA.
 
 Dettagli: [`docs/MONETIZATION.md`](docs/MONETIZATION.md).
 
 ## Store
 
-Freedom Protocol è separato dai client ufficiali.
-
-I client Android e iOS implementano il livello necessario per la conformità dello store senza modificare il trust model del protocollo:
-
-- blocco locale di un DeviceID;
-- segnalazione volontaria con contenuti scelti dall'utente;
-- privacy policy e termini;
-- permessi minimi;
-- nessuna master key;
-- nessuna scansione server-side necessaria delle conversazioni E2EE.
-
-Freedom è un sistema di contatti espliciti tramite DeviceID/QR, non una random chat.
+Freedom Protocol è separato dai client ufficiali. Le build store rispettano le policy di aggiornamento/distribuzione della piattaforma; una Freedom Direct build può usare sorgenti update indipendenti compatibili con il sistema operativo.
 
 ## Stato del codice Android
 
 Il codice Android presente nel repository è un **transport/crypto spike precedente alla specifica attuale**. Dimostra socket diretto e handshake cifrato, ma usa ancora IP manuale e fingerprint/TOFU.
 
-Non rappresenta più l'M1 canonico. Verrà rifattorizzato seguendo questa sequenza:
-
-```text
-DeviceID
- -> NEAR Testnet identity
- -> QR contact
- -> chain verification
- -> rendezvous
- -> route establishment
- -> mutual authentication
- -> E2EE messaging
-```
+Non rappresenta più l'M1 canonico.
 
 ## Documentazione
 
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — architettura completa.
 - [`docs/PROTOCOL.md`](docs/PROTOCOL.md) — oggetti e flussi del protocollo.
-- [`docs/CHAIN.md`](docs/CHAIN.md) — NEAR, Device Registry e rendezvous.
+- [`docs/CHAIN.md`](docs/CHAIN.md) — blockchain/control-plane, identity, recovery, entitlement e manifest.
 - [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md) — modello di sicurezza.
 - [`docs/ADAPTIVE_DEFENSE.md`](docs/ADAPTIVE_DEFENSE.md) — liveness/recovery pairwise, rilevamento interferenza e Freedom Shield.
-- [`docs/NETWORK_STATUS_UI.md`](docs/NETWORK_STATUS_UI.md) — indicatore multistato, apertura automatica, trasparenza e Emergency Shield Free.
+- [`docs/NETWORK_STATUS_UI.md`](docs/NETWORK_STATUS_UI.md) — indicatore multistato, trasparenza e Emergency Shield Free.
+- [`docs/ACCOUNT_RECOVERY_LICENSES.md`](docs/ACCOUNT_RECOVERY_LICENSES.md) — RootIdentity, Recovery Kit, entitlement e limiti multi-device.
+- [`docs/PAYMENTS.md`](docs/PAYMENTS.md) — PayPal outbound-worker, crypto e PaymentAttestation.
+- [`docs/REGISTRATION_ECONOMICS.md`](docs/REGISTRATION_ECONOMICS.md) — sponsorship Free, anti-Sybil/PoW, rate limit e storage bounded.
+- [`docs/EMERGENCY_UPDATES.md`](docs/EMERGENCY_UPDATES.md) — bulletin geolocalizzati, security policy e aggiornamenti distribuiti firmati.
 - [`docs/PRODUCT_SCOPE.md`](docs/PRODUCT_SCOPE.md) — scope V1, Live Groups/Rooms e roadmap multi-party.
 - [`docs/MONETIZATION.md`](docs/MONETIZATION.md) — principi economici e servizi opzionali.
-- [`docs/LAUNCH_PLAN.md`](docs/LAUNCH_PLAN.md) — piano dettagliato di validazione, creator program e lancio.
+- [`docs/LAUNCH_PLAN.md`](docs/LAUNCH_PLAN.md) — piano di validazione e lancio.
 - [`docs/STORE_COMPLIANCE.md`](docs/STORE_COMPLIANCE.md) — separazione protocollo/client e vincoli store.
 - [`ANDROID.md`](ANDROID.md) — roadmap Android.
 
@@ -366,33 +332,43 @@ DeviceID
 
 ```text
 M0  specifica
-M1  DeviceID + NEAR Testnet + QR
-M2  rendezvous read-before-write
+M1  RootIdentity + DeviceID + Recovery Kit + sponsored registration
+M2  NEAR Testnet registry + QR + rendezvous read-before-write
 M3  authenticated secure session
 M4  NAT traversal + route updates
 M5  relay forward-only
-M6  V1: 1:1 messaging + media + voice/video + Live mode + Network Indicator
-M7  V1.5: Live Groups / Live Rooms
-M8  V2: group voice/video + media forwarding scalabile
-M9  adaptive recovery + Emergency Shield + Freedom Shield hardening
-M10 iOS + platform wake integration
-M11 hardening, censorship resistance, testing, interoperability
+M6  V1: 1:1 messaging + media + voice/video + Live + Network Indicator
+M7  entitlement + max_devices + Free contact policy + payment adapters
+M8  emergency bulletin + signed secure update plane
+M9  V1.5: Live Groups / Live Rooms
+M10 V2: group voice/video + media forwarding scalabile
+M11 adaptive recovery + Emergency Shield + Freedom Shield hardening
+M12 iOS + platform wake integration
+M13 hardening, censorship resistance, testing, interoperability
 ```
 
 ## TODO
 
 - [ ] Brand client ufficiale: **Freedom Messenger** — *Powered by Freedom Protocol*.
+- [ ] **RootIdentity / Recovery Kit:** QR/bundle cifrato + recovery code separato; restore con nuova DeviceKey.
+- [ ] **Sponsored registration / anti-Sybil:** install senza write, PoW/adaptive proof, relayer multipli, rate limit e budget bounded.
+- [ ] **Free policy:** 1 device attivo e 10 contatti attivi; contatti liberabili e nessun social graph pubblico.
+- [ ] **Entitlement / multi-device:** licenza legata alla RootIdentity con `max_devices` enforced on-chain tramite slot/commitment opachi.
+- [ ] **Payments:** adapter PayPal + crypto; PayPal senza server pubblico obbligatorio, worker outbound-only per attestazione; nessun merchant secret nell'APK.
 - [ ] **Censorship resistance / path diversity:** nessun singolo server, relay, RPC endpoint, provider blockchain, fee relayer, IP o percorso di rete deve costituire un punto unico di controllo o interruzione.
-- [ ] **Adaptive Defense:** implementare recovery beacon pairwise, temporanei e cifrati per distinguere peer recentemente attivo da peer offline quando il data-plane fallisce; usare più segnali prima di classificare una probabile interferenza e attivare route/relay/transport alternativi.
-- [ ] **Freedom Network Indicator:** indicatore sempre accessibile, multistato e cliccabile; apertura automatica una volta per incidente in caso di `SUSPECTED`/`UNAVAILABLE`; distinguere fatti osservati da inferenze e non dichiarare sorveglianza passiva non rilevabile.
-- [ ] **Emergency Shield Free:** fornire una quota limitata di capacità gestita per tentare il bypass anche agli utenti Free; dimensionare la quota dopo misure reali e non trasformare la censura in un paywall.
-- [ ] **Freedom Shield / Pro:** Always-Shielded, relay gestiti multipli, multi-hop, pre-warming, failover parallelo e Maximum Resilience senza rendere il piano Pro un requisito del protocollo base.
-- [ ] **Network privacy / metadata resistance:** evitare identificatori di rete stabili e correlabili; supportare alias/session identifiers pairwise o temporanei e percorsi relay/shielded quando l'utente non vuole esporre il proprio endpoint, minimizzando il più possibile latenza e overhead.
-- [ ] **Resilient bootstrap / rendezvous:** bootstrap, discovery, RPC e rendezvous devono avere fonti multiple, intercambiabili e verificabili; la perdita, censura o compromissione di una singola fonte non deve impedire a due peer autorizzati di ritrovarsi quando esiste almeno un percorso disponibile.
-- [ ] **Transport diversity:** consentire transport alternativi/sostituibili per ridurre la dipendenza da una singola firma di rete o classe di endpoint.
-- [ ] **V1 product:** completare 1:1 text/media/file, voice messages, audio call, video call, Live mode, Network Indicator e onboarding senza configurazione tecnica manuale; i gruppi non devono bloccare il lancio.
-- [ ] **Live Rooms:** introdurre successivamente gruppi sincroni/effimeri senza mailbox condivisa o consegna offline automatica; progettare separatamente voce/video multi-party e forwarding media scalabile.
-- [ ] **Monetizzazione:** mantenere core interoperabile gratuito e monetizzare capacità relay/privacy gestita, funzioni Plus/Shield e servizi Business senza monetizzare contenuti o metadati di conversazione e senza creare dark pattern durante gli incidenti di rete.
-- [ ] **Launch:** completare Founder Cohort, security/privacy review, Creator Pilot e criteri Go/No-Go definiti in [`docs/LAUNCH_PLAN.md`](docs/LAUNCH_PLAN.md) prima di scalare la promozione pubblica.
+- [ ] **Adaptive Defense:** recovery beacon pairwise, temporanei e cifrati; classificazione multi-segnale e route/relay/transport alternativi.
+- [ ] **Freedom Network Indicator:** indicatore sempre accessibile, multistato e cliccabile; apertura automatica per incidenti significativi.
+- [ ] **Emergency Shield Free:** quota limitata di capacità gestita per tentare bypass anche agli utenti Free.
+- [ ] **Freedom Shield / Pro:** Always-Shielded, relay multipli, multi-hop, pre-warming, failover parallelo e Maximum Resilience.
+- [ ] **Emergency bulletin:** avvisi firmati globali/geografici con matching posizione locale e nessuna posizione utente on-chain.
+- [ ] **Secure updates:** release manifest firmato on-chain; APK off-chain da store/mirror/peer/relay sostituibili; hash/signing verification e policy anti-downgrade.
+- [ ] **Security policy:** threshold governance e inibizione selettiva di funzioni/versioni vulnerabili, senza kill-switch commerciale arbitrario.
+- [ ] **Network privacy / metadata resistance:** alias/session identifiers pairwise o temporanei e percorsi relay/shielded.
+- [ ] **Resilient bootstrap / rendezvous:** fonti multiple, intercambiabili e verificabili.
+- [ ] **Transport diversity:** transport alternativi/sostituibili.
+- [ ] **V1 product:** 1:1 text/media/file, voice messages, audio call, video call, Live mode, Network Indicator e onboarding senza configurazione tecnica manuale.
+- [ ] **Live Rooms:** gruppi sincroni/effimeri senza mailbox condivisa o delivery offline automatico.
+- [ ] **Monetizzazione:** core interoperabile gratuito e monetizzazione di capacità/feature senza contenuti/metadati e senza dark pattern.
+- [ ] **Launch:** Founder Cohort, security/privacy review, Creator Pilot e criteri Go/No-Go prima della scala pubblica.
 
-Freedom è definito dalle proprietà tecniche del protocollo: identità verificabile, comunicazione E2EE sincrona, routing distribuito, relay non fidati, path diversity, adaptive recovery, trasparenza sullo stato di rete e minima dipendenza dal registro distribuito durante una sessione attiva.
+Freedom è definito dalle proprietà tecniche del protocollo: identità verificabile e recuperabile, comunicazione E2EE sincrona, routing distribuito, relay non fidati, path diversity, adaptive recovery, entitlement verificabili, control-plane di sicurezza e minima dipendenza dal registro distribuito durante una sessione attiva.
