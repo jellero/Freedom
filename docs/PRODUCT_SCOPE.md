@@ -20,6 +20,9 @@ Funzioni essenziali:
 - Recovery Kit esportabile: QR/bundle cifrato + recovery code;
 - registrazione sponsorizzata quando serve, senza wallet NEAR obbligatorio;
 - aggiunta contatto tramite QR/link;
+- **Share Freedom / Install QR** per permettere a un nuovo utente di ottenere l'app partendo da un client esistente;
+- build Direct capace di indicare/servire un artifact verificato tramite peer locale, relay o mirror;
+- build Play che usa il percorso di install/update conforme allo store;
 - **10 contatti attivi nel piano Free**;
 - **1 device attivo nel piano Free**;
 - sessione autenticata E2EE;
@@ -90,7 +93,50 @@ Un device relay non deve necessariamente avere un IP pubblico: può essere utile
 
 Essere relay non concede accesso a plaintext, session keys o identità delle conversazioni inoltrate oltre ai metadata strettamente necessari al forwarding.
 
-## 6. Pagamenti e Pro
+## 6. Share Freedom / distribuzione peer-to-peer dell'app
+
+Un client già installato deve poter mostrare un QR dedicato all'installazione:
+
+```text
+Alice: Share Freedom
+        -> [Install QR]
+
+Bob:   camera di sistema
+        -> download
+        -> verifica release
+        -> installazione
+```
+
+Il QR non è il Contact QR e deve funzionare anche quando Bob non ha ancora Freedom installato.
+
+Sorgenti possibili:
+
+```text
+STORE
+PEER_LOCAL
+RELAY
+MIRROR
+PEER_NETWORK
+```
+
+La build Direct può mantenere opzionalmente in cache un **APK standalone già verificato** e servirlo tramite endpoint temporaneo/capability. Non è necessario incorporare una seconda copia dell'APK dentro il client.
+
+La sorgente del file non è la sorgente di fiducia. Prima dell'installazione devono concordare almeno:
+
+```text
+FreedomRelease signatures
+artifact SHA-256
+package ID
+version code
+signing certificate / authorized lineage
+SecurityPolicy
+```
+
+Per il primo sideload deve esistere un trust anchor indipendente dal peer/relay: store, bootstrap autenticato, release root verificato out-of-band o verifier con root pinned. Un QR ricevuto non può ridefinire da solo quale chiave sia la chiave ufficiale Freedom.
+
+Dettagli: [`APP_DISTRIBUTION.md`](APP_DISTRIBUTION.md).
+
+## 7. Pagamenti e Pro
 
 Freedom supporta payment adapter multipli:
 
@@ -106,7 +152,7 @@ Il callback client non è prova autoritativa di pagamento e nessun merchant secr
 
 Dettagli: [`PAYMENTS.md`](PAYMENTS.md).
 
-## 7. Adaptive Defense e Network Indicator
+## 8. Adaptive Defense e Network Indicator
 
 Il client deve mostrare uno stato rete sempre accessibile:
 
@@ -133,7 +179,7 @@ Core Free:
 
 Pro/Shield può aggiungere Always-Shielded, multi-hop, relay gestiti multipli, candidate pre-warmed, parallel failover, transport rotation aggressiva e Maximum Resilience.
 
-## 8. Emergency bulletin e secure updates
+## 9. Emergency bulletin e secure updates
 
 Freedom deve poter ricevere bulletin firmati globali o geolocalizzati. Il matching geografico avviene localmente senza pubblicare la posizione dell'utente on-chain.
 
@@ -143,7 +189,7 @@ Una `SecurityPolicy` critica può disabilitare selettivamente funzioni/versioni 
 
 Dettagli: [`EMERGENCY_UPDATES.md`](EMERGENCY_UPDATES.md).
 
-## 9. Cosa NON blocca il primo lancio
+## 10. Cosa NON blocca il primo lancio
 
 Non sono prerequisiti della prima release pubblica:
 
@@ -159,7 +205,7 @@ Non sono prerequisiti della prima release pubblica:
 - update swarm completo se esiste già un canale sicuro di distribuzione V1;
 - incentivi economici/tokenizzati ai relay oltre al bonus contatti.
 
-## 10. Live Groups — V1.5
+## 11. Live Groups — V1.5
 
 I gruppi devono preservare la semantica sincrona:
 
@@ -180,7 +226,7 @@ Scope iniziale:
 - presenza minima;
 - modalità effimera.
 
-## 11. Freedom Live Rooms
+## 12. Freedom Live Rooms
 
 Una **Live Room** è una sessione privata multi-party che serve le persone presenti adesso, non una mailbox permanente.
 
@@ -194,7 +240,7 @@ no server-side mailbox
 no automatic offline delivery
 ```
 
-## 12. Multi-party voice/video — V2
+## 13. Multi-party voice/video — V2
 
 Non usare mesh P2P illimitata per gruppi grandi. Per media multi-party usare forwarding scalabile/SFU compatibile con il trust model:
 
@@ -204,7 +250,7 @@ Non usare mesh P2P illimitata per gruppi grandi. Per media multi-party usare for
 - nessun singolo SFU requisito permanente;
 - design E2EE multi-party reviewato separatamente.
 
-## 13. Registrazione ed economia Free
+## 14. Registrazione ed economia Free
 
 L'installazione non produce automaticamente una write on-chain.
 
@@ -223,12 +269,14 @@ Messaggi/chiamate non devono essere limitati per pagare il gas blockchain. Il co
 
 Dettagli: [`REGISTRATION_ECONOMICS.md`](REGISTRATION_ECONOMICS.md).
 
-## 14. Roadmap prodotto
+## 15. Roadmap prodotto
 
 ```text
 V1 — Launch
   RootIdentity + Recovery Kit
   sponsored registration
+  Share Freedom / Install QR
+  verified peer/relay app bootstrap (Direct build)
   1 active device Free
   10 active contacts Free
   device/community relay
@@ -247,6 +295,7 @@ Security plane
   signed release manifest
   secure update sources
   selective security policy
+  first-install release-root verification
 
 V1.5 — Live Groups
   small group text/media
@@ -265,7 +314,7 @@ Pro evolution — Freedom Shield
   Maximum Resilience
 ```
 
-## 15. Launch quality gate
+## 16. Launch quality gate
 
 Blocker prima del Creator Pilot:
 
@@ -279,6 +328,9 @@ Blocker prima del Creator Pilot:
 - relay che persiste payload oltre i limiti previsti;
 - device relay che consuma risorse fuori policy;
 - Relay Contributor facilmente farmabile con toggle/non-contributo;
+- Install QR che accetta una release non verificabile;
+- possibilità per peer/relay/mirror di sostituire package ID o signing root senza failure;
+- downgrade a versione dichiarata vulnerabile;
 - Network Indicator con falsi allarmi sistematici;
 - privacy claim non implementati;
 - dipendenza hardcoded da credenziali personali/singola infrastruttura;
