@@ -94,16 +94,21 @@ Il modello di fee mainnet verrà progettato separatamente.
 
 ## 6. QR
 
-Il QR Freedom è un contact descriptor.
+Freedom usa QR per più flussi espliciti e separati:
 
 ```text
-network_id
-device_id
-rendezvous_capability
-expiry?
+Contact QR
+  network_id / device_id / rendezvous_capability
+
+Install QR
+  release/bootstrap descriptor per ottenere Freedom
 ```
 
-Non sblocca contenuti digitali acquistati fuori dallo store e non è un meccanismo di pagamento.
+Il Contact QR non sblocca contenuti digitali acquistati fuori dallo store e non è un meccanismo di pagamento.
+
+L'Install QR deve essere utilizzabile da una fotocamera/browser di sistema perché il destinatario può non avere ancora Freedom installato.
+
+Dettagli: [`APP_DISTRIBUTION.md`](APP_DISTRIBUTION.md).
 
 ## 7. Privacy by design
 
@@ -161,7 +166,77 @@ Se il client permette al device di diventare relay:
 
 Il relay protocol resta interoperabile anche con nodi desktop/server/community non distribuiti tramite mobile store.
 
-## 11. iOS background
+## 11. Google Play build: app distribution
+
+La build Google Play deve trattare Google Play come percorso di install/update della build store.
+
+`Share Freedom` può mostrare un QR che porta alla listing ufficiale o a un bootstrap web che seleziona lo store appropriato.
+
+La build Play non deve basare il proprio normale funzionamento su:
+
+- APK Freedom duplicato negli asset per redistribuzione/self-update;
+- installazione silenziosa;
+- bypass del meccanismo update dello store;
+- `REQUEST_INSTALL_PACKAGES` usato come semplice meccanismo ordinario di self-update o peer app distribution se il caso d'uso non soddisfa le policy vigenti.
+
+La policy Google Play su `REQUEST_INSTALL_PACKAGES` è restrittiva: l'installazione deve essere esplicitamente avviata dall'utente e l'uso del permesso deve essere direttamente collegato a una funzionalità core ammessa.
+
+Quindi, per evitare che la distribuzione P2P del client diventi un rischio di review, il comportamento predefinito della **Play build** è:
+
+```text
+Share Freedom
+ -> official Play listing / compliant bootstrap
+```
+
+Il protocollo Freedom resta indipendente da questa scelta del client store.
+
+## 12. Freedom Direct build: peer/relay distribution
+
+La build Direct può supportare il flusso completo:
+
+```text
+existing Freedom client
+ -> Share Freedom
+ -> Install QR
+ -> peer-local / relay / mirror download
+ -> release verification
+ -> Android system installer
+```
+
+L'APK resta un artifact esterno verificato, non una seconda copia obbligatoria dentro l'app.
+
+Il client Direct può mantenere una cache di release standalone verificate e servirle tramite endpoint temporanei/capability-protected.
+
+L'installazione deve rimanere user-driven. Su Android moderni il client deve verificare se è autorizzato a richiedere installazioni da sorgenti esterne e, quando necessario, indirizzare l'utente alle impostazioni di sistema per autorizzare quella sorgente.
+
+Non assumere silent install su normali dispositivi consumer.
+
+## 13. Anti-fake app / signing
+
+Il download da peer o relay non rende quella sorgente affidabile.
+
+Prima dell'installazione Direct devono concordare:
+
+```text
+FreedomRelease signatures
+artifact SHA-256
+package ID
+version code
+signing certificate / authorized lineage
+SecurityPolicy
+```
+
+Per app già installate, la continuità del certificato Android fornisce un'ulteriore barriera agli update firmati con chiavi incompatibili.
+
+Il **primo sideload** richiede però un trust anchor indipendente dal peer/relay, perché un'app farlocca può essere firmata con una propria chiave e usare nome/icona simili.
+
+Possibili trust anchor: store, bootstrap web autenticato, release-root fingerprint verificato out-of-band, verifier con root pinned o peer già considerato genuino.
+
+Il QR non deve poter ridefinire silenziosamente la chiave ufficiale Freedom.
+
+Dettagli: [`APP_DISTRIBUTION.md`](APP_DISTRIBUTION.md) e [`EMERGENCY_UPDATES.md`](EMERGENCY_UPDATES.md).
+
+## 14. iOS background
 
 iOS limita l'esecuzione di rete persistente in background.
 
@@ -179,19 +254,19 @@ Freedom protocol reconnects
 
 Il wake provider non riceve plaintext né diventa identity authority.
 
-## 12. Chiamate iOS
+## 15. Chiamate iOS
 
 Il client iOS integra le API di sistema previste per VoIP/call UX quando richiesto.
 
 Il signaling applicativo resta dentro Freedom E2EE; le API Apple gestiscono lifecycle e presentazione della chiamata, non autenticazione del DeviceID.
 
-## 13. Export compliance crittografia
+## 16. Export compliance crittografia
 
 Prima della distribuzione iOS va completata la classificazione/export compliance prevista dalla piattaforma per l'uso di crittografia.
 
 Freedom deve usare algoritmi standard, documentati e implementazioni consolidate, evitando primitive proprietarie non necessarie.
 
-## 14. Store review mode
+## 17. Store review mode
 
 Per facilitare la review deve esistere una procedura riproducibile:
 
@@ -201,9 +276,11 @@ Per facilitare la review deve esistere una procedura riproducibile:
 - istruzioni per aggiungere il contatto;
 - possibilità di provare messaggi;
 - possibilità di provare block/report;
-- descrizione chiara di cosa viene scritto on-chain.
+- descrizione chiara di cosa viene scritto on-chain;
+- descrizione chiara della differenza tra Contact QR e Install QR;
+- per Play build, indicazione che il percorso di install/update resta conforme allo store.
 
-## 15. Protocol independence
+## 18. Protocol independence
 
 Un cambiamento di policy Google o Apple può richiedere modifiche al client ufficiale, ma non deve cambiare automaticamente:
 
@@ -212,6 +289,8 @@ Un cambiamento di policy Google o Apple può richiedere modifiche al client uffi
 - E2EE;
 - relay semantics;
 - ChainAdapter interface;
-- interoperabilità con client non-store.
+- interoperabilità con client non-store;
+- autenticità del `FreedomRelease`;
+- possibilità per una Direct build di usare sorgenti artifact indipendenti compatibili con la piattaforma.
 
 Questa separazione è un requisito architetturale, non soltanto organizzativo.
