@@ -9,6 +9,7 @@ on:
       - "docs/**"
       - "core/**"
       - "sim/**"
+      - "near/**"
       - "tools/**"
       - "app/build.gradle.kts"
       - ".github/CODEOWNERS"
@@ -22,6 +23,7 @@ on:
       - "docs/**"
       - "core/**"
       - "sim/**"
+      - "near/**"
       - "tools/**"
       - "app/build.gradle.kts"
       - ".github/CODEOWNERS"
@@ -72,3 +74,28 @@ jobs:
           python-version: "3.12"
       - name: Run real-container path failure/address-rebind smoke
         run: python sim/l2/run_docker.py
+
+  l3-near-sandbox:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "17"
+      - name: Install pinned Rust toolchain
+        run: |
+          rustup toolchain install 1.93.0 --profile minimal
+          rustup default 1.93.0
+          rustc --version
+          cargo --version
+      - name: Run real NEAR Sandbox differential
+        env:
+          NEAR_ENABLE_SANDBOX_LOG: "0"
+        run: >-
+          python sim/l3/differential.py
+          --adapter-cmd "cargo run --quiet --manifest-path near/l3-adapter/Cargo.toml"
