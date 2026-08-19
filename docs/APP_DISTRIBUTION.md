@@ -1,120 +1,54 @@
-# Freedom — Peer Bootstrap & App Distribution
+# Freedom — App Distribution / Share Freedom
 
-## 1. Obiettivo
+Status: **canonical design draft**
 
-Freedom deve poter essere installato anche **fuori dagli store e da persona a persona** senza rendere obbligatori Google Play, un singolo sito web, un singolo mirror, un singolo relay o un singolo URL permanente.
+Normative security rules: [`SECURITY_INVARIANTS.md`](SECURITY_INVARIANTS.md).
+Release/security governance: [`EMERGENCY_UPDATES.md`](EMERGENCY_UPDATES.md).
 
-Caso d'uso principale:
+## 1. Principio
 
-```text
-Alice ha già Freedom genuino
-Bob non ha Freedom
-
-Alice -> Share Freedom -> mostra QR
-Bob   -> fotocamera di sistema -> scansiona QR
-      -> ottiene un locator/capability della release
-      -> scarica da peer / relay / mirror / update node
-      -> verifica release + artifact + signer + policy
-      -> installazione esplicitamente confermata dall'utente
-```
-
-Principio:
-
-> **la rete distribuisce byte non fidati; la crittografia e il control-plane decidono quali byte sono una release Freedom installabile.**
-
-### Diagramma della Freedom Release Network
-
-![Freedom Release Network](assets/freedom-release-network.svg)
-
-Il diagramma rende esplicita la separazione fra **release authority**, **control-plane verificabile**, **sorgenti non fidate dei byte** e **verifier fail-closed sul nuovo device**.
-
----
-
-## 2. Nessuna chiave privata ufficiale nel client
-
-La chiave privata che autorizza una release Freedom **non deve mai essere incorporata nell'APK** e non deve essere necessaria per premere `Share Freedom`.
-
-Separazione:
+Freedom separa:
 
 ```text
-OFFLINE / RELEASE SIGNERS
-  autorizzano una release
-  firmano manifest / policy / locator di release
-
-INSTALLED FREEDOM CLIENT
-  possiede solo materiale pubblico per verificare
-  può redistribuire manifest, locator e artifact già autorizzati
-  può creare capability temporanee locali per il proprio endpoint di download
+source of bytes          != release authority
+download capability      != release signature
+filename / URL           != authenticity
+first-install bootstrap  != peer trust
 ```
 
-Un client compromesso non deve poter creare una nuova release ufficiale.
+L'obiettivo non è impedire a un attaccante di distribuire APK falsi. L'obiettivo è impedire a un verifier conforme di confondere byte falsi con una release Freedom autorizzata.
 
----
+## 2. Artifact esterno, non APK embedded
 
-## 3. Nome file e ReleaseLocator
+Il client non incorpora di default un secondo APK completo da distribuire.
 
-Un nome come:
+`Share Freedom` usa un artifact standalone verificato, ottenibile da più sorgenti e opzionalmente seedabile da peer/relay/mirror.
 
 ```text
-freedom-454fjk4hfhsjhslllshlvhvru0ujwr8w.apk
+Alice genuine Freedom
+ -> Share Freedom
+ -> Install QR / descriptor
+ -> Bob system camera/browser/bootstrap verifier
+ -> resolve artifact from peer/relay/mirror/store
+ -> verify
+ -> Android system installer
 ```
 
-può essere utile come **locator opaco / anti-enumeration hint**, ma il nome del file non è una prova di autenticità: un attacker può rinominare qualunque APK.
+## 3. Filename opaco
 
-Il modello corretto è un locator firmato:
-
-```text
-FreedomReleaseLocator {
-    locator_version
-    release_id
-    release_nonce
-    manifest_hash
-    artifact_sha256
-    package_id
-    version_code
-    channel
-    issued_at
-    expires_at?
-    signatures[]
-}
-```
-
-`release_nonce` è casuale ad alta entropia. Il locator è valido solo se le firme appartengono al signer set Freedom autorizzato.
-
-Il filename può contenere una rappresentazione abbreviata/opaca del locator:
-
-```text
-freedom-<release_id>-<locator_tag>.apk
-```
-
-Esempio puramente illustrativo:
+Esempio:
 
 ```text
 freedom-r42-454fjk4hfhsjhslllshlvhvru0ujwr8w.apk
 ```
 
-ma la verifica non deve mai essere:
+La parte opaca può aiutare discovery/anti-enumeration ma **non è trust**.
 
-```text
-filename looks valid -> install
-```
+La release authority firma manifest canonici, non il filename.
 
-Deve essere:
+## 4. PeerTransferCapability
 
-```text
-signed locator valid
-AND manifest valid
-AND artifact hash exact
-AND Android signer authorized
-AND release policy permits install
--> installable
-```
-
----
-
-## 4. Share capability temporanea
-
-Quando Alice preme `Share Freedom`, non firma una nuova release. Genera soltanto una capability locale temporanea per servire **una release già verificata**:
+Un client genuino può offrire byte di una release già verificata tramite capability temporanea:
 
 ```text
 PeerTransferCapability {
@@ -127,31 +61,13 @@ PeerTransferCapability {
 }
 ```
 
-Questa capability può essere autenticata con una chiave effimera del peer/sessione o protetta da un token CSPRNG. Non concede autorità sulla release.
+Può essere one-shot, TTL breve o bounded a N download.
 
-Può essere:
+La capability non concede autorità sulla release e il client non possiede le release private key.
 
-- one-shot;
-- a TTL breve;
-- limitata a N download;
-- revocata chiudendo l'endpoint locale.
+Consumare la capability non revoca la release globale.
 
-Consumare la capability **non revoca la release globale**.
-
----
-
-## 5. Install QR
-
-Il client espone:
-
-```text
-Share Freedom
-  -> Install QR
-```
-
-Il destinatario può non avere Freedom installato, quindi il QR deve essere utilizzabile dalla fotocamera/browser di sistema.
-
-Descriptor concettuale:
+## 5. Install QR / descriptor
 
 ```text
 FreedomInstallDescriptor {
@@ -167,13 +83,13 @@ FreedomInstallDescriptor {
 }
 ```
 
-Il descriptor è un **locator**, non una root of trust. Non può ridefinire le chiavi ufficiali Freedom.
+Il descriptor è un locator. Non può ridefinire le root ufficiali.
 
----
+Il destinatario può non avere Freedom installato; il QR deve essere utilizzabile da camera/browser/bootstrap verifier di sistema.
 
 ## 6. Decentralized Release Network
 
-La stessa release deve poter essere trovata tramite più sorgenti indipendenti:
+Sorgenti possibili:
 
 ```text
 PEER_LOCAL
@@ -186,70 +102,18 @@ STORE
 future transport
 ```
 
-La rete può usare indirizzamento content-addressed:
+Content addressing:
 
 ```text
 artifact key = SHA-256(APK bytes)
 manifest key = SHA-256(canonical FreedomRelease)
 ```
 
-Un nodo può quindi chiedere:
+Più nodi possono seedare gli stessi byte verificati. Nessun nodo di distribuzione possiede release authority.
 
-```text
-GET artifact_sha256 = X
-```
+## 7. Schema canonico FreedomRelease
 
-senza dover fidarsi del nodo che risponde.
-
-Più peer possono seedare gli stessi byte verificati. Nessun nodo di distribuzione possiede la release authority.
-
----
-
-## 7. Release state sul control-plane
-
-Il control-plane non registra ogni installazione e non banna una release dopo il primo download.
-
-Mantiene invece uno stato piccolo e verificabile per la release:
-
-```text
-ReleaseStatus {
-    release_id
-    artifact_sha256
-    status
-    min_secure_version
-    policy_epoch
-    reason_hash?
-    remediation_release?
-    issued_at
-    signatures[]
-}
-```
-
-Stati minimi:
-
-```text
-ACTIVE
-DEPRECATED
-REVOKED
-```
-
-Semantica:
-
-```text
-ACTIVE      -> installabile secondo normale policy
-DEPRECATED  -> installabile solo se policy lo consente; mostra update raccomandato
-REVOKED     -> non installare / non aggiornare a questa release
-```
-
-Una release viene `REVOKED` solo per motivi di sicurezza/compromissione/policy, non perché un singolo utente l'ha installata.
-
-Nessuna write per singola installazione significa anche **nessuna telemetria on-chain necessaria sul numero o timing degli install**.
-
----
-
-## 8. Release manifest
-
-Oggetto canonico:
+Questo documento usa lo stesso schema di `PROTOCOL.md`, `EMERGENCY_UPDATES.md` e `SECURITY_INVARIANTS.md`:
 
 ```text
 FreedomRelease {
@@ -267,230 +131,178 @@ FreedomRelease {
     criticality
     release_locator_hash
     issued_at
+    signer_set_epoch
     signatures[]
 }
 ```
 
-La release authority firma il **manifest canonico**, non il nome del file.
+Non sono ammesse varianti incompatibili dello stesso oggetto tra documenti/implementazioni.
 
-In production le firme critiche dovrebbero usare governance multi-key/threshold invece di una singola chiave online.
+## 8. ReleaseStatus
 
----
+```text
+ReleaseStatus {
+    release_id
+    artifact_sha256
+    status
+    min_secure_version
+    policy_epoch
+    reason_hash?
+    remediation_release?
+    issued_at
+    signer_set_epoch
+    signatures[]
+}
+```
+
+```text
+ACTIVE
+DEPRECATED
+REVOKED
+```
+
+Nessuna write per singola installazione.
+
+`REVOKED` deriva da governance di sicurezza threshold, non dal fatto che un utente abbia scaricato/installato la release.
 
 ## 9. Verifica prima dell'installazione
 
-Il verifier deve eseguire almeno:
+Il verifier **MUST** eseguire almeno:
 
 ```text
 1. obtain candidate artifact from any source
 2. compute SHA-256 over exact APK bytes
-3. resolve/obtain FreedomRelease
-4. verify release threshold signatures / pinned release root
+3. obtain canonical FreedomRelease
+4. verify signer_set_epoch and threshold release signatures
 5. verify ReleaseStatus != REVOKED
 6. verify package_id
-7. verify version_code / anti-downgrade policy
+7. verify version_code / anti-downgrade
 8. verify artifact_size + artifact_sha256
-9. verify Android APK signing certificate / authorized lineage
-10. verify current SecurityPolicy / min_secure_version
-11. only then invoke Android system installer
+9. verify Android APK signer / authorized lineage
+10. verify current-enough SecurityPolicy / min_secure_version
+11. verify bootstrap trust anchor for first sideload
+12. only then invoke Android system installer
 ```
 
 Qualunque mismatch -> **fail closed**.
 
-Il relay/mirror/peer può mentire sul contenuto ma non deve poter produrre contemporaneamente hash, firme e signer lineage validi per byte modificati.
-
----
-
-## 10. Android signing come seconda barriera
-
-Freedom usa anche la firma APK nativa Android.
-
-Per un aggiornamento di un'app già installata, Android verifica la continuità del certificato/lineage del package. Freedom aggiunge sopra questo controllo la propria verifica di manifest e policy.
-
-Quindi le barriere sono separate:
+## 10. Android signing come barriera indipendente
 
 ```text
-Freedom release signatures
+Freedom threshold signatures
         +
 artifact content hash
         +
-Android APK signing certificate / lineage
+Android APK signer / lineage
         +
-SecurityPolicy / ReleaseStatus
+ReleaseStatus / SecurityPolicy
 ```
 
-Nessuna singola barriera deve essere trattata come sufficiente da sola.
+Nessuna barriera è trattata come sufficiente da sola.
 
----
+## 11. First install — root of trust canonica
 
-## 11. Primo install: problema della root of trust
+Un dispositivo vergine non può derivare matematicamente la “vera” release root da informazioni fornite tutte dallo stesso attaccante.
 
-Un dispositivo che non ha mai visto Freedom non può distinguere matematicamente una chiave ufficiale da una chiave inventata dall'attaccante se **tutte** le informazioni arrivano dallo stesso attaccante.
-
-Per il primo sideload serve quindi almeno una root pubblica già fidata o verificata indipendentemente:
+Per questo il primo sideload usa un **Freedom Bootstrap Verifier** con trust anchor pinned:
 
 ```text
-pinned Freedom release root nel bootstrap verifier
-store verificato
-fingerprint release root verificato out-of-band
-più canali indipendenti che confermano lo stesso root
-trusted existing Freedom client + verifier indipendente
+BootstrapTrustAnchor {
+    verifier_policy_version
+    expected_package_id
+    release_signer_set_root_commitment
+    android_signing_root_or_lineage_anchor
+    minimum_manifest_version
+}
 ```
 
-Il progetto deve minimizzare questa bootstrap trust surface, ma non fingere che possa essere eliminata per magia.
+Il verifier può essere distribuito tramite store/canale indipendente e può mostrare fingerprint per verifica out-of-band.
 
----
+Il peer/QR/mirror che fornisce l'APK **non può modificare**:
+
+```text
+release signer-set root
+Android signer/lineage anchor
+package_id expected
+minimum verifier policy
+```
+
+Questa è la root of trust minima inevitabile del primo install.
 
 ## 12. Offline / control-plane degraded
 
-La distribuzione deve continuare a funzionare anche se una singola RPC è bloccata.
+La distribuzione continua anche se un singolo RPC è bloccato:
 
-Il verifier usa:
+- più RPC/provider;
+- manifest/signature verificabili offline;
+- signer-set cacheato e verificato;
+- ultima SecurityPolicy/ReleaseStatus valida cacheata;
+- expiry/epoch/freshness bounded;
+- source peer/relay/mirror non autoritative.
 
-- più RPC/control-plane provider;
-- manifest firmati verificabili offline;
-- ultima `SecurityPolicy` valida cacheata;
-- expiry/epoch bounded;
-- failover provider;
-- peer/relay/mirror come sorgenti non autoritative.
-
-Per release sensibili, se lo stato di revoca è troppo vecchio rispetto alla policy di freschezza, il verifier può richiedere una verifica più recente prima di installare invece di accettare ciecamente uno stato stale.
-
----
+Se lo stato di revoca è oltre la freshness consentita per una release sensibile, il verifier richiede stato più recente o fallisce esplicitamente.
 
 ## 13. Peer-local transfer
 
 ```text
 Alice Freedom
-  -> seleziona current verified artifact
-  -> apre endpoint temporaneo read-only
-  -> crea PeerTransferCapability
-  -> mostra QR
+  -> selects current verified artifact
+  -> opens temporary read-only endpoint
+  -> creates PeerTransferCapability
+  -> shows QR
 
 Bob
-  -> ottiene descriptor/locator
-  -> scarica artifact
-  -> verifica completamente
-  -> installer Android
+  -> obtains descriptor
+  -> downloads artifact
+  -> verifies completely
+  -> invokes installer
 ```
 
-Endpoint:
+L'endpoint è temporaneo, capability-protected e bounded per tempo/download/banda.
 
-- temporaneo;
-- capability-protected;
-- rate-limited;
-- solo artifact previsto;
-- TTL breve;
-- nessun file server generico.
+## 14. Verified control-plane state
 
----
-
-## 14. Difesa contro app farlocche
-
-Threats:
+Una write che pubblica `FreedomRelease`, `ReleaseStatus`, signer-set o policy non è considerata valida soltanto perché esiste un transaction hash.
 
 ```text
-attacker rinomina fake.apk con nome Freedom credibile
-attacker copia un locator valido ma serve byte differenti
-malicious mirror / relay
-old vulnerable release
-fake package con stessa icona/nome
-same package_id + unauthorized signer
-modified APK after signing
-compromised release signer
-stale policy che non include ancora una revoca
+submit
+ -> acceptable finality
+ -> execution success
+ -> read resulting state
+ -> verify exact expected object/hash/epoch
+ -> only then accept
 ```
 
-Difese:
+## 15. Threats
 
-- filename non autoritativo;
-- signed `FreedomReleaseLocator`;
-- signed `FreedomRelease`;
-- SHA-256 content addressing;
-- APK signer/lineage verification;
-- release status ACTIVE/DEPRECATED/REVOKED;
-- min secure version e anti-downgrade;
-- threshold release governance;
-- multi-RPC/control-plane verification;
+La distribuzione deve resistere a:
+
+- peer/mirror che serve byte modificati;
+- replay di release vecchie;
+- downgrade;
+- locator copiati;
+- source poisoning;
+- singolo signer compromesso;
+- singola RPC malevola/stale;
+- first-install peer malevolo;
+- revocation withholding.
+
+Non protegge contro compromissione simultanea delle threshold root richieste + Android signing root/lineage + verifier trust anchor.
+
+## 16. Invarianti
+
+- APK off-chain;
+- source non è trust;
+- filename/locator non è trust;
+- release private key mai nel client;
+- un solo schema FreedomRelease canonico;
+- production release authorization/revocation threshold;
+- first install con BootstrapTrustAnchor pinned indipendente dalla source;
+- Android signer/lineage verificato separatamente;
+- exact SHA-256 verificato;
+- anti-downgrade;
+- `REVOKED` blocca ogni source;
+- nessuna write per installazione;
+- transaction hash != success;
 - fail closed su mismatch;
-- policy freshness per revoche critiche.
-
----
-
-## 15. Store build vs Direct build
-
-### Google Play build
-
-Usa install/update conforme allo store. `Share Freedom` può portare alla listing ufficiale.
-
-### Freedom Direct
-
-Può usare:
-
-```text
-signed release locator
-content-addressed artifact discovery
-peer-local transfer
-peer-network / relay / mirror
-FreedomRelease verification
-ReleaseStatus / SecurityPolicy verification
-Android PackageInstaller
-```
-
-L'installazione resta user-initiated secondo le regole della piattaforma.
-
----
-
-## 16. UX proposta
-
-![Freedom populated UI concept](assets/freedom-ui-concept.svg)
-
-Il visual è un **concept di prodotto**, non uno screenshot del transport/crypto spike Android corrente. Le label di sicurezza mostrate nella UI devono comparire solo quando il relativo stato è realmente verificato dal client.
-
-Client esistente:
-
-```text
-Share Freedom
-
-Freedom Communication 1.4.2
-Release       VERIFIED
-Security      ACTIVE
-Artifact      9a34…7bc1
-Sources       7 available
-Share link    expires in 10 min
-
-[ QR ]
-```
-
-Verifier sul nuovo dispositivo:
-
-```text
-Freedom Communication
-Version        1.4.2
-Release signer VERIFIED
-APK signer     VERIFIED
-Artifact hash  VERIFIED
-Security state ACTIVE
-Source         Peer / Relay / Mirror
-
-Install
-```
-
-Mai mostrare `Source: Peer` come prova di autenticità.
-
----
-
-## 17. Invarianti
-
-- chiave privata di release mai dentro il client;
-- il client può condividere una release senza poter autorizzare nuove release;
-- filename/URL/capability non sono prove di autenticità;
-- signed locator + signed manifest + exact artifact hash + Android signer + current policy devono concordare;
-- artifact distribuiti da una rete decentralizzata e non fidata;
-- peer/relay/mirror sono intercambiabili e non autoritativi;
-- una release non viene revocata perché un utente la installa;
-- `REVOKED` è uno stato di sicurezza globale firmato;
-- capability di trasferimento possono essere one-shot/TTL senza chain write per installazione;
-- first install richiede una root of trust indipendente;
-- nessuna singola URL/IP/store è requisito permanente della Direct build;
-- compromissione di un nodo di distribuzione non deve permettere di produrre una Freedom valida.
+- nessuna singola source/IP/store obbligatoria per Freedom Direct.
