@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="920" viewBox="0 0 1600 920" role="img" aria-labelledby="title desc">
+  <title id="title">Freedom Communication product screens</title>
+  <desc id="desc">Concept product screens for Freedom Communication showing live E2EE chat, route status, synchronous delivery semantics and an authenticated call.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#050b11"/><stop offset="1" stop-color="#0a1720"/></linearGradient>
+    <linearGradient id="greenGlow" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#7ee35d"/><stop offset="1" stop-color="#32d583"/></linearGradient>
+    <style>
+      .bg{fill:url(#bg)}.panel{fill:#0b1620;stroke:#223342;stroke-width:2}.phone{fill:#02070b;stroke:#64748b;stroke-width:4}.screen{fill:#08131c}.top{fill:#0d1a25}.card{fill:#101f2b;stroke:#1e3444;stroke-width:1.5}.card2{fill:#10291d;stroke:#2d6a46;stroke-width:1.5}.line{stroke:#294253;stroke-width:1.5}.green{fill:#7ee35d}.cyan{fill:#4cc9f0}.purple{fill:#a78bfa}.orange{fill:#f59e0b}.muted{fill:#8aa0b3}.white{fill:#f8fafc}.title{font:700 42px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#f8fafc}.subtitle{font:400 19px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#8aa0b3}.h1{font:700 23px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#f8fafc}.h2{font:600 16px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#f8fafc}.txt{font:400 14px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#d7e2ea}.tiny{font:400 12px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#8aa0b3}.badge{font:700 11px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.mono{font:500 12px ui-monospace,SFMono-Regular,Menlo,monospace;fill:#b8c7d4}
+    </style>
+  </defs>
+  <rect class="bg" width="1600" height="920"/>
+  <text class="title" x="70" y="72">Freedom Communication</text>
+  <text class="subtitle" x="70" y="106">Live authenticated E2EE · no mailbox · replaceable routes · endpoint-held keys</text>
+  <rect class="panel" x="70" y="140" width="1460" height="700" rx="30"/>
+
+  <!-- Phone 1: chats -->
+  <rect class="phone" x="125" y="185" width="390" height="610" rx="46"/>
+  <rect class="screen" x="144" y="210" width="352" height="560" rx="30"/>
+  <rect class="top" x="144" y="210" width="352" height="86" rx="30"/>
+  <text class="h1" x="168" y="252">Chat</text>
+  <circle class="green" cx="172" cy="276" r="5"/><text class="tiny" x="186" y="280">Communication live · E2EE</text>
+  <circle class="green" cx="462" cy="250" r="7"/><text class="tiny" x="462" y="276" text-anchor="middle">NORMAL</text>
+
+  <text class="tiny" x="166" y="326">SESSIONI DISPONIBILI ORA</text>
+  <g>
+    <circle class="green" cx="184" cy="365" r="18"/><text class="h2" x="215" y="361">Alice</text><text class="tiny" x="215" y="381">Voice message · live</text><text class="tiny" x="466" y="360" text-anchor="end">11:42</text><circle class="green" cx="470" cy="380" r="7"/>
+    <line class="line" x1="166" y1="400" x2="474" y2="400"/>
+    <circle class="cyan" cx="184" cy="438" r="18"/><text class="h2" x="215" y="434">Bob</text><text class="tiny" x="215" y="454">Ci sentiamo adesso?</text><text class="tiny" x="466" y="434" text-anchor="end">11:30</text>
+    <line class="line" x1="166" y1="474" x2="474" y2="474"/>
+    <circle class="purple" cx="184" cy="512" r="18"/><text class="h2" x="215" y="508">Charlie</text><text class="tiny" x="215" y="528">Peer offline · no queue</text><text class="badge" x="466" y="520" text-anchor="end" fill="#f59e0b">OFFLINE</text>
+    <line class="line" x1="166" y1="548" x2="474" y2="548"/>
+    <circle class="green" cx="184" cy="586" r="18"/><text class="h2" x="215" y="582">Freedom Team</text><text class="tiny" x="215" y="602">Release bulletin verified</text><text class="tiny" x="466" y="582" text-anchor="end">09:41</text>
+  </g>
+  <rect class="card" x="166" y="650" width="308" height="76" rx="18"/>
+  <text class="h2" x="184" y="678">Network status</text><text class="badge" x="450" y="678" text-anchor="end" fill="#7ee35d">NORMAL</text>
+  <text class="tiny" x="184" y="703">Current route: direct · RTT 34 ms</text>
+  <text class="tiny" x="320" y="752" text-anchor="middle">Chat · Calls · Contacts · Network</text>
+
+  <!-- Phone 2: active chat -->
+  <rect class="phone" x="605" y="185" width="390" height="610" rx="46"/>
+  <rect class="screen" x="624" y="210" width="352" height="560" rx="30"/>
+  <rect class="top" x="624" y="210" width="352" height="86" rx="30"/>
+  <text class="h2" x="650" y="247">←  Alice</text><circle class="green" cx="650" cy="273" r="5"/><text class="tiny" x="664" y="277">Live E2EE · peer verified</text>
+  <text class="tiny" x="950" y="250" text-anchor="end">Shield route</text>
+  <text class="tiny" x="646" y="330">TODAY · ACTIVE SESSION</text>
+  <rect class="card" x="646" y="352" width="234" height="72" rx="18"/><text class="txt" x="664" y="382">Ci sentiamo adesso?</text><text class="tiny" x="664" y="404">11:42 · received live</text>
+  <rect class="card2" x="708" y="446" width="246" height="82" rx="18"/><text class="txt" x="726" y="477">Sì, sessione live attiva.</text><text class="tiny" x="726" y="501">11:42 · ACK</text>
+  <rect class="card" x="646" y="554" width="308" height="100" rx="18"/>
+  <circle class="cyan" cx="672" cy="582" r="7"/><text class="h2" x="692" y="588">Route changed automatically</text>
+  <text class="tiny" x="664" y="615">Direct failed → Relay NL → Bob</text>
+  <text class="tiny" x="664" y="638">Identity/session unchanged · RTT 61 ms</text>
+  <rect class="card" x="646" y="680" width="250" height="48" rx="20"/><text class="tiny" x="664" y="710">Message · active session only</text><circle class="green" cx="932" cy="704" r="20"/>
+  <text class="tiny" x="800" y="752" text-anchor="middle">No offline send queue is created</text>
+
+  <!-- Phone 3: call -->
+  <rect class="phone" x="1085" y="185" width="390" height="610" rx="46"/>
+  <rect class="screen" x="1104" y="210" width="352" height="560" rx="30"/>
+  <text class="tiny" x="1132" y="246">←  LIVE CALL</text>
+  <text class="h1" x="1280" y="304" text-anchor="middle">Alice</text>
+  <text class="subtitle" x="1280" y="338" text-anchor="middle">00:45</text>
+  <text class="badge" x="1280" y="372" text-anchor="middle" fill="#7ee35d">🔒 LIVE E2EE</text>
+  <circle cx="1280" cy="480" r="92" fill="#11271b" stroke="#7ee35d" stroke-width="4"/>
+  <circle cx="1280" cy="480" r="72" fill="#183047"/><text class="title" x="1280" y="494" text-anchor="middle" font-size="54">A</text>
+  <rect class="card" x="1144" y="596" width="272" height="74" rx="18"/>
+  <text class="tiny" x="1162" y="623">Authenticated peer</text><text class="badge" x="1396" y="623" text-anchor="end" fill="#7ee35d">VERIFIED</text>
+  <text class="tiny" x="1162" y="647">Path</text><text class="txt" x="1396" y="647" text-anchor="end">Shield · 2 hops</text>
+  <circle class="muted" cx="1190" cy="710" r="24"/><circle class="muted" cx="1280" cy="710" r="24"/><circle class="muted" cx="1370" cy="710" r="24"/>
+  <text class="tiny" x="1190" y="748" text-anchor="middle">Mute</text><text class="tiny" x="1280" y="748" text-anchor="middle">Speaker</text><text class="tiny" x="1370" y="748" text-anchor="middle">Video</text>
+
+  <text class="tiny" x="800" y="884" text-anchor="middle">Product concept — UI labels must reflect cryptographically verified runtime state, never marketing-only status.</text>
+</svg>
