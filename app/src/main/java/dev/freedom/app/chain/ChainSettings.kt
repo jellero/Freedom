@@ -6,12 +6,10 @@ import android.content.Context
 
 enum class IdentityNetwork(
     val id: String,
-    val displayName: String,
-    val chainOperational: Boolean
+    val displayName: String
 ) {
-    NEAR_TESTNET("near-testnet", "NEAR Testnet", true),
-    NEAR_MAINNET("near-mainnet", "NEAR Mainnet", false),
-    LOCAL("local", "Solo rete locale", true);
+    NEAR_TESTNET("near-testnet", "NEAR Testnet"),
+    NEAR_MAINNET("near-mainnet", "NEAR Mainnet");
 
     companion object {
         fun fromId(value: String?): IdentityNetwork =

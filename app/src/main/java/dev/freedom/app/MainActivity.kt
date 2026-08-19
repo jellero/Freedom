@@ -352,11 +352,6 @@ class MainActivity : AppCompatActivity() {
         val statusBody: String
         val statusColor: Int
         when {
-            chainSettings.network == IdentityNetwork.LOCAL -> {
-                statusTitle = getString(R.string.chain_local_mode)
-                statusBody = getString(R.string.chain_local_mode_body)
-                statusColor = color(R.color.freedom_outline)
-            }
             chainSettings.network == IdentityNetwork.NEAR_MAINNET -> {
                 statusTitle = getString(R.string.chain_not_connected)
                 statusBody = getString(R.string.chain_mainnet_unavailable)
@@ -1522,41 +1517,6 @@ class MainActivity : AppCompatActivity() {
             }
             .setNegativeButton(R.string.cancel, null)
             .show()
-    }
-
-    private fun networkCard(network: IdentityNetwork, descriptionRes: Int): View {
-        val selected = chainSettings.network == network
-        return MaterialCardView(this).apply {
-            radius = dp(20).toFloat()
-            cardElevation = 0f
-            strokeWidth = dp(if (selected) 2 else 1)
-            strokeColor = color(if (selected) R.color.freedom_primary else R.color.freedom_outline)
-            setCardBackgroundColor(
-                color(if (selected) R.color.freedom_primary_container else R.color.freedom_surface)
-            )
-            isClickable = true
-            isFocusable = true
-            setOnClickListener {
-                chainSettings.network = network
-                chainHealth = null
-                chainHealthError = null
-                showMessage(getString(R.string.network_saved_format, network.displayName))
-                if (!network.chainOperational) showMessage(getString(R.string.network_unavailable))
-                showSettings()
-            }
-            val row = LinearLayout(context).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                setPadding(dp(18), dp(16), dp(18), dp(16))
-            }
-            val texts = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
-            texts.addView(titleText(network.displayName))
-            texts.addView(captionText(getString(descriptionRes)))
-            row.addView(texts, LinearLayout.LayoutParams(0, WRAP, 1f))
-            if (selected) row.addView(badge(getString(R.string.selected_network)))
-            addView(row)
-            layoutParams = margins(top = 10)
-        }
     }
 
     private fun informationCard(

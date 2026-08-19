@@ -1,0 +1,109 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1120" viewBox="0 0 1600 1120" role="img" aria-labelledby="title desc">
+  <title id="title">Freedom Gateway architecture</title>
+  <desc id="desc">Freedom Gateway routes selected applications or the whole device through an adaptive encrypted tunnel, replaceable transports, optional relays and bridges, explicit egress nodes and the public Internet. Community device relays are never implicit Internet exits.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z" fill="#475569"/></marker>
+    <marker id="arrowCyan" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z" fill="#0891b2"/></marker>
+    <style>
+      .bg{fill:#fff}.title{font:700 42px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#0f172a}.subtitle{font:400 20px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#475569}.section{font:700 22px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#0f172a}.label{font:600 18px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#0f172a}.small{font:400 16px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#334155}.tiny{font:400 14px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#475569}.box{fill:#f8fafc;stroke:#cbd5e1;stroke-width:2}.client{fill:#eff6ff;stroke:#60a5fa;stroke-width:3}.gateway{fill:#ecfeff;stroke:#06b6d4;stroke-width:3}.adaptive{fill:#f0fdf4;stroke:#22c55e;stroke-width:3}.transport{fill:#f5f3ff;stroke:#8b5cf6;stroke-width:2}.relay{fill:#fff7ed;stroke:#fb923c;stroke-width:3}.egress{fill:#fefce8;stroke:#eab308;stroke-width:3}.internet{fill:#f8fafc;stroke:#64748b;stroke-width:3}.warning{fill:#fff1f2;stroke:#fb7185;stroke-width:2}.line{stroke:#475569;stroke-width:3;fill:none;marker-end:url(#arrow)}.secure{stroke:#0891b2;stroke-width:5;fill:none;marker-end:url(#arrowCyan)}.dash{stroke:#64748b;stroke-width:2.5;stroke-dasharray:9 8;fill:none;marker-end:url(#arrow)}
+    </style>
+  </defs>
+  <rect class="bg" x="0" y="0" width="1600" height="1120"/>
+  <text class="title" x="800" y="58" text-anchor="middle">Freedom Gateway</text>
+  <text class="subtitle" x="800" y="94" text-anchor="middle">Adaptive network path · not a browser · not a single-server VPN · explicit egress only</text>
+
+  <!-- Client -->
+  <rect class="client" x="70" y="150" width="330" height="260" rx="28"/>
+  <text class="section" x="235" y="190" text-anchor="middle">Android device</text>
+  <rect class="box" x="105" y="220" width="260" height="62" rx="16"/>
+  <text class="label" x="235" y="248" text-anchor="middle">Selected apps</text>
+  <text class="tiny" x="235" y="271" text-anchor="middle">Chrome · Firefox · chosen apps</text>
+  <rect class="box" x="105" y="300" width="260" height="62" rx="16"/>
+  <text class="label" x="235" y="328" text-anchor="middle">Whole device</text>
+  <text class="tiny" x="235" y="351" text-anchor="middle">optional device-wide routing</text>
+  <text class="tiny" x="235" y="390" text-anchor="middle">user consent · stop anytime · split tunneling</text>
+
+  <!-- Gateway local -->
+  <rect class="gateway" x="500" y="150" width="380" height="260" rx="28"/>
+  <text class="section" x="690" y="190" text-anchor="middle">Freedom Gateway client</text>
+  <rect class="box" x="540" y="220" width="300" height="68" rx="16"/>
+  <text class="label" x="690" y="249" text-anchor="middle">Android VPN interface</text>
+  <text class="tiny" x="690" y="273" text-anchor="middle">packet capture / routing boundary</text>
+  <rect class="box" x="540" y="306" width="300" height="68" rx="16"/>
+  <text class="label" x="690" y="335" text-anchor="middle">Tunnel + leak policy</text>
+  <text class="tiny" x="690" y="359" text-anchor="middle">DNS · kill switch optional · quotas</text>
+
+  <path class="secure" d="M400 280 L500 280"/>
+  <text class="tiny" x="450" y="258" text-anchor="middle">local tunnel</text>
+
+  <!-- Adaptive -->
+  <rect class="adaptive" x="980" y="150" width="550" height="260" rx="28"/>
+  <text class="section" x="1255" y="190" text-anchor="middle">Adaptive Defense / Path Selector</text>
+  <text class="small" x="1020" y="230">• route / transport health</text>
+  <text class="small" x="1020" y="260">• DPI / protocol-block suspicion</text>
+  <text class="small" x="1020" y="290">• provider / bridge / egress rotation</text>
+  <text class="small" x="1020" y="320">• bounded parallel failover</text>
+  <text class="small" x="1020" y="350">• Maximum Reachability policy</text>
+  <text class="tiny" x="1255" y="390" text-anchor="middle">No universal firewall-bypass guarantee; switch strategy while a usable carrier exists.</text>
+  <path class="line" d="M880 280 L980 280"/>
+
+  <!-- Transports -->
+  <text class="section" x="800" y="482" text-anchor="middle">Replaceable transport strategies</text>
+  <rect class="transport" x="80" y="520" width="260" height="100" rx="20"/>
+  <text class="label" x="210" y="556" text-anchor="middle">Native</text>
+  <text class="tiny" x="210" y="584" text-anchor="middle">TCP/TLS · UDP/QUIC-like</text>
+  <rect class="transport" x="385" y="520" width="260" height="100" rx="20"/>
+  <text class="label" x="515" y="556" text-anchor="middle">Web-like</text>
+  <text class="tiny" x="515" y="584" text-anchor="middle">HTTPS · WebSocket · H2/H3</text>
+  <rect class="transport" x="690" y="520" width="260" height="100" rx="20"/>
+  <text class="label" x="820" y="556" text-anchor="middle">Bridge</text>
+  <text class="tiny" x="820" y="584" text-anchor="middle">non-public · rotating capability</text>
+  <rect class="transport" x="995" y="520" width="260" height="100" rx="20"/>
+  <text class="label" x="1125" y="556" text-anchor="middle">Obfuscated / PT</text>
+  <text class="tiny" x="1125" y="584" text-anchor="middle">pluggable · probing-resistant</text>
+  <rect class="transport" x="1300" y="520" width="220" height="100" rx="20"/>
+  <text class="label" x="1410" y="556" text-anchor="middle">Future</text>
+  <text class="tiny" x="1410" y="584" text-anchor="middle">new carrier adapters</text>
+  <path class="dash" d="M1255 410 C1210 465 980 470 210 520"/>
+  <path class="dash" d="M1255 410 C1190 470 950 475 515 520"/>
+  <path class="dash" d="M1255 410 C1160 480 1020 485 820 520"/>
+  <path class="dash" d="M1255 410 C1230 475 1180 485 1125 520"/>
+  <path class="dash" d="M1255 410 C1320 470 1370 485 1410 520"/>
+
+  <!-- Fabric -->
+  <text class="section" x="800" y="690" text-anchor="middle">Freedom fabric</text>
+  <rect class="relay" x="120" y="725" width="330" height="135" rx="24"/>
+  <text class="label" x="285" y="763" text-anchor="middle">Ingress / intermediate relay</text>
+  <text class="tiny" x="285" y="790" text-anchor="middle">managed · community · device relay</text>
+  <text class="tiny" x="285" y="814" text-anchor="middle">ciphertext forwarding · no arbitrary Internet exit</text>
+  <text class="tiny" x="285" y="838" text-anchor="middle">replaceable / untrusted</text>
+
+  <rect class="relay" x="515" y="725" width="330" height="135" rx="24"/>
+  <text class="label" x="680" y="763" text-anchor="middle">Optional Shield / multi-hop</text>
+  <text class="tiny" x="680" y="790" text-anchor="middle">separate origin from final egress</text>
+  <text class="tiny" x="680" y="814" text-anchor="middle">multiple operators/providers where possible</text>
+  <text class="tiny" x="680" y="838" text-anchor="middle">not equivalent to Freedom Communication E2EE</text>
+
+  <rect class="egress" x="910" y="725" width="330" height="135" rx="24"/>
+  <text class="label" x="1075" y="763" text-anchor="middle">Explicit Freedom Egress</text>
+  <text class="tiny" x="1075" y="790" text-anchor="middle">MANAGED · PRIVATE · BUSINESS</text>
+  <text class="tiny" x="1075" y="814" text-anchor="middle">Internet exit role is explicit and administered</text>
+  <text class="tiny" x="1075" y="838" text-anchor="middle">Free managed target: 100 MB/day</text>
+
+  <rect class="internet" x="1300" y="725" width="220" height="135" rx="24"/>
+  <text class="label" x="1410" y="778" text-anchor="middle">Internet</text>
+  <text class="tiny" x="1410" y="808" text-anchor="middle">HTTPS / app protocol</text>
+  <text class="tiny" x="1410" y="832" text-anchor="middle">destination services</text>
+
+  <path class="secure" d="M450 792 L515 792"/>
+  <path class="secure" d="M845 792 L910 792"/>
+  <path class="line" d="M1240 792 L1300 792"/>
+
+  <!-- Trust note -->
+  <rect class="warning" x="150" y="930" width="1300" height="125" rx="24"/>
+  <text class="section" x="800" y="970" text-anchor="middle">Different trust boundary from Freedom Communication</text>
+  <text class="small" x="800" y="1002" text-anchor="middle">Freedom Communication: authenticated endpoint-to-endpoint E2EE, session keys only at Freedom endpoints.</text>
+  <text class="small" x="800" y="1032" text-anchor="middle">Freedom Gateway: protects/diversifies the path; final application security still depends on HTTPS or that application's own E2EE.</text>
+
+  <text class="tiny" x="800" y="1090" text-anchor="middle">Freedom Gateway · adaptive reachability, explicit egress, replaceable transports, no community open-proxy semantics</text>
+</svg>

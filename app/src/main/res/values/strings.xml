@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Freedom</string>
+    <string name="app_name">Freedom Communication</string>
     <string name="navigation_chats">Chat</string>
     <string name="navigation_contacts">Contatti</string>
     <string name="navigation_settings">Impostazioni</string>
-    <string name="home_title">Freedom</string>
+    <string name="home_title">Freedom Communication</string>
     <string name="home_subtitle">Messaggi privati, davvero.</string>
     <string name="my_identity_short">Il mio QR</string>
     <string name="recent_conversations">CONTATTI</string>
@@ -34,7 +34,7 @@
     <string name="contact_found">Contatto trovato</string>
     <string name="contact_not_found">Contatto non trovato sulla blockchain NEAR.</string>
     <string name="invalid_contact">Il QR non contiene un contatto Freedom valido.</string>
-    <string name="invalid_number">Inserisci un numero Freedom valido di 12 cifre.</string>
+    <string name="invalid_number">Inserisci un numero Freedom valido di 20 cifre.</string>
     <string name="scanner_error_format">Scanner non disponibile: %1$s</string>
     <string name="contact_saved_format">%1$s aggiunto ai contatti</string>
     <string name="contact_save_error">Impossibile salvare il contatto. Controlla lo spazio disponibile e riprova.</string>
@@ -45,10 +45,6 @@
     <string name="identity_network_section">RETE IDENTITÀ</string>
     <string name="near_testnet_description">Sviluppo · nessun token reale</string>
     <string name="near_mainnet_description">Disponibile dopo il deploy del contratto</string>
-    <string name="local_only_description">Nessuna blockchain · stessa Wi-Fi</string>
-    <string name="selected_network">Selezionata</string>
-    <string name="network_saved_format">Rete impostata su %1$s</string>
-    <string name="network_unavailable">Questa rete non è ancora operativa nell’app.</string>
     <string name="chain_status_section">STATO BLOCKCHAIN</string>
     <string name="chain_not_connected">Blockchain non disponibile</string>
     <string name="chain_not_connected_body">Il registro NEAR non è raggiungibile.</string>
@@ -58,8 +54,6 @@
     <string name="chain_connected_body">Contratto %1$s · versione %2$s · blocco %3$,d</string>
     <string name="chain_connection_error">NEAR Testnet non raggiungibile</string>
     <string name="chain_connection_error_body">Controlla la connessione Internet e riprova aprendo nuovamente le impostazioni.</string>
-    <string name="chain_local_mode">Blockchain disattivata</string>
-    <string name="chain_local_mode_body">Freedom usa soltanto discovery e connessioni sulla rete locale.</string>
     <string name="chain_mainnet_unavailable">Il contratto Freedom non è ancora stato distribuito su Mainnet.</string>
     <string name="near_access_section">ACCESSO NEAR DIRETTO</string>
     <string name="near_key_inactive">Chiave NEAR non configurata</string>
@@ -122,9 +116,7 @@
     <string name="unknown_peer_body_format">Fingerprint:\n%1$s\n\nAutorizza soltanto dopo averlo confrontato sull’altro telefono.</string>
     <string name="authorize">Autorizza</string>
     <string name="reject">Rifiuta</string>
-    <string name="local_permission_explanation">Freedom usa la rete locale per trovare i contatti senza mostrare indirizzi IP.</string>
-    <string name="local_permission_denied">Con accesso alla rete locale negato non puoi trovare altri dispositivi.</string>
-    <string name="discovering_number_format">Cerco %1$s sulla rete locale…</string>
+    <string name="discovering_number_format">Cerco %1$s su NEAR Testnet…</string>
     <string name="delete_contact_title">Eliminare %1$s?</string>
     <string name="delete">Elimina</string>
     <string name="online_nearby">Registrato su NEAR</string>
