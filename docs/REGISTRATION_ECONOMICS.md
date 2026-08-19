@@ -3,10 +3,11 @@
 Status: **canonical design draft**
 
 Normative security rules: [`SECURITY_INVARIANTS.md`](SECURITY_INVARIANTS.md).
+Control-plane details: [`CONTROL_PLANE_SECURITY.md`](CONTROL_PLANE_SECURITY.md).
 
 ## 1. Obiettivo
 
-Freedom deve sostenere una base Free ampia senza trasformare la registrazione in un vettore di storage/gas exhaustion.
+Freedom deve sostenere una base Free ampia senza trasformare registration/sponsorship in storage/gas exhaustion.
 
 > **il primo utilizzo deve restare gratuito per una persona; creare identity in massa deve avere un costo crescente per un aggressore.**
 
@@ -14,108 +15,75 @@ Freedom deve sostenere una base Free ampia senza trasformare la registrazione in
 
 ```text
 install
- -> generate RootIdentity locally
+ -> generate RootRecoveryKey / RootIdentity locally
+ -> generate DeviceAuthorizationKey locally
  -> generate DeviceKey locally
  -> generate DeviceRecordCommitment locally
  -> Recovery Kit
  -> 0 mandatory chain writes
 ```
 
-Una installazione abbandonata non consuma storage permanente.
-
-## 3. SponsorshipCommitment domain-separated
-
-La sponsorship non usa `root_commitment` come identificatore globale riutilizzato.
-
-Derivare un commitment dedicato:
+## 3. SponsorshipCommitment
 
 ```text
-SponsorshipCommitment = H(root/sponsorship context, "sponsorship", ...)
+SponsorshipCommitment = H(sponsorship-specific context, domain)
 ```
 
-Deve essere distinto da:
-
-```text
-DeviceAuthorizationCommitment
-EntitlementCommitment
-PaymentBindingCommitment
-PairwiseContactAlias / PairRendezvousSecret
-```
+Separato da device authorization, entitlement, payment e pairwise state.
 
 ## 4. Sponsored registration
 
 ```text
-NEW ROOT IDENTITY
- -> valid root proof/signature?
- -> SponsorshipCommitment valid?
+NEW OWNERSHIP CONTINUITY
+ -> valid ownership/sponsorship proof?
+ -> SponsorshipCommitment valid/unused?
  -> anti-abuse proof valid?
- -> sponsorship already consumed?
  -> relayer rate limit OK?
  -> global bounded budget OK?
- -> submit registration
- -> verify finality/execution/state
+ -> submit
+ -> finality proof
+ -> execution success
+ -> resulting state proof
  -> REGISTERED
 ```
 
-Un transaction hash non equivale a registrazione riuscita.
+Transaction hash != success.
 
-## 5. Adaptive proof-of-work
+## 5. Privacy del proof
 
-Una challenge può legare:
+La registration production non deve richiedere di pubblicare inutilmente lo stesso global RootIdentity identifier insieme a device/payment/social state.
+
+Quando serve dimostrare ownership continuity senza renderla un correlatore universale, usare commitment/credential/nullifier/proof separati per dominio.
+
+Un Testnet proof linkabile deve essere dichiarato come limitazione temporanea.
+
+## 6. Adaptive proof-of-work
+
+Challenge può legare:
 
 ```text
 challenge
-root_public_key_or_commitment
+sponsorship/ownership proof context
 nonce
-expiry/context
+expiry
+network/policy epoch
 ```
 
-La difficoltà deve essere bassa per un singolo utente su hardware economico ma rendere costosa la creazione massiva automatizzata.
+Difficoltà benchmarkata su device rappresentativi e adattabile sotto abuso.
 
-Valori concreti solo dopo benchmark reali su device rappresentativi.
+## 7. Relayer multipli
 
-## 6. Relayer multipli e rate limit
+Più fee relayer indipendenti; ogni relayer ha rate/budget bounds.
 
-Più fee relayer indipendenti possono sponsorizzare registration/rare operations.
+IP, telefono, payment account o DeviceRecordCommitment non diventano global Freedom identity.
 
-Ogni relayer impone limiti bounded per tempo/budget.
+## 8. Una sponsorship per ownership continuity
 
-Il blocco di un singolo relayer non deve diventare censura globale.
+Il control-plane impedisce sponsorship iniziali illimitate per la stessa continuity senza pubblicare un global user identifier leggibile.
 
-IP, numero di telefono, account commerciale o DeviceRecordCommitment non diventano identità pubblica Freedom.
+Reinstall/nuovo device usa Recovery Kit e continuity esistente.
 
-## 7. Una sponsorship per ownership continuity
-
-Il control-plane deve impedire che la stessa ownership continuity consumi sponsorship iniziali illimitati senza pubblicare un global user identifier leggibile.
-
-Reinstall/nuovo telefono usa Recovery Kit e RootIdentity esistente; non crea automaticamente una nuova RootIdentity solo per ottenere nuova sponsorship.
-
-Nuove DeviceKey sono soggette a `max_devices` dell'entitlement.
-
-## 8. Budget globale/dinamico
-
-Durante abuso:
-
-```text
-proof difficulty     -> può aumentare
-per-relayer rate     -> può ridursi
-sponsorship budget   -> resta bounded
-existing users       -> continuano a comunicare
-```
-
-Un attacco alla registration non deve interrompere utenti già attivi o recovery essenziale.
-
-## 9. Storage minimale e bounded
-
-Permanent state solo quando realmente necessario:
-
-```text
-root/ownership commitment state
-opaque current device records
-key epoch / revocation status
-entitlement summary/commitment
-signer/policy state
-```
+## 9. Active storage bounded
 
 Temporary state:
 
@@ -123,24 +91,22 @@ Temporary state:
 rendezvous
 RecoveryBeacon
 PurchaseIntent
-route hints / bounded recovery state
+anti-abuse challenge/state
 ```
 
-Ogni stato temporaneo ha:
+Ogni record ha:
 
 - size bound;
 - TTL/epoch;
 - rate limit;
 - authorization;
-- overwrite/reclaim strategy quando possibile.
+- **concrete reclaim/overwrite strategy**.
 
-Vietato memorizzare:
+Consentiti: ring/bucket bounded, overwrite, `prune_expired`, lease/rent, refund/bounty bounded.
 
-- messages/mailbox;
-- media/history;
-- readable social graph;
-- pairwise alias globalmente leggibili;
-- continuous presence.
+Vietato creare una nuova map key per ogni rinnovo senza reclaim.
+
+La storia archiviale della chain resta osservabile; il requisito è bounded active state.
 
 ## 10. Costo cresce con eventi rari
 
@@ -151,41 +117,49 @@ active session     -> 0 heartbeat writes
 normal route       -> 0 recovery writes
 ```
 
-Chain writes solo per eventi rari/bounded: registration, device activation/rotation/revocation, recovery/rendezvous, entitlement/payment/policy/release.
+## 11. Contact slots
 
-## 11. Free tier anti-abuse
+Il target `10 active contacts` è **product policy del client ufficiale**, non anti-Sybil primitive del protocollo.
 
-Target iniziale:
+Non pubblicare social graph per enforceare commercialmente la quota.
 
-- 1 ownership continuity sponsorizzabile;
-- 1 active device Free;
-- 10 active contact-person slots;
-- core messaging/calls non tariffati per messaggio;
-- Emergency Shield bounded su capacity reale;
-- recovery essenziale non usato come leva commerciale.
+Un futuro enforcement anti-tamper richiede credential/nullifier/ZK dedicati e reviewati.
 
-## 12. Metriche prima della mainnet
+## 12. Budget dinamico
 
-- byte per root/device/entitlement record;
-- costo registration/rotation/revocation;
-- storage per 100k / 1M active identities;
-- costo/latenza RecoveryBeacon;
-- correlabilità activation/revocation/rendezvous/sponsorship;
-- benchmark PoW su hardware reale;
-- attack simulation su relayer/budget;
-- failed-tx/state-mismatch behavior;
-- storage-exhaustion simulation.
+Durante abuso:
 
-Non fissare parametri permanenti prima delle misure.
+```text
+proof difficulty     -> may increase
+per-relayer rate     -> may decrease
+sponsorship budget   -> bounded
+existing users       -> continue communicating
+```
 
-## 13. Invarianti
+Registration attack non interrompe utenti già attivi/recovery essenziale.
 
-- install locale = 0 mandatory writes;
-- SponsorshipCommitment domain-separated;
-- nessun SMS/PayPal/telefono obbligatorio per identity Free;
-- più relayer possibili;
-- budget/rate/storage bounded;
-- existing users non dipendono dal successo delle nuove registration;
+## 13. Metriche prima della mainnet
+
+- bytes per active state object;
+- storage convergence dopo migliaia/milioni logici di renewals;
+- prune/refund/bounty behavior;
+- registration/rotation/revocation cost;
+- sponsorship correlation analysis;
+- adaptive PoW benchmarks;
+- Sybil simulations;
+- malicious/stale RPC;
+- failed transaction/state mismatch;
+- device authorization privacy proof behavior.
+
+## 14. Invarianti
+
+- install = 0 mandatory writes;
+- no global user identifier introdotto per anti-abuse;
+- sponsorship domain-separated;
+- no phone/SMS/payment identity requirement universale;
+- multiple relayers;
+- active temporary storage reclaimable/bounded;
+- existing users independent from new-registration availability;
 - no mailbox/message/media on-chain;
-- transaction hash != success;
-- stato registrato solo dopo finalità/esecuzione/state verification.
+- contact quota non è social-graph enforcement V1;
+- transaction hash != success.
