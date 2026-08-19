@@ -3,35 +3,51 @@
 Status: **canonical design draft**
 
 Normative security rules: [`SECURITY_INVARIANTS.md`](SECURITY_INVARIANTS.md).
+Control-plane details: [`CONTROL_PLANE_SECURITY.md`](CONTROL_PLANE_SECURITY.md).
 
 ## 1. Obiettivo
 
-Freedom deve autenticare persone e device, ruotare/revocare chiavi e far rispettare limiti multi-device senza trasformare un identificatore globale in un indirizzo visibile a tutta la rete.
-
-Decisione architetturale:
+Freedom autentica persone e device, ruota/revoca chiavi e supporta multi-device senza trasformare un identificatore globale in un indirizzo di rete.
 
 > **Freedom non usa un `DeviceID` globale come identità pubblica o identificatore di trasporto.**
 
 Separazione canonica:
 
 ```text
-RootIdentity                    -> ownership / recovery
-DeviceCertificate               -> autorizzazione offline della DeviceKey
-DeviceKey                       -> chiave operativa del device
-DeviceRecordCommitment          -> handle opaco del control-plane
-PairwiseContactAlias            -> alias specifico della relazione
-TransportToken                  -> token temporaneo di route/circuito
-Session keys                    -> E2EE effimera
-EntitlementCommitment           -> entitlement/licenza domain-separated
-PaymentBindingCommitment        -> binding pagamento domain-separated
-SponsorshipCommitment           -> anti-abuse/sponsorship domain-separated
+RootRecoveryKey                 -> cold recovery / user-root continuity
+RootIdentity                    -> ownership identity / root epoch
+DeviceAuthorizationKey          -> delegated device-authorization epoch
+DeviceCertificate               -> offline authorization of DeviceKey
+DeviceKey                       -> operational device authentication
+DeviceRecordCommitment          -> opaque control-plane handle
+PairwiseContactAlias            -> relationship-specific alias
+PairRendezvousSecret            -> pairwise recovery/rendezvous secret
+TransportToken                  -> temporary route/circuit token
+Session keys                    -> ephemeral E2EE
+EntitlementCommitment           -> domain-separated entitlement state
+PaymentBindingCommitment        -> domain-separated payment state
+SponsorshipCommitment           -> domain-separated sponsorship state
 ```
 
-Questi livelli **MUST NOT** essere riutilizzati automaticamente tra loro.
+## 2. Root key hierarchy
 
-## 2. RootIdentity
+La chiave di recovery non deve essere usata come chiave operativa quotidiana.
 
-`RootIdentity` rappresenta ownership e continuità dell'identità Freedom.
+```text
+RootRecoveryKey
+   |
+   +-> RootIdentity / root epoch
+   |
+   `-> DeviceAuthorizationDelegation
+             |
+             `-> DeviceCertificate
+                        |
+                        `-> DeviceKey
+```
+
+`RootRecoveryKey` deve restare cold/offline quando la piattaforma e UX lo consentono.
+
+## 3. RootIdentity
 
 ```text
 RootIdentity {
@@ -39,56 +55,48 @@ RootIdentity {
     root_public_key
     root_commitment
     root_epoch
+    recovery_policy_commitment?
 }
 ```
 
-Serve per:
+Serve per ownership continuity e recovery, non per routing, messaging, payment reference o session encryption.
 
-- Recovery Kit;
-- autorizzazione/revoca device;
-- recovery dopo reset/furto;
-- derivazione di commitment domain-separated;
-- governance locale dell'identità.
-
-Non viene usata come:
-
-- message/media key;
-- session key;
-- contact alias di rete;
-- routing identifier;
-- payment provider reference.
-
-Il `root_commitment` non deve essere inviato inutilmente nel network layer e non deve diventare il correlatore universale del control-plane.
-
-## 3. Domain-separated account state
-
-Quando un servizio richiede stato stabile, Freedom deve derivare commitment separati per dominio invece di riutilizzare un unico `root_commitment` ovunque.
-
-Concettualmente:
+## 4. DeviceAuthorizationDelegation
 
 ```text
-DeviceAuthorizationCommitment = H(root context, "device-auth", ...)
-EntitlementCommitment         = H(root context, "entitlement", ...)
-PaymentBindingCommitment      = H(root context, "payment", ...)
-SponsorshipCommitment         = H(root context, "sponsorship", ...)
+DeviceAuthorizationDelegation {
+    root_epoch
+    authorization_public_key
+    authorization_epoch
+    capabilities
+    valid_from
+    expires_at
+    root_recovery_signature
+}
 ```
 
-Requisiti:
+La delegation può essere ruotata senza usare direttamente `RootRecoveryKey` per ogni device action.
 
-- commitment differenti non devono essere linkabili per semplice uguaglianza;
-- rendezvous pairwise non usa commitment account-global;
-- il provider di pagamento non riceve commitment Freedom globali in plaintext salvo necessità dimostrata;
-- enforcement futuri possono usare slot/nullifier/blind commitment/ZK proof se necessari per ridurre correlazione.
+Compromettere `DeviceAuthorizationKey` non deve automaticamente compromettere la RootRecoveryKey.
 
-## 4. DeviceKey e DeviceRecordCommitment
+## 5. Domain-separated account state
 
-Ogni device genera una propria `DeviceKey`.
+```text
+DeviceAuthorizationCommitment
+EntitlementCommitment
+PaymentBindingCommitment
+SponsorshipCommitment
+```
 
-Il control-plane mantiene un handle tecnico opaco:
+sono separati per dominio.
+
+Domain separation impedisce uguaglianza/riuso diretto ma non garantisce da sola unlinkability se più commitment compaiono nella stessa transazione o prova.
+
+## 6. DeviceRecordCommitment
 
 ```text
 DeviceRecordCommitment = H(
-    DeviceAuthorizationCommitment ||
+    device_authorization_context ||
     device_random_secret ||
     domain_separator
 )
@@ -106,24 +114,39 @@ DeviceRecord {
 }
 ```
 
-Il commitment serve a lookup/rotation/revocation e può restare stabile durante una normale rotazione della DeviceKey, ma:
+Non è username, contact ID, route ID o relay token.
 
-- non è username;
-- non è contact ID;
-- non è endpoint di rete;
-- non deve essere annunciato ai relay quando non necessario;
-- non deve comparire nei normali message frame;
-- non deve essere riutilizzato come alias tra relazioni differenti.
+## 7. Privacy del device authorization
 
-## 5. DeviceCertificate — autorizzazione verificabile offline
+Una firma RootIdentity pubblicata direttamente accanto a `device_public_key` renderebbe osservabile il mapping account→device.
 
-La RootIdentity autorizza la DeviceKey corrente tramite un certificato verificabile senza RPC nel packet hot path:
+Target production:
+
+```text
+DeviceAuthorizationProof {
+    device_record_commitment
+    device_public_key
+    key_epoch
+    slot_nullifier
+    authorization_policy_epoch
+    proof
+}
+```
+
+Il proof dimostra membership/authorization/slot valido senza pubblicare la RootIdentity.
+
+La costruzione concreta può usare anonymous credentials / ZK membership e deve essere reviewata.
+
+Se Testnet usa una prova linkabile, questa limitazione deve essere dichiarata esplicitamente e non spacciata per privacy production.
+
+## 8. DeviceCertificate
 
 ```text
 DeviceCertificate {
     version
     network_id
     root_identity_commitment_or_proof
+    authorization_epoch
     device_public_key
     key_epoch
     protocol_version
@@ -131,84 +154,78 @@ DeviceCertificate {
     issued_at
     expires_at
     certificate_id
-    root_authorization_signature
+    authorization_signature
 }
 ```
 
-Il certificato prova che la DeviceKey è stata autorizzata dalla RootIdentity attesa.
+Il peer verifica offline:
 
-Un peer deve poter verificare offline:
+- delegation chain;
+- network;
+- DeviceKey binding;
+- key/authorization epoch;
+- expiry/freshness policy;
+- expected contact relationship.
 
-```text
-signature
-network_id
-DeviceKey binding
-key_epoch
-protocol/version constraints
-expiry
-expected RootIdentity/contact relationship
-```
+Revocation state proviene da control-plane/cache crittograficamente verificata, non dalla fiducia in un RPC.
 
-Il control-plane serve per revocation, rotation, freshness e recovery; **non deve essere una RPC obbligatoria per ogni handshake**.
+## 9. Device activation / rotation
 
-Una cache di revoca troppo vecchia può richiedere refresh prima di un nuovo handshake secondo policy, ma nessuna singola RPC diventa trust anchor.
-
-## 6. Device activation
-
-Un nuovo device genera nuova DeviceKey e nuovo commitment e viene autorizzato dalla RootIdentity:
+Concettualmente:
 
 ```text
 ActivateDevice {
-    device_authorization_commitment
+    device_authorization_proof
     device_record_commitment
     device_public_key
     key_epoch
-    entitlement_epoch
+    slot_nullifier
     nonce
-    root_signature
 }
 ```
 
-Dopo stato finalizzato/verificato il device può emettere/usare il `DeviceCertificate` coerente con il record.
+Il target production evita `root_signature` pubblica linkabile come requisito di state transition.
 
-Il control-plane deve poter far rispettare:
+Una rotazione incrementa `key_epoch` e produce nuovo `DeviceCertificate`.
+
+## 10. UserRootRotation
+
+Perdita di device e compromissione della root sono casi differenti.
 
 ```text
-active_devices <= max_devices
+LOST_DEVICE
+ -> revoke old DeviceKey
+ -> authorize new DeviceKey
+
+ROOT_COMPROMISE
+ -> UserRootRotation
+ -> new RootRecoveryKey / root epoch
+ -> re-authorize devices
 ```
 
-senza pubblicare un elenco leggibile dei device appartenenti alla stessa persona.
-
-## 7. Rotation e revocation
-
 ```text
-RotateDeviceKey {
-    device_record_commitment
-    old_epoch
-    new_epoch
-    new_public_key
-    authorization_proof
+UserRootRotation {
+    old_root_epoch
+    new_root_public_key
+    new_root_commitment
+    continuity_proof
+    recovery_policy_proof
+    issued_at
 }
 ```
 
-Una rotazione incrementa `key_epoch` e produce un nuovo `DeviceCertificate`.
+## 11. Contatto = persona / RootIdentity
 
-La revoca rende il record/certificato non valido per nuovi handshake secondo freshness policy.
-
-Un attacker che conosce il commitment non ottiene automaticamente informazioni di routing o capacità di contatto.
-
-## 8. Contatto = persona / RootIdentity
-
-La rubrica rappresenta un contatto logico, non un singolo telefono.
+La rubrica rappresenta una persona, non un device.
 
 ```text
-Bob / RootIdentity
-  |- Phone
-  |- Tablet
-  `- Desktop
+Bob
+  |- Phone DeviceCertificate
+  |- Tablet DeviceCertificate
+  `- Desktop DeviceCertificate
 ```
 
-Bootstrap intenzionale tramite QR/link/NFC/copia-incolla:
+Bootstrap:
 
 ```text
 FreedomContact {
@@ -222,11 +239,28 @@ FreedomContact {
 }
 ```
 
-`contact_capability` abilita bootstrap/rendezvous iniziale ma non concede impersonation.
+La capability abilita bootstrap, non impersonation.
 
-## 9. Pairwise identity
+## 12. First-contact substitution
 
-Dopo il primo handshake autenticato Alice e Bob derivano stato specifico della relazione:
+Un attaccante che sostituisce **l'intero descriptor** prima del primo bootstrap può far stabilire una relazione crittograficamente valida con la propria identity.
+
+Questo non è risolvibile dalla sola E2EE.
+
+Il client deve supportare:
+
+```text
+BOOTSTRAP_UNVERIFIED
+CONTACT_VERIFIED
+```
+
+La promozione a `CONTACT_VERIFIED` può usare safety code/fingerprint/out-of-band verification.
+
+Copiare un QR valido non concede private key; sostituire il descriptor prima del bootstrap è una minaccia differente.
+
+## 13. Pairwise identity
+
+Dopo handshake autenticato:
 
 ```text
 PairSecret_AB
@@ -234,74 +268,89 @@ PairwiseContactAlias_AB
 PairRendezvousSecret_AB
 ```
 
-Relazioni differenti devono produrre alias differenti:
+Relazioni differenti producono alias differenti.
+
+## 14. Limite del claim pairwise
+
+Pairwise alias/rendezvous riducono correlazione da parte dell'infrastruttura.
+
+Non garantiscono automaticamente unlinkability contro **contatti colludenti** se Bob e Carol vedono lo stesso root proof/certificate material e lo confrontano.
+
+Claim corretto base:
+
+> Freedom non riutilizza un global routing/contact identifier tra relazioni.
+
+Un claim più forte contro contatti colludenti richiede anonymous credential/pairwise-scoped identity proof specificamente implementati.
+
+## 15. Pairwise recovery / multi-device
+
+`PairSecret` e `PairRendezvousSecret` non vengono messi on-chain.
+
+Recovery supportato:
 
 ```text
-Alice <-> Bob     alias X
-Alice <-> Carol   alias Y
+A. existing authorized device -> authenticated device-to-device transfer
+B. encrypted PairwiseRecoveryBundle
 ```
 
-Conoscere X non deve consentire di collegarlo automaticamente a Y.
+```text
+PairwiseRecoveryBundle {
+    version
+    state_epoch
+    contacts_metadata_ciphertext
+    pairwise_state_ciphertext
+    integrity
+}
+```
 
-## 10. Rendezvous
+Il bundle usa una `RecoveryStateKey` separata dal transport/session state e viene protetto dal Recovery Kit policy.
 
-Gli slot rendezvous/recovery derivano da `PairRendezvousSecret`, non da RootIdentity o DeviceRecordCommitment pubblico.
+Se tutti i device sono persi e non esiste bundle pairwise valido:
+
+> ownership può essere recuperata, ma i contatti devono essere re-bootstrapati.
+
+Non ricostruire il social graph da stato pubblico.
+
+## 16. Rendezvous
+
+Gli slot derivano da `PairRendezvousSecret`:
 
 ```text
 PairRendezvousSecret
-    -> directional rotating slots
-    -> encrypted RendezvousRecord
-    -> encrypted RecoveryBeacon
+ -> directional rotating slot
+ -> encrypted RendezvousRecord / RecoveryBeacon
 ```
 
-Il payload cifrato può includere `DeviceCertificate` hash/proof, `key_epoch` e candidate temporanei; il record pubblico non espone una relazione leggibile root/device/route.
+Il record pubblico non espone root/device/route mapping leggibile.
 
-## 11. Handshake
+## 17. Handshake / negotiation
 
-L'handshake autentica contemporaneamente:
-
-1. la RootIdentity/contact identity attesa per la relazione;
-2. il `DeviceCertificate` corrente;
-3. il possesso della DeviceKey;
-4. il transcript effimero della sessione.
-
-Il transcript **MUST** legare almeno:
+Il transcript lega:
 
 ```text
 network_id
-protocol_version
-local_pairwise_alias_or_commitment
-remote_pairwise_alias_or_commitment
-local_device_certificate_hash_or_proof
-remote_device_certificate_hash_or_proof
-local_key_epoch
-remote_key_epoch
-ephemeral_keys
+expected relationship
+DeviceCertificate/delegation proofs
+key epochs
+supported versions from both peers
+supported suites from both peers
+selected version/suite
+ephemeral keys
 nonces
-negotiated_suite
 session_id
 ```
 
-Il peer non deve accettare semplicemente “qualunque chiave che firma se stessa”.
+La selezione deve rispettare una policy anti-downgrade: autenticare solo la suite finale non è sufficiente se un attacker può fare offer stripping prima della scelta.
 
-## 12. Forward secrecy
+Il peer non accetta “qualunque chiave che firma se stessa”.
 
-Il materiale statico di RootIdentity/DeviceKey autentica la sessione ma non deve essere sufficiente a ricostruire sessioni precedenti.
+## 18. Forward secrecy
 
-Freedom Communication richiede:
+Freedom Communication richiede ephemeral key exchange, FS tra sessioni, bounded traffic-key lifetime, rekey e media keys separate.
 
-- ephemeral key exchange per nuova sessione;
-- forward secrecy tra sessioni;
-- traffic-key lifetime bounded;
-- rekey periodico per sessioni lunghe;
-- media keys separate dalle messaging keys;
-- ratchet standard/reviewato come target per post-compromise security.
+Root/DeviceKey statiche autenticano; non devono ricostruire sessioni concluse.
 
-## 13. Transport identity
-
-Routing e identità sono separati.
-
-Il transport usa capability temporanee:
+## 19. Transport identity
 
 ```text
 TransportToken
@@ -310,13 +359,11 @@ NextHopToken
 RouteCapability
 ```
 
-Un relay non dovrebbe ricevere RootIdentity/DeviceRecordCommitment quando gli basta un token di circuito.
+sono temporanei e separati dall'identity plane.
 
-## 14. Message layer
+## 20. Message layer
 
-Dentro una sessione autenticata l'identità del mittente è già implicita nel contesto.
-
-Preferire:
+Dentro una sessione autenticata non serve un global sender ID per ogni frame.
 
 ```text
 ChatMessage {
@@ -328,35 +375,26 @@ ChatMessage {
 }
 ```
 
-Nessun identificatore globale stabile viene aggiunto a ogni message/ACK/media frame senza necessità protocollare dimostrata.
+## 21. Privacy invariants
 
-## 15. Privacy invariants
-
-- nessun `DeviceID` globale user-facing o transport-facing;
+- no global DeviceID network-facing;
 - RootIdentity non è routing ID;
 - DeviceRecordCommitment non è contact ID;
-- DeviceCertificate è prova di autorizzazione, non network address;
-- contatto = persona/RootIdentity, non device;
-- alias pairwise differenti tra relazioni;
-- rendezvous/recovery derivati da secret pairwise;
-- relay/circuiti usano token temporanei;
-- commitment account/service domain-separated;
-- nessun mapping pubblico leggibile `RootIdentity -> devices[]`;
-- nessun mapping pubblico leggibile `device -> IP/relay/route`;
-- sessioni precedenti non dipendono dalla segretezza futura della DeviceKey.
+- device authorization production non pubblica account→device mapping leggibile;
+- pairwise aliases/rendezvous per relazione;
+- commitment service domain-separated;
+- no public social graph;
+- old sessions non dipendono dalla futura segretezza della DeviceKey;
+- colluding-contact unlinkability non viene promessa senza primitive dedicate.
 
-## 16. Trade-off
+## 22. Trade-off da misurare
 
-Questa separazione riduce la correlazione ma non elimina automaticamente metadata leakage.
-
-Restano da misurare:
-
-- timing delle write control-plane;
+- timing control-plane;
 - activation/revocation pattern;
+- transaction linkage;
 - RPC/provider visibility;
-- IP/ASN observation;
+- IP/ASN;
 - relay ingress/egress timing;
-- dimensioni/pattern del traffico;
-- uso e frequenza dei commitment di entitlement/sponsorship/payment.
-
-La metadata privacy va verificata empiricamente; non è garantita dalla sola nomenclatura.
+- traffic size/timing;
+- contact verification usability;
+- pairwise backup attack surface.
