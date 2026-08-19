@@ -1,42 +1,34 @@
 # Freedom — Relay Architecture
 
-Status: **canonical design draft**
+Status: **canonical design draft**.
 
 Normative security rules: [`SECURITY_INVARIANTS.md`](SECURITY_INVARIANTS.md).
-Shield circuit details: [`SHIELD.md`](SHIELD.md).
+Shield details: [`SHIELD.md`](SHIELD.md).
+Schema: [`../spec/freedom.cddl`](../spec/freedom.cddl).
 
 ## 1. Definizione
 
-Un relay Freedom inoltra ciphertext tra endpoint/hop. Può essere VPS, server, mini-PC, community node, managed/private infrastructure o normale device Freedom opt-in.
+Un relay Freedom inoltra ciphertext tra endpoint o hop successivi. Può essere VPS/VM, dedicated server, mini-PC, community node, managed/private node o normale device opt-in.
 
-Il relay non è account server, mailbox, identity authority o Internet egress implicito.
+Il relay non è account server, mailbox, trust anchor o implicit Internet exit.
 
 > **forward, not store.**
 
-## 2. Classi
+## 2. Relay classes
 
 ```text
-DEDICATED
-COMMUNITY
-DEVICE
-PRIVATE
-MANAGED
+DEDICATED_RELAY
+COMMUNITY_RELAY
+DEVICE_RELAY
+PRIVATE_RELAY
+MANAGED_RELAY
 ```
 
-La classe descrive ruolo operativo, non trust crittografico.
+La classe non è un trust signal crittografico.
 
 ## 3. Device Relay
 
-Un device può essere contemporaneamente:
-
-```text
-ENDPOINT
-RELAY
-```
-
-con context/keys logicamente separati.
-
-Opt-in policy:
+`DEVICE_RELAY` è opt-in e resource-bounded:
 
 ```text
 relay_enabled
@@ -51,76 +43,41 @@ max_cpu
 background_policy
 ```
 
-## 4. Relay identity / descriptor
+Endpoint context e relay context restano separati.
 
-Un `relay_id` da solo non dimostra operator independence.
+## 4. RelayDescriptor
 
-```text
-RelayDescriptor {
-    relay_public_key
-    relay_id
-    relay_class
-    endpoint
-    transport
-    capabilities
-    self_declared_metadata?
-    observed_metadata?
-    provenance_metadata?
-    expires_at
-    signature
-}
-```
+Schema canonico: `relay-descriptor`.
 
-```text
-RelayCandidate {
-    descriptor_hash
-    capability_token?
-    capacity_hint?
-}
-```
+Un descriptor firmato prova soltanto possesso della relay key e integrità dei campi firmati. Non prova che operator/geography/provider self-declared siano veri.
 
-La relay key autentica il descriptor corrente; non è identity dell'utente che gestisce il relay.
+## 5. Provenance
 
-## 5. Provenance classes
+`provenance-attestation` può attestare claim bounded/expiring come network/provider observation o managed ownership.
 
 Il selector distingue:
 
 ```text
 SELF_DECLARED
 OBSERVED
-VERIFIED_PROVENANCE
+ATTESTED_PROVENANCE
 ```
 
-Esempi:
+Una attestation singola non dimostra operator independence. Più attestazioni dello stesso issuer/custody domain non contano automaticamente come issuer indipendenti.
 
-- geografia dichiarata dal relay = `SELF_DECLARED`;
-- ASN/provider osservato dalla rete = `OBSERVED`;
-- operator/provenance attestato da una source verificabile = `VERIFIED_PROVENANCE`.
+## 6. Diversity / Sybil
 
-Non trattare metadata self-declared come prova di diversity.
+```text
+N relay IDs != N independent operators
+```
 
-## 6. Sybil / eclipse
+Preferire diversity tra source/directory, observed ASN/provider, provenance issuer, relay class e transport quando disponibile.
 
-Un attacker può creare molti relay IDs, IP e capacity hints.
+La diversity resta probabilistica; un adversary può creare Sybil endpoints e colludere con attestatori compromessi.
 
-Difese target:
+## 7. Forwarding identity separation
 
-- più sorgenti di discovery indipendenti;
-- relay public keys/descriptor firmati;
-- provenance e observed network metadata;
-- diversity per ASN/provider/source/operator quando disponibile;
-- randomizzazione controllata;
-- evitare circuiti costruiti interamente da una singola directory/provenance;
-- bounded reputation/capability senza social graph;
-- circuit rebuild su pattern anomali.
-
-`N relay IDs` **non significa** `N operatori indipendenti`.
-
-## 7. Reachability
-
-Un `DEVICE` relay non richiede necessariamente public inbound port. Può essere raggiungibile tramite NAT mapping, transport compatibile, connessione outbound persistente o LAN/local transport.
-
-## 8. Forwarding identity separation
+Relay usa capability temporanee:
 
 ```text
 TransportToken
@@ -128,30 +85,15 @@ RelayCircuitToken
 NextHopToken
 ```
 
-Un relay non riceve RootIdentity/DeviceRecordCommitment quando un capability token basta.
+RootIdentity, DeviceRecordCommitment e pairwise alias non vengono inseriti nei relay header quando non necessari.
 
-```text
-RelayPacket {
-    version
-    packet_id
-    next_hop_token
-    hop_limit
-    expires_at
-    ciphertext
-}
-```
+## 8. No mailbox
 
-## 9. Nessuna mailbox
+Consentiti solo buffer RAM bounded, timeout brevi e local retry limitato per il circuito corrente.
 
-Se next hop è irraggiungibile:
+Vietati inbox persistente, conversation database e store-and-forward offline.
 
-- bounded RAM buffering per forwarding immediato;
-- timeout/retry breve del circuito corrente;
-- poi drop/failure.
-
-Vietati persistent inbox, conversation database, offline store-and-forward e replica per consegna futura.
-
-## 10. Resource bounds
+## 9. Resource bounds
 
 Ogni relay impone almeno:
 
@@ -168,95 +110,50 @@ hop_limit
 bandwidth_quota
 ```
 
-Per `DEVICE_RELAY` anche CPU/RAM/battery/temperature/network/background policy.
-
-## 11. Privacy single-hop
+## 10. Relay != Gateway egress
 
 ```text
-Alice -> Relay A -> Bob
+DEVICE_RELAY / COMMUNITY_RELAY
+  Freedom circuit -> Freedom circuit
+  NO arbitrary Internet egress
 ```
 
-Relay A può osservare timing/volume e lati adiacenti. Un single-hop relay non garantisce anonimato contro il relay stesso.
+Freedom Gateway usa Egress espliciti `MANAGED/PRIVATE/BUSINESS` o altre classi future autorizzate.
 
-## 12. Freedom Shield
+## 11. Shield
 
-Multi-hop forte:
+Un singolo relay può osservare entrambi i lati adiacenti di un path single-hop. Privacy multi-hop forte richiede il circuit protocol di `SHIELD.md` con per-hop keys/layered forwarding.
 
-```text
-Alice -> Hop A -> Hop B -> Bob
-```
-
-richiede circuit setup, per-hop keys e layered forwarding secondo [`SHIELD.md`](SHIELD.md).
-
-Concatenare due proxy TCP non soddisfa Shield.
-
-## 13. Discovery
-
-Relay descriptor/candidate possono provenire da:
-
-- local verified cache;
-- E2EE route update;
-- pairwise rendezvous/recovery;
-- multiple bootstrap sources;
-- non-authoritative directories/pools;
-- peer announcements;
-- private/managed sources.
-
-Nessuna directory autentica il destinatario.
-
-## 14. Relay ≠ Internet egress
-
-Vietato nel relay base:
-
-```text
-client -> DEVICE_RELAY -> arbitrary Internet IP:port
-```
-
-Gateway usa solo egress espliciti `MANAGED/PRIVATE/BUSINESS`.
-
-Relay Contributor non trasforma un telefono in exit node.
-
-## 15. Relay Contributor
+## 12. Relay Contributor
 
 Target prodotto:
 
 ```text
-FREE                     10 contact slots
-FREE + RELAY CONTRIBUTOR 20 contact slots
+FREE                     10 product contact slots
+FREE + RELAY CONTRIBUTOR 20 product contact slots
 ```
 
-Il bonus è policy/entitlement del client ufficiale, non una regola di interoperabilità del protocollo.
+Il bonus richiede contributo utile, bounded e privacy-preserving; il toggle non basta.
 
-Il semplice toggle non basta. Segnali possibili: availability window, accepted circuits, bounded forwarded traffic, opaque receipts/attestations.
+### Limite esplicito
 
-Non pubblicare peer serviti, plaintext, social graph o detailed traffic history.
+Il bonus è **product/UX policy del client ufficiale**, non una security primitive anti-tamper del Freedom Protocol.
 
-Scadenza benefit non cancella contatti o sessioni; limita nuove aggiunte nella policy client.
+Un client open-source modificato può ignorare una quota locale. Per questo:
 
-## 16. Security invariants
+- peers non rifiutano sessioni E2EE valide in base alla quota remota;
+- il protocollo non pubblica social graph per enforceare il bonus;
+- il modello economico non deve dipendere esclusivamente da `+10 contacts`;
+- managed relay/Shield/Gateway/egress capacity è una superficie commerciale più enforceable.
 
-Un relay non deve poter:
+## 13. Contribution proof
 
-- decrypt E2EE payload;
-- impersonate endpoint;
-- derive session keys;
-- forge application ACK;
-- become persistent mailbox;
-- become mandatory route;
-- become implicit Internet exit.
+Future qualification può usare availability/forwarding receipts aggregate/opache, senza pubblicare peer serviti o content metadata.
 
-Può drop/ritardare/rifiutare/osservare metadata; per questo è non fidato e sacrificabile.
+Non premiare volume illimitato e non creare incentivi al traffic farming.
 
-## 17. Test gates
+## 14. Invarianti
 
-- relay descriptor signature tests;
-- self-declared provenance spoofing;
-- thousands-of-Sybil-relay simulation;
-- eclipse from one discovery source;
-- same-ASN/same-provider diversity failure;
-- handshake/circuit resource exhaustion;
-- device battery/network policy;
-- no-mailbox persistence test;
-- Shield tests in `SHIELD.md`.
+Relay non può decrypt, impersonate, forge valid endpoint ACK, persist mailbox o diventare implicit Internet exit.
 
 > **Qualsiasi macchina compatibile può inoltrare Freedom; nessuna macchina deve diventare Freedom.**
