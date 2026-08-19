@@ -11,10 +11,10 @@ PaymentAdapter
 |- PayPal
 |- native crypto
 |- stablecoin
-|- future providers
+`- future providers
 ```
 
-Nessun singolo provider di pagamento deve essere requisito permanente per acquistare i servizi Freedom.
+Nessun singolo provider di pagamento deve essere requisito permanente per acquistare servizi Freedom.
 
 ## 2. Separazione dei ruoli
 
@@ -28,13 +28,11 @@ Il metodo di pagamento non deve diventare una root of trust dell'identità Freed
 
 ## 3. Purchase intent
 
-Prima del pagamento il client crea/ottiene un riferimento opaco:
-
 ```text
 PurchaseIntent {
     version
     purchase_ref_hash
-    account_commitment
+    root_commitment
     product
     amount
     currency_or_asset
@@ -44,11 +42,11 @@ PurchaseIntent {
 }
 ```
 
-`purchase_ref` deve essere casuale ad alta entropia. Non usare in chiaro email, DeviceID, RootAccountID o social metadata come riferimento del pagamento.
+`purchase_ref` deve essere casuale ad alta entropia. Non usare in chiaro email, RootIdentity, DeviceRecordCommitment, pairwise alias o social metadata come riferimento provider.
+
+L'eventuale `root_commitment` del PurchaseIntent appartiene al control-plane Freedom e non deve essere copiato come merchant reference leggibile verso PayPal quando non necessario.
 
 ## 4. Payment descriptor on-chain
-
-La chain può pubblicare una configurazione verificabile/versionata per ciascun provider:
 
 ```text
 PaymentDescriptor {
@@ -62,15 +60,11 @@ PaymentDescriptor {
 }
 ```
 
-Il target può essere cifrato o comunque non necessario in chiaro quando il provider/UX lo consente, ma il sistema non deve promettere di nascondere al provider o al pagatore informazioni che il provider è legalmente/tecnicamente tenuto a mostrare.
+Il sistema non deve promettere di nascondere al provider o al pagatore informazioni che il provider è legalmente/tecnicamente tenuto a mostrare.
 
 Nessun `client_secret` PayPal o altra credenziale merchant segreta deve essere inserita nell'APK.
 
 ## 5. PayPal senza server pubblico
-
-Il modello Freedom non richiede un payment server con endpoint pubblico.
-
-Flusso desiderato:
 
 ```text
 App -> legge PaymentDescriptor/PurchaseIntent dalla chain
@@ -89,11 +83,11 @@ Il worker:
 - non necessita di porta inbound pubblica;
 - può stare dietro NAT/firewall;
 - usa connessioni outbound verso PayPal e blockchain/RPC;
-- custodisce le credenziali merchant fuori dal client;
+- custodisce credenziali merchant fuori dal client;
 - non è un account server Freedom;
 - può essere replicato/sostituito.
 
-La frequenza di polling è una policy operativa; interrogare frequentemente non garantisce che il provider renda immediatamente visibile una transazione. Il client deve mostrare uno stato `PAYMENT_PENDING` fino a prova verificata.
+La frequenza di polling è una policy operativa. Il client mostra `PAYMENT_PENDING` fino a prova verificata.
 
 ## 6. Callback PayPal nell'app
 
@@ -162,5 +156,6 @@ Gas/storage necessari alle operazioni Freedom possono essere sponsorizzati da tr
 - nessun server pubblico Freedom necessario al flusso PayPal;
 - callback client != prova economica;
 - PayPal/crypto convergono nello stesso modello di entitlement;
+- provider payment reference non contiene RootIdentity/device commitment/pairwise alias in chiaro salvo necessità esplicita;
 - dati personali/payment metadata non vengono copiati inutilmente on-chain;
 - dopo l'emissione, il provider di pagamento non è nel percorso quotidiano dell'app.
