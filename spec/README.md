@@ -4,11 +4,13 @@ Status: **canonical schema draft**.
 
 `spec/freedom.cddl` is the single source of truth for field names/object shapes that are frozen enough to be referenced normatively.
 
+`spec/crypto-domains.txt` is the single source of truth for fixed cryptographic domain constants used by signatures, transcript/session authentication, AEAD associated-data contexts, hashes and KDF purposes.
+
 If an object is not present in the CDDL, its wire shape is **not frozen for public interoperability**.
 
-Security semantics remain normative in `SECURITY_INVARIANTS.md`, `CONTROL_PLANE_SECURITY.md`, `REVOCATION.md`, `IDENTITY_MODEL.md`, `PROTOCOL.md` and subsystem docs.
+Security semantics remain normative in `SECURITY_INVARIANTS.md`, `CONTROL_PLANE_SECURITY.md`, `REVOCATION.md`, `PAIRWISE_RECOVERY.md`, `IDENTITY_MODEL.md`, `PROTOCOL.md` and subsystem docs.
 
-If Markdown and CDDL disagree on a frozen field/object shape, CDDL wins and Markdown must be corrected. If code conflicts with a MUST/MUST NOT security invariant, the invariant wins.
+If Markdown and CDDL disagree on a frozen field/object shape, CDDL wins and Markdown must be corrected. If Markdown and `crypto-domains.txt` disagree on a domain constant, `crypto-domains.txt` wins. If code conflicts with a MUST/MUST NOT security invariant, the invariant wins.
 
 ## 1. Canonical encoding
 
@@ -18,7 +20,7 @@ Before public interoperability the exact deterministic-CBOR profile, numeric/str
 
 Do not sign ad-hoc JSON, language-specific dumps or unordered map serialization.
 
-## 2. Signed-object domain separation
+## 2. Signature-domain separation
 
 Conceptual signing input:
 
@@ -41,43 +43,21 @@ Rules:
 - a signature valid for one object type is invalid for another;
 - Testnet/Mainnet/future network replay fails because network context differs;
 - nested signed objects are verified using their own domains;
-- signing-domain registry changes are normative schema/security changes.
+- domain-registry changes are normative schema/security changes.
 
-Signed-domain registry MUST include every signed CDDL object actually enabled by a protocol version, including identity/delegation/revocation/recovery, rendezvous, relay/provenance, release/policy/governance, payment/attestation/voucher and migration/upgrade objects.
+The exact enabled constants are **not repeated normatively in Markdown**. They are listed in `spec/crypto-domains.txt` and frozen with vectors.
 
-Representative constants:
+## 3. MAC / transcript-authentication domains
 
-```text
-FREEDOM/DEVICE_AUTHORIZATION_DELEGATION
-FREEDOM/DEVICE_CERTIFICATE
-FREEDOM/DEVICE_REVOCATION
-FREEDOM/AUTHORIZATION_REVOCATION
-FREEDOM/USER_RECOVERY_POLICY
-FREEDOM/USER_ROOT_ROTATION
-FREEDOM/RENDEZVOUS_RECORD
-FREEDOM/RECOVERY_BEACON
-FREEDOM/RELAY_DESCRIPTOR
-FREEDOM/PROVENANCE_ATTESTATION
-FREEDOM/HANDSHAKE_OFFER
-FREEDOM/REKEY_INIT
-FREEDOM/REKEY_COMMIT
-FREEDOM/REKEY_ACK
-FREEDOM/PAYMENT_ATTESTATION
-FREEDOM/ENTITLEMENT_VOUCHER
-FREEDOM/FREEDOM_RELEASE
-FREEDOM/RELEASE_STATUS
-FREEDOM/SECURITY_POLICY
-FREEDOM/SIGNER_SET_TRANSITION
-FREEDOM/GOVERNANCE_RECOVERY
-FREEDOM/CONTRACT_UPGRADE
-FREEDOM/CHAIN_MIGRATION
-```
+Handshake/rekey messages that are authenticated inside an existing cryptographic context are not mislabeled as standalone signatures.
 
-The final registry is frozen with test vectors.
+Their fixed `MAC`/transcript domains live in `spec/crypto-domains.txt`.
 
-## 3. AEAD associated-data domains
+The authenticated transcript MUST bind the domain, network/session context, object version, epochs and canonical fields required by `PROTOCOL.md`.
 
-Encrypted frames/records also require type/context separation even when they are not separately signed.
+## 4. AEAD associated-data domains
+
+Encrypted frames/records require type/context separation even when they are not separately signed.
 
 Conceptually AEAD associated data binds:
 
@@ -91,17 +71,25 @@ sequence/generation where applicable
 non-secret routing/session hint where applicable
 ```
 
-Examples:
+Examples remain semantically distinct:
 
 ```text
 CONTROL_FRAME != MEDIA_FRAME
 RENDEZVOUS_PAYLOAD != RECOVERY_BEACON_PAYLOAD
-PAIRWISE_BACKUP != SESSION_TRAFFIC
+PAIRWISE_RECOVERY_BUNDLE != SESSION_TRAFFIC
 ```
 
-A ciphertext valid in one context must not be accepted as a different Freedom encrypted object simply because key bytes were accidentally reused. Keys SHOULD already be domain-separated by purpose; AEAD associated data is an additional binding, not a substitute for key separation.
+A ciphertext valid in one context must not be accepted as another Freedom encrypted object simply because key bytes were accidentally reused. Purpose-separated keys are still required; AEAD associated data is an additional binding.
 
-## 4. Capability narrowing
+## 5. HASH/KDF purpose separation
+
+Stable hash/KDF labels are also part of the registry.
+
+Examples include rendezvous-slot derivation, pairwise backup IDs/state commitments, pairwise contact/rendezvous derivation, session control/media schedules and Shield hop keys.
+
+Do not create a new `H("some string" || ...)` or KDF label in code without registering/versioning the purpose when it affects protocol interoperability or a security boundary.
+
+## 6. Capability narrowing
 
 ```text
 DeviceCertificate.capabilities
@@ -115,23 +103,46 @@ certificate.authorization_epoch   == delegation.authorization_epoch
 
 Child authority cannot outlive or exceed parent authority.
 
-## 5. Root recovery policy stability
+## 7. User recovery-policy validity
+
+For a `user-recovery-policy` to be valid:
+
+```text
+number of recovery_key_commitments >= 2
+all commitments are distinct
+1 <= threshold <= number of distinct recovery keys
+```
+
+For a profile claiming **independent root-compromise recovery**, production policy SHOULD require threshold >= 2 and recovery shares/custody domains that are operationally independent from the active RootRecoveryKey/device environment.
+
+Multiple files/keys held by one compromised operator do not provide independent recovery merely because the CDDL contains multiple entries.
 
 For V1 `user-root-rotation` carries the current recovery-policy commitment.
 
-A `NORMAL` rotation must preserve it. A `COMPROMISE_RECOVERY` transition must verify the precommitted independent recovery quorum and current root-control lineage.
+A `NORMAL` rotation preserves it. A `COMPROMISE_RECOVERY` transition verifies the precommitted independent recovery quorum and current root-control lineage.
 
 Arbitrary recovery-policy mutation is not a frozen V1 operation.
 
-## 6. Schema-change discipline
+## 8. Pairwise backup freshness
+
+`pairwise-recovery-bundle` provides encrypted integrity-protected pairwise state.
+
+Integrity alone does not prove that an untrusted backup source returned the newest bundle after all devices are lost.
+
+The rollback-detectable profile uses `pairwise-recovery-anchor` according to `docs/PAIRWISE_RECOVERY.md`.
+
+The anchor commits only to monotonic backup generation/hash/state commitment; it does not publish contacts or pairwise plaintext.
+
+## 9. Schema-change discipline
 
 A security-relevant schema/domain change requires:
 
 1. explicit human review;
-2. version bump when parse/sign/AEAD semantics change;
+2. version bump when parse/sign/MAC/AEAD semantics change;
 3. positive/negative vectors;
 4. downgrade/rollback analysis;
 5. persistent-state migration rule/proof when relevant;
-6. aligned normative documentation.
+6. aligned normative documentation;
+7. update to `spec/crypto-domains.txt` when a cryptographic purpose changes.
 
-Codex/agents may propose changes but MUST NOT silently weaken/redefine canonical schema, signing domains, AEAD domains or security state machines just to satisfy implementation/tests.
+Codex/agents may propose changes but MUST NOT silently weaken/redefine canonical schema, cryptographic domains or security state machines merely to satisfy implementation/tests.
