@@ -2,46 +2,62 @@
 
 Status: **canonical design draft**.
 
-Normative security rules: [`SECURITY_INVARIANTS.md`](SECURITY_INVARIANTS.md).
+Normative security: [`SECURITY_INVARIANTS.md`](SECURITY_INVARIANTS.md).
 Identity: [`IDENTITY_MODEL.md`](IDENTITY_MODEL.md).
 Control-plane: [`CONTROL_PLANE_SECURITY.md`](CONTROL_PLANE_SECURITY.md).
 Revocation: [`REVOCATION.md`](REVOCATION.md).
 Shield: [`SHIELD.md`](SHIELD.md).
-Canonical object schema: [`../spec/freedom.cddl`](../spec/freedom.cddl).
+Canonical schema: [`../spec/freedom.cddl`](../spec/freedom.cddl).
 
-I Markdown descrivono semantica/state machine. I field name e shape degli oggetti firmati/parsi vengono da `spec/freedom.cddl`.
+Markdown definisce semantica/state machine. `spec/freedom.cddl` definisce field names/object shapes congelati.
 
-## 1. Principi normativi
+## 1. Core invariants
 
-- deterministic canonical encoding prima dell'interoperabilità pubblica;
-- domain-separated signatures/hash per network/object/version;
+- deterministic canonical encoding + domain-separated signatures;
 - no global DeviceID network-facing;
 - no message/media/APK on-chain;
-- no mailbox/offline delivery queue;
-- RootRecoveryKey, authorization, DeviceKey, record control, pairwise identity, routing e traffic keys separati;
-- RPC non è trust;
-- `tx hash != success`;
-- revocation/non-revocation richiede proof semantics esplicite;
-- forward secrecy + bounded rekey;
-- both-offer-set anti-downgrade;
-- transport semantics dichiarate;
-- critical production governance non `1-of-1`.
+- no mailbox/offline queue;
+- identity/authorization/device-control/pairwise/routing/traffic keys separated;
+- RPC not trust;
+- tx hash != success;
+- explicit revocation proof/freshness;
+- both-offer anti-downgrade;
+- forward secrecy + complete bounded rekey;
+- explicit transport semantics;
+- critical production governance not 1-of-1.
 
-## 2. Identity hierarchy
+## 2. Root / device hierarchy
 
 ```text
 RootRecoveryKey
  -> RootIdentity(root_epoch)
- -> DeviceAuthorizationDelegation(authorization_epoch)
+ -> DeviceAuthorizationDelegation
  -> DeviceCertificate
  -> DeviceKey
 ```
 
-Una independent `UserRecoveryPolicy` è necessaria per recovery da root compromise, non per il normale device loss.
+Optional compromise-recovery continuity:
 
-## 3. Device record / control
+```text
+RootControlCommitment
+ + precommitted UserRecoveryPolicy
+```
 
-V1 record:
+`RootControlCommitment` is an opaque control-plane recovery-lineage handle, not a network/contact ID.
+
+## 3. Sticky compromise recovery
+
+V1 normal root rotation inherits the current recovery-policy commitment.
+
+A current/compromised root cannot remove the policy unilaterally.
+
+`COMPROMISE_RECOVERY` is quorum-authorized and delayed. Once accepted as `RECOVERY_PENDING`, normal root rotations and recovery-policy mutation are blocked until resolution. The current root cannot cancel the request alone.
+
+The recovery quorum may recover the latest current state of the same opaque root-control lineage even if a stolen root performed a normal rotation before the recovery request opened.
+
+## 4. Opaque device record
+
+V1 control-plane record:
 
 ```text
 DeviceRecordCommitment
@@ -51,64 +67,42 @@ key_epoch
 status
 ```
 
-Il control-plane non deve conoscere obbligatoriamente la RootIdentity proprietaria.
+The record does not prove account ownership. Peer authorization comes from the expected RootIdentity/contact + delegation + DeviceCertificate + DeviceKey possession.
 
-Peer validity deriva da certificate/delegation/DeviceKey proof. `DeviceControlKey` controlla soltanto rotation/revocation del record opaco.
-
-## 4. Device quota
-
-`max_devices` V1 è product/service policy, non interoperability/security invariant.
-
-Un futuro hard enforcement privacy-preserving richiede credential/nullifier/ZK specificamente reviewati.
+`DeviceControlKey` only controls the opaque record. V1 device-count/contact quotas are product/service policy, not peer interoperability/security rules.
 
 ## 5. DeviceCertificate validation
 
-Schema canonico: `device-certificate`.
-
-Validation order:
-
 ```text
-canonical parse
- -> signing domain
- -> expected RootIdentity/contact proof
+canonical parse/signing domain
+ -> expected contact/root proof
  -> delegation signature/scope
- -> child capabilities subset
- -> child expiry <= parent expiry
- -> device_record_commitment binding
+ -> child capabilities/expiry constrained by parent
+ -> device-record commitment binding
  -> DeviceKey possession
  -> highest-seen epoch checks
  -> current-enough revocation proof
- -> AUTHENTICATED DEVICE
+ -> AUTHENTICATED
 ```
 
 ## 6. Revocation
 
-Oggetti canonici:
+Canonical objects cover device-key floor, authorization-epoch floor and root-lineage transition.
 
-```text
-device-revocation-record
-authorization-revocation-record
-user-root-rotation
-```
+`RPC not found` is not non-revocation proof. Semantics: `REVOCATION.md`.
 
-Semantica completa: [`REVOCATION.md`](REVOCATION.md).
+## 7. Contact assurance / pairwise identity
 
-`RPC null/not-found` non è non-revocation proof.
+Bootstrap uses `freedom-contact`.
 
-## 7. Contact descriptor / assurance
-
-Schema: `freedom-contact`.
-
-Trust state:
+UI trust state:
 
 ```text
 BOOTSTRAP_UNVERIFIED
 CONTACT_VERIFIED
 ```
 
-Safety code/fingerprint/out-of-band verification consente assurance umana indipendente.
-
-## 8. Pairwise identity
+After authenticated handshake:
 
 ```text
 PairSecret
@@ -116,129 +110,113 @@ PairwiseContactAlias
 PairRendezvousSecret
 ```
 
-Alias/rendezvous sono relationship-scoped.
+## 8. Rendezvous write authorization
 
-## 9. Rendezvous slot authorization
-
-Ogni direction/epoch deriva un one-time write keypair:
+Each pairwise direction/epoch derives a fresh write keypair **off-chain**:
 
 ```text
 PairRendezvousSecret
  -> RendezvousWriteKeypair(direction, epoch)
  -> write_public_key
- -> slot_id = H(domain || write_public_key || epoch || direction)
 ```
 
-Schema: `rendezvous-record`.
-
-Write acceptance:
+Public slot:
 
 ```text
-slot derivation valid
-write signature valid
-generation monotonic
-size/expiry valid
+slot_id = H("Freedom/RendezvousSlot" || network_id || write_public_key)
 ```
 
-L'osservatore dello slot non ottiene overwrite authority.
+The control-plane can verify slot binding without learning direction/epoch.
 
-## 10. RecoveryBeacon
+Write acceptance requires valid slot/public-key binding, write signature, monotonic generation and size/expiry bounds.
 
-Schema: `recovery-beacon`.
+Observing the slot does not grant overwrite authority.
 
-Stesse write-auth rules del RendezvousRecord. Pairwise, bounded, cifrato, short-lived, non presence globale.
-
-## 11. Read-before-write
+## 9. Read-before-write / RecoveryBeacon
 
 ```text
-remote = read(remote_slot)
-if valid/usable -> try route, do not write
-else:
-  local = read(local_slot)
-  if valid -> wait/poll
-  else -> signed bounded write to own slot
+read remote slot
+ -> usable: connect, no write
+ -> empty: inspect own slot
+      -> valid: wait/poll
+      -> empty: signed bounded own-slot write
 ```
 
-## 12. Pairwise recovery
+RecoveryBeacon follows the same one-time write-key authority and remains pairwise/ciphertext/bounded.
 
-Schema: `pairwise-recovery-bundle`.
+## 10. Pairwise recovery
 
-```text
-surviving authorized device transfer
-or
-encrypted backup bytes from untrusted storage
-```
+`pairwise-recovery-bundle` is ciphertext-only state from a surviving-device transfer or user-chosen untrusted backup store.
 
-Dopo restore:
+After restore:
 
 ```text
-re-authenticate peer
+reject detectable rollback
+ -> re-authenticate peer
  -> rotate/re-derive future rendezvous state
  -> establish fresh session keys
 ```
 
-Old backup state non diventa permanent future authority.
+No surviving device/backup -> ownership may return, contacts re-bootstrap.
 
-## 13. Route / relay descriptors
+## 11. Routing / relay / Shield
 
-Schema canonico include `route-candidate`, `relay-descriptor`, `relay-candidate`, `provenance-attestation`.
+Canonical schema includes route update, relay descriptors/candidates/packets, provenance attestations and Shield descriptors.
 
-Self-declared metadata non è independence proof.
+Self-declared relay metadata is not independence proof. `N relay IDs != N independent operators`.
 
-## 14. Transport semantic contract
+`SHIELDED` requires the true circuit gate in `SHIELD.md`.
+
+## 12. Transport semantics
+
+Adapters declare:
 
 ```text
 RELIABLE_ORDERED_STREAM
 UNRELIABLE_DATAGRAM
 ```
 
-Handshake/control/text/rekey richiedono reliable ordered semantics oppure reliability layer esplicito. Media può usare datagram e sequence space separato.
+Handshake/control/text/rekey require reliable ordering or explicit reliability. Media uses separate frame/sequence/replay spaces.
 
-## 15. HandshakeOffer
+## 13. Handshake
 
-Schema: `handshake-offer`.
+Canonical `handshake-offer` advertises supported versions/suites/transport semantics and fresh ephemeral material.
 
-Il transcript autentica almeno:
+Authenticated transcript binds:
 
 ```text
 network_id
-expected pairwise relationship
-local_offer_hash
-remote_offer_hash
-certificate/delegation hashes or proofs
+expected relationship
+local/remote offer hashes
+certificate/delegation hashes/proofs
 root/authorization/key epochs
-selected_version
-selected_suite
-selected_transport_semantics
+selected version/suite/transport semantics
 ephemeral material
 nonces
 session_id
 ```
 
-La scelta è deterministic/strongest-allowed secondo policy locale. Offer stripping sotto policy -> `NEGOTIATION_DOWNGRADE`.
+Selection is deterministic/strongest-allowed under local policy. Offer stripping below policy -> `NEGOTIATION_DOWNGRADE`.
 
-## 16. Session establishment
+## 14. Session establishment
 
 ```text
-parse offers
- -> authenticate contact/certificate/delegation
- -> verify revocation freshness
- -> verify both offer sets
+validate expected contact/certificate
+ -> validate revocation freshness
+ -> validate both offers
  -> fresh ephemeral exchange
  -> derive traffic schedule
  -> key confirmation
  -> E2EE ACTIVE
 ```
 
-Relay/path non è authentication authority.
+Relay/path is not authentication authority.
 
-## 17. Forward secrecy
+## 15. Forward secrecy / rekey
 
-Ogni nuova sessione usa fresh ephemeral exchange. Future compromise di static DeviceKey/Root key non ricostruisce sessioni concluse, salvo endpoint/session-state compromise.
+Fresh ephemeral exchange per session. Static root/device compromise later does not reconstruct completed-session traffic keys, absent endpoint/session-state compromise.
 
-## 18. Rekey state machine
-
-Oggetti canonici:
+Canonical objects:
 
 ```text
 rekey-init
@@ -246,134 +224,99 @@ rekey-commit
 rekey-ack
 ```
 
-States:
+State machine:
 
 ```text
-STABLE(epoch N)
-INIT_SENT / INIT_RECEIVED
-COMMIT_ESTABLISHED
-NEW_KEY_PENDING_ACK
-STABLE(epoch N+1)
+STABLE(N)
+ -> INIT_SENT / INIT_RECEIVED
+ -> COMMIT_ESTABLISHED
+ -> NEW_KEY_PENDING_ACK
+ -> STABLE(N+1)
 ```
 
-### Initiation
+Rules:
+
+- exact `next_epoch = current_epoch + 1`;
+- simultaneous Init resolved deterministically from session role/session_id ordering;
+- next schedule derived before old keys are erased;
+- Ack carries confirmation under the new schedule;
+- after valid Ack, no new send under old key;
+- old receive key only bounded in-flight grace;
+- duplicate/replay idempotently rejected/ignored by state/hash;
+- wrong epoch/transcript/timeout terminates before lifetime exhaustion;
+- route switch does not reset key epoch;
+- reconnect creates a new session schedule.
+
+No silent split-brain.
+
+## 16. Wire/application objects
+
+Canonical CDDL now includes:
 
 ```text
-RekeyInit.current_epoch == N
-RekeyInit.next_epoch    == N+1
+encrypted-control-frame
+encrypted-media-frame
+chat-message
+message-ack
+attachment-manifest
+call-signal
+relay-packet
 ```
 
-Include fresh ephemeral material e transcript hash.
+No alternate Markdown struct is a second source of truth.
 
-### Simultaneous init
-
-Se entrambi iniziano `N -> N+1`, il winner viene scelto deterministicamente usando una ordering derivata da `session_id` + fixed endpoint role/offer ordering. L'altro Init viene trattato come duplicate competing proposal, non crea un secondo epoch.
-
-### Commit
-
-Responder produce `RekeyCommit` legato all'Init hash e aggiunge fresh responder ephemeral material.
-
-Entrambi possono derivare la next key schedule ma continuano a conservare le old keys finché non arriva conferma.
-
-### Ack / key confirmation
-
-Initiator invia `RekeyAck` autenticato nel nuovo key schedule con `key_confirmation`.
-
-Dopo Ack verificato:
+## 17. Synchronous semantics
 
 ```text
-send epoch -> N+1 only
-old send key -> erase
-old receive key -> bounded in-flight grace only
+active authenticated session -> transmit now
+no active authenticated session -> FAIL / DISCARD
 ```
 
-### Failure/replay
+No StoreRequest/offline mailbox in base protocol.
 
-- duplicate Init/Commit/Ack: idempotent reject/ignore by object hash/state;
-- wrong next epoch: reject;
-- transcript mismatch: terminate;
-- Ack timeout: terminate before traffic-key lifetime limit;
-- route switch: does not reset rekey state/epoch;
-- reconnect/new session: new session schedule, not implicit continuation of old rekey.
+## 18. Verified control-plane state / bootstrap freshness
 
-No silent split-brain key epochs.
+Security-sensitive state requires verified checkpoint + state proof.
 
-## 19. Control/media frame spaces
+Fresh install additionally enforces `bootstrap-freshness-floor` from its verifier/release.
 
-Control/text/rekey e media usano sequence/replay windows indipendenti. Media loss non blocca control stream.
+An authentic but itself-obsolete verifier obtained only through attacker-controlled channels cannot infer newer state from nothing; independent verifier freshness remains an explicit bootstrap assumption.
 
-Exact frame schema può essere aggiunto in CDDL quando encoding viene congelato.
-
-## 20. Synchronous application semantics
-
-```text
-active authenticated session? yes -> transmit now
-active authenticated session? no  -> FAIL/DISCARD
-```
-
-No `StoreRequest` base.
-
-## 21. RelayPacket / Shield
-
-Relay inoltra ciphertext bounded. Shield forte richiede il vero circuit protocol di `SHIELD.md`, non proxy concatenati.
-
-## 22. Verified control-plane checkpoint
-
-Schema: `verified-control-plane-checkpoint`.
-
-Security state da RPC senza checkpoint/proof non è `VERIFIED_STATE`.
-
-## 23. BootstrapFreshnessFloor
-
-Schema: `bootstrap-freshness-floor`.
-
-Fresh install rifiuta state sotto il floor incorporato nella release/verifier corrente.
-
-Non promettere protezione contro verifier autentico ma esso stesso molto obsoleto ottenuto solo da canali attacker-controlled.
-
-## 24. Verified mutation
+## 19. Verified mutation
 
 ```text
 submit
  -> finality proof
  -> execution success
- -> resulting state proof
- -> exact expected transition
+ -> resulting-state proof
+ -> exact transition
  -> local commit
 ```
 
-## 25. Release / SecurityPolicy
+## 20. Release / governance / migration
 
-Object shapes sono soltanto in `spec/freedom.cddl`.
+Release/security objects use canonical CDDL.
 
-Markdown non deve mantenerne copie divergenti come source of truth.
+Signer transitions are cross-authorized/monotonic; contract core is immutable or threshold/timelocked/code-hash pinned.
 
-## 26. Contract / signer governance
+Threshold governance removes unilateral single-key authority, not quorum-collusion risk.
 
-Signer transitions sono cross-authorized e monotonic. Contract upgrade è immutable-core oppure threshold/timelocked/code-hash pinned.
-
-`3-of-5` elimina una singola key unilaterale, non il rischio di quorum collusion. Custody/operator independence è trust assumption documentata.
-
-## 27. Chain migration
-
-Una migration richiede:
+Chain migration requires:
 
 ```text
-ChainMigrationManifest
-+ StateMigrationProof
+chain-migration-manifest
++ state-migration-proof
 ```
 
-`StateMigrationProof` lega source checkpoint/export root, migration program hash e target imported state root.
+The proof binds source finalized/export state, migration program and target imported state.
 
-Una threshold signature non autorizza da sola uno state rewrite arbitrario.
+## 21. Product/payment boundary
 
-## 28. Payment / product quotas
+Payment may use one-time voucher/nullifier to reduce linkage.
 
-Payment→entitlement può usare one-time voucher/nullifier per ridurre linkage.
+Device/contact counts and Relay Contributor bonuses V1 are product/service policies and do not change remote peer session acceptance.
 
-Contact slots e device-count V1 sono product/service policy; non cambiano peer session acceptance.
-
-## 29. Error classes
+## 22. Error classes
 
 ```text
 MALFORMED
@@ -392,6 +335,7 @@ AUTHENTICATION_FAILED
 REPLAY_DETECTED
 RENDEZVOUS_WRITE_UNAUTHORIZED
 RENDEZVOUS_GENERATION_ROLLBACK
+ROOT_RECOVERY_PENDING
 ROUTE_UNAVAILABLE
 PEER_OFFLINE
 SESSION_REKEY_REQUIRED
@@ -403,22 +347,19 @@ GOVERNANCE_TRANSITION_INVALID
 BOOTSTRAP_STATE_TOO_OLD
 ```
 
-## 30. Interoperability gates
+## 23. Interoperability gates
 
-Prima dell'interoperabilità pubblica:
-
-- deterministic-CBOR/signing-domain vectors;
-- delegation capability/expiry negative tests;
+- deterministic encoding/signing-domain vectors;
+- delegation scope/expiry negative cases;
 - revocation/non-revocation/freshness vectors;
 - fresh-install stale checkpoint tests;
-- rendezvous overwrite/front-run/replay tests;
-- handshake offer-stripping tests;
-- rekey simultaneous/init-loss/commit-loss/ack-loss/duplicate/route-switch tests;
-- stream/datagram semantics;
-- control-plane proof/finality tests;
-- storage convergence;
+- rendezvous overwrite/front-run/replay;
+- both-offer downgrade tests;
+- full rekey race/loss/duplicate/route-switch matrix;
+- control/media semantic tests;
+- control-plane proof/finality/storage convergence;
+- sticky compromise-recovery race/timelock;
 - pairwise backup rollback/post-restore rotation;
-- root compromise recovery race/timelock;
-- relay provenance/Sybil tests;
+- relay provenance/Sybil/Shield tests;
 - signer/contract/migration rollback tests;
 - independent security review.
