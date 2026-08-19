@@ -47,6 +47,9 @@ jobs:
       - name: Check canonical specification consistency
         run: python tools/check_spec_consistency.py
 
+      - name: Check development-stack consistency
+        run: python tools/check_dev_stack.py
+
       - name: Check Freedom-DCBOR-1 vectors
         run: python tools/check_vectors.py
 
