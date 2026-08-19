@@ -49,19 +49,6 @@ class IdentityStore(context: Context) : DeviceIdentity {
             return byteArrayOf(prefix.toByte()) + x
         }
 
-    val rendezvousCapability: ByteArray by lazy {
-        val existing = preferences.getString(KEY_RENDEZVOUS_CAPABILITY, null)
-            ?.takeIf { RENDEZVOUS_CAPABILITY.matches(it) }
-        if (existing != null) return@lazy existing.hexToBytes()
-        val generated = Crypto.randomBytes(32)
-        check(
-            preferences.edit()
-                .putString(KEY_RENDEZVOUS_CAPABILITY, generated.toHex())
-                .commit()
-        ) { "Unable to persist rendezvous capability" }
-        generated
-    }
-
     fun registrationSignature(contractId: String, protocolVersion: Int): ByteArray {
         val message = authorizationMessage(
             contractId = contractId,
@@ -85,8 +72,7 @@ class IdentityStore(context: Context) : DeviceIdentity {
         keyEpoch: Long = 1,
         protocolVersion: Int
     ): ByteArray {
-        val keyMaterial = freedomNumber.toByteArray(Charsets.UTF_8) + rendezvousCapability +
-            mailboxPublicKey
+        val keyMaterial = freedomNumber.toByteArray(Charsets.UTF_8) + mailboxPublicKey
         val message = authorizationMessage(
             contractId = contractId,
             operation = PUBLISH_CONTACT_OPERATION,
@@ -226,12 +212,10 @@ class IdentityStore(context: Context) : DeviceIdentity {
     private companion object {
         const val PREFERENCES = "freedom.identity.v1"
         const val KEY_DEVICE_ID = "device-id"
-        const val KEY_RENDEZVOUS_CAPABILITY = "rendezvous-capability"
         const val REGISTER_OPERATION = 1
         const val PUBLISH_CONTACT_OPERATION = 4
         const val SEND_MESSAGE_OPERATION = 5
         val DEVICE_ID = Regex("[0-9a-f]{64}")
-        val RENDEZVOUS_CAPABILITY = Regex("[0-9a-f]{64}")
         val AUTH_DOMAIN = "FREEDOM_REGISTRY_V1\u0000".toByteArray(Charsets.UTF_8)
         val P256_ORDER = BigInteger(
             "FFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551",

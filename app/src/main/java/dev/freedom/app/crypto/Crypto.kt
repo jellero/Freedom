@@ -33,7 +33,7 @@ object Crypto {
     }
 
     fun fingerprint(publicKey: PublicKey): String =
-        sha256(publicKey.encoded).joinToString(":") { "%02X".format(it) }
+        sha256(compressP256PublicKey(publicKey)).joinToString(":") { "%02X".format(it) }
 
     fun ephemeralEcKeyPair(): KeyPair {
         val generator = KeyPairGenerator.getInstance("EC")

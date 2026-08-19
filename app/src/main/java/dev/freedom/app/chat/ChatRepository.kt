@@ -3,6 +3,7 @@
 package dev.freedom.app.chat
 
 import android.content.Context
+import dev.freedom.app.crypto.EncryptedJsonStore
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -15,7 +16,13 @@ data class ChatMessage(
 )
 
 class ChatRepository(context: Context) {
-    private val preferences = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+    private val store = EncryptedJsonStore(
+        context = context,
+        preferencesName = PREFERENCES,
+        legacyKey = KEY_MESSAGES,
+        encryptedKey = KEY_MESSAGES_ENCRYPTED,
+        keyStoreAlias = KEYSTORE_ALIAS
+    )
 
     @Synchronized
     fun messages(contactNumber: String): List<ChatMessage> =
@@ -37,7 +44,7 @@ class ChatRepository(context: Context) {
     fun contains(messageId: String): Boolean = readAll().any { it.messageId == messageId }
 
     private fun readAll(): List<ChatMessage> {
-        val raw = preferences.getString(KEY_MESSAGES, null) ?: return emptyList()
+        val raw = store.read() ?: return emptyList()
         return try {
             val array = JSONArray(raw)
             buildList {
@@ -75,7 +82,7 @@ class ChatRepository(context: Context) {
                     .put("timestamp", message.timestampMillis)
             )
         }
-        check(preferences.edit().putString(KEY_MESSAGES, array.toString()).commit()) {
+        check(store.write(array.toString())) {
             "Unable to persist messages"
         }
     }
@@ -83,6 +90,8 @@ class ChatRepository(context: Context) {
     private companion object {
         const val PREFERENCES = "freedom.messages.v1"
         const val KEY_MESSAGES = "messages"
+        const val KEY_MESSAGES_ENCRYPTED = "messages.encrypted.v2"
+        const val KEYSTORE_ALIAS = "freedom.messages.local.v2"
         const val MAX_MESSAGES = 500
     }
 }

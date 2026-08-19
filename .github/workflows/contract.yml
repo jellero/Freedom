@@ -2,7 +2,9 @@ name: NEAR contract
 
 on:
   push:
+    branches: [main]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -36,7 +38,7 @@ jobs:
             | sh
 
       - name: Test contract
-        run: cargo test --package freedom-registry
+        run: cargo test --locked --package freedom-registry
 
       - name: Build contract WASM
         working-directory: contract

@@ -1,263 +1,82 @@
 # Freedom
 
-## Protocollo decentralizzato di comunicazione
+Freedom è un client Android di messaggistica cifrata **blockchain-only** in sviluppo su NEAR Testnet. Non richiede un server Freedom, un relayer predefinito o l'inserimento di IP peer: registrazione, risoluzione contatti e mailbox asincrona passano dal contratto `freedom-registry-jellero.testnet`.
 
-Freedom è un protocollo decentralizzato di comunicazione che permette a dispositivi identificati crittograficamente di stabilire sessioni sicure senza dipendere da un server centrale di messaggistica.
+## Stato attuale
 
-La blockchain non trasporta messaggi, file, audio o video. Viene usata come registro verificabile delle identità dei dispositivi e come meccanismo di rendezvous di fallback quando due dispositivi online non dispongono più di un percorso valido per raggiungersi.
+Il client `0.5.0-alpha` offre:
 
-Il traffico applicativo viaggia fuori dalla blockchain, direttamente tra endpoint oppure attraverso relay transitivi che inoltrano ciphertext senza possedere le chiavi della conversazione.
+- identità P-256 locale e Device ID;
+- numero Freedom a 20 cifre derivato dalla chiave pubblica compressa e protetto da checksum;
+- contatti tramite numero o QR;
+- cifratura end-to-end ECDH P-256 + HKDF-SHA256 + AES-256-GCM;
+- mailbox NEAR con messaggi cifrati e TTL di 24 ore;
+- firma diretta delle transazioni dal telefono con Function-Call key dedicata;
+- chiave NEAR, contatti e cronologia locale cifrati tramite Android Keystore;
+- rotazione giornaliera della chiave mailbox, conservando solo la finestra necessaria a leggere i messaggi non scaduti;
+- test completo nelle impostazioni: RPC, permessi chiave, registrazione, scrittura, lettura e decifratura.
 
-> Principio operativo: **identity on-chain, communication off-chain, rendezvous on-chain only when needed.**
+Il contratto `0.4.0` lega ogni numero alla chiave identità registrata. I record creati da versioni precedenti con un numero non derivato correttamente non vengono più risolti. I messaggi scaduti vengono rimossi fisicamente al successivo invio verso la mailbox e il relativo credito storage viene restituito ai pagatori.
 
-## Obiettivi
+## Cosa serve
 
-- identità dei dispositivi verificabili crittograficamente;
-- cifratura end-to-end obbligatoria;
-- nessun server centrale di messaggistica necessario;
-- comunicazione diretta quando il percorso di rete lo consente;
-- NAT traversal e relay come percorsi alternativi;
-- aggiornamenti di route scambiati direttamente durante una sessione attiva;
-- scritture blockchain ridotte al minimo tramite read-before-write;
-- nessun messaggio persistito nella rete Freedom;
-- nessun messaggio o media memorizzato sulla blockchain;
-- relay `forward-only`, con buffer limitati e temporanei;
-- protocollo indipendente da Android, iOS e dagli store;
-- possibilità di sostituire la blockchain tramite un adapter senza cambiare il protocollo applicativo.
-
-## Architettura
-
-![Architettura del sistema Freedom](docs/assets/freedom-architecture.svg)
-
-Per la consegna di un messaggio applicativo entrambi gli endpoint devono essere online. Se il destinatario non è raggiungibile, il messaggio resta sul dispositivo mittente e non viene disseminato automaticamente nella rete.
-
-## Architettura in una frase
+1. Un account NEAR Testnet usato come pagatore.
+2. Credito storage già versato al contratto.
+3. Una Function-Call key limitata al receiver `freedom-registry-jellero.testnet` e ai metodi:
 
 ```text
-DeviceID -> blockchain identity -> rendezvous fallback -> route -> authenticated E2EE session -> messages/media
+register_device
+publish_contact
+send_message
 ```
 
-## Blockchain iniziale
+La Full Access key viene rifiutata. L'endpoint RPC è soltanto il gateway HTTP verso NEAR: è sostituibile nelle impostazioni e non possiede identità o messaggi in chiaro.
 
-La prima implementazione usa **NEAR Testnet** attraverso un'interfaccia `ChainAdapter`.
-
-NEAR non fa parte del wire protocol Freedom: è la prima implementazione del registro decentralizzato. Il core deve poter supportare in futuro adapter differenti senza cambiare DeviceID, session protocol o formato dei messaggi.
+## Flusso
 
 ```text
-ChainAdapter
-  |- NearChainAdapter      <- prima implementazione
-  |- ...                   <- future implementazioni
+chiave identità locale
+  -> numero Freedom deterministico
+  -> registrazione/publish su NEAR
+  -> lookup del contatto
+  -> cifratura E2EE sul mittente
+  -> ciphertext nella mailbox NEAR (TTL 24 h)
+  -> lettura e decifratura sul destinatario
 ```
 
-## Ruolo della blockchain
+Non esiste un percorso di consegna LAN nascosto o un relayer Freedom. L'APK parla direttamente con RPC NEAR scelti dall'utente.
 
-La chain mantiene solo stato minimo e verificabile.
+## Limiti di privacy da conoscere
 
-### Device identity
+Il contenuto è cifrato end-to-end, ma NEAR è una blockchain pubblica. Account pagatore, fee, orari, frequenza, dimensioni approssimative, Device ID mittente/destinatario e argomenti delle transazioni sono osservabili. Un endpoint RPC vede inoltre l'indirizzo IP del client e le richieste che inoltra. Freedom non promette anonimato di rete.
+
+La rotazione giornaliera delle chiavi mailbox limita la decifrabilità storica, ma non è ancora un Double Ratchet sottoposto ad audit. Non usare questa alpha per dati o fondi reali.
+
+## Build Android
+
+Richiede JDK 17 e Android SDK 37:
 
 ```text
-DeviceRecord {
-    device_id
-    identity_public_key
-    key_epoch
-    status
-    protocol_version
-}
+./gradlew testDebugUnitTest lintDebug assembleDebug assembleDebugAndroidTest
 ```
 
-Il `DeviceID` è stabile e non coincide con l'hash della chiave pubblica, così una chiave può essere ruotata o revocata senza cambiare identità.
+La CI esegue anche i test strumentali Android Keystore in emulatore. Se sono configurati i secret di firma, produce inoltre un APK Testnet firmato stabilmente; questo evita che ogni build richieda disinstallazione e perdita dell'identità locale.
 
-### Rendezvous
-
-La blockchain viene usata per ristabilire un percorso solo quando non esiste più alcun route Freedom valido tra due endpoint online.
-
-Regola fondamentale:
+## Contratto
 
 ```text
-1. READ
-2. se esiste un rendezvous valido -> usa i dati, NON scrivere
-3. se non esiste -> WRITE del proprio rendezvous
+cd contract
+cargo test --locked
+cargo near build non-reproducible-wasm
 ```
 
-Appena viene ristabilita una sessione, gli aggiornamenti di endpoint, NAT candidate e relay candidate passano direttamente nel canale E2EE. La chain non viene più aggiornata finché esiste almeno un percorso valido.
-
-## Primo contatto
-
-Un contatto Freedom viene scambiato intenzionalmente tramite QR, link, NFC o copia/incolla.
-
-Il QR può contenere:
-
-```text
-FreedomContact {
-    network
-    device_id
-    rendezvous_capability
-    expires_at?
-}
-```
-
-`rendezvous_capability` è casuale e può essere monouso o temporanea. Serve a evitare che il primo rendezvous debba esporre pubblicamente una relazione leggibile tra due DeviceID.
-
-Dopo il primo handshake autenticato, i due endpoint derivano un `PairRendezvousSecret` locale usato per generare slot on-chain opachi e rotanti per le riconnessioni successive.
-
-## Routing e NAT
-
-Freedom distingue identità e raggiungibilità.
-
-```text
-DeviceID -> chi sei
-RouteCandidate -> come posso raggiungerti adesso
-```
-
-Un route candidate può contenere:
-
-```text
-RouteCandidate {
-    transport
-    endpoint
-    nat_mapping
-    relay_hint
-    priority
-    expires_at
-}
-```
-
-Non basta monitorare l'IP: sotto NAT possono cambiare porta pubblica, mapping e percorso anche con lo stesso indirizzo esterno.
-
-Ordine preferito di connessione:
-
-```text
-1. percorso diretto già noto
-2. NAT traversal / hole punching
-3. relay Freedom
-4. rendezvous blockchain se tutti i percorsi sono persi
-```
-
-## Relay
-
-Un relay Freedom è un nodo di transito, non un server di messaggistica.
-
-```text
-Alice -> ciphertext -> Relay -> ciphertext -> Bob
-```
-
-Un relay:
-
-- non possiede le chiavi E2EE;
-- non conserva la conversazione;
-- non crea mailbox persistenti;
-- usa buffer piccoli, limitati e con TTL;
-- può essere sostituito durante la sessione;
-- deve applicare limiti di banda, memoria e connessioni.
-
-Principio: **forward, not store**.
-
-## Sessione sicura
-
-Una route non autentica un peer. Dopo aver trovato un percorso, gli endpoint eseguono un handshake autenticato bilateralmente.
-
-La chiave pubblica attesa viene risolta dal `DeviceID` tramite blockchain. Entrambe le parti devono dimostrare il possesso della private key corrispondente.
-
-Il transcript dell'handshake deve legare almeno:
-
-- entrambi i DeviceID;
-- key epoch;
-- chiavi effimere;
-- nonce;
-- versione protocollo;
-- suite crittografica;
-- identificatore della sessione.
-
-Il progetto deve usare primitive e protocolli crittografici standard, non crittografia proprietaria.
-
-## Messaggistica
-
-Una volta stabilita la sessione:
-
-```text
-Alice <============================> Bob
-          authenticated E2EE
-```
-
-Messaggi, ACK, file metadata, signaling chiamate e route update vengono trasportati nel canale sicuro.
-
-Se Bob va offline e non esiste alcun percorso, Alice non deposita automaticamente il messaggio sulla blockchain o sui relay: resta pending localmente.
-
-## Store
-
-Freedom Protocol è separato dai client ufficiali.
-
-I client Android e iOS implementano il livello necessario per la conformità dello store senza modificare il trust model del protocollo:
-
-- blocco locale di un DeviceID;
-- segnalazione volontaria con contenuti scelti dall'utente;
-- privacy policy e termini;
-- permessi minimi;
-- nessuna master key;
-- nessuna scansione server-side necessaria delle conversazioni E2EE.
-
-Freedom è un sistema di contatti espliciti tramite DeviceID/QR, non una random chat.
-
-## Stato del codice Android
-
-Il client Android `0.3.0-alpha` include una prima esperienza da app di messaggistica: home, rubrica, chat, profilo condivisibile con QR e numero Freedom, scansione QR, persistenza locale e impostazioni della rete identità. Sulla stessa LAN i dispositivi si annunciano e si risolvono tramite Android NSD, quindi l'utente non inserisce né vede indirizzi IP.
-
-Il numero Freedom è un identificatore umano con checksum derivato dall'identità pubblica. Diventerà canonico quando il registry on-chain ne garantirà unicità e stato. La connessione locale resta autenticata dal fingerprint scambiato nel QR e dall'handshake E2EE.
-
-Il registro Freedom `0.2.0` è distribuito su NEAR Testnet all'account `freedom-registry-jellero.testnet`. Il client interroga lo stato finalizzato tramite `NearChainAdapter`, verifica versione del protocollo e curva P-256 e consente di sostituire completamente gli endpoint RPC pubblici iniziali.
-
-Registrazione e scritture vengono firmate direttamente sul telefono. L'utente importa nelle impostazioni, tramite QR segreto o inserimento manuale, una Function-Call key NEAR dedicata e limitata ai soli metodi del contratto Freedom. Le Full Access key vengono rifiutate. La chiave importata viene cifrata con AES-GCM usando una chiave non esportabile dell'Android Keystore. Nessun relayer Freedom e nessun server fisico predefinito sono necessari per accedere alla blockchain.
-
-Poiché una Function-Call key non può allegare NEAR, l'account versa una volta il credito storage tramite wallet o CLI; successivamente il telefono esegue registrazione e rendezvous con deposito zero e paga soltanto il gas dal proprio account. La directory `relayer/` resta nel repository come prototipo storico e non appartiene al percorso operativo del client `0.3.0-alpha`.
-
-La sequenza ancora da completare è:
-
-```text
-DeviceID + firma Android Keystore
- -> transazione NEAR firmata direttamente sul telefono
- -> NEAR Testnet identity
- -> QR contact
- -> chain verification
- -> rendezvous
- -> route establishment
- -> mutual authentication
- -> E2EE messaging
-```
-
-Il transport rifiuta cambi di fingerprint già approvati, limita handshake/thread/queue e richiede un contatto verificato o una conferma esplicita prima di rendere utilizzabile una nuova sessione. Nel protocollo canonico il trust anchor sarà la chiave corrente risolta dal `DeviceID` tramite chain.
-
-## Build e test Android
-
-Il repository include Gradle Wrapper 9.7 e richiede JDK 17 e Android SDK 37.
-
-```text
-./gradlew testDebugUnitTest assembleDebug lintDebug
-```
-
-La CI esegue gli stessi controlli su ogni push e pull request.
+Il deploy di un upgrade non richiede e non autorizza la modifica delle access key dell'account.
 
 ## Documentazione
 
-- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — architettura completa.
-- [`docs/PROTOCOL.md`](docs/PROTOCOL.md) — oggetti e flussi del protocollo.
-- [`docs/CHAIN.md`](docs/CHAIN.md) — NEAR, Device Registry e rendezvous.
-- [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md) — modello di sicurezza.
-- [`docs/STORE_COMPLIANCE.md`](docs/STORE_COMPLIANCE.md) — separazione protocollo/client e vincoli store.
-- [`ANDROID.md`](ANDROID.md) — roadmap Android.
-
-## Roadmap sintetica
-
-```text
-M0  specifica
-M1  DeviceID + NEAR Testnet + QR
-M2  rendezvous read-before-write
-M3  authenticated secure session
-M4  NAT traversal + route updates
-M5  relay forward-only
-M6  messaging + attachments
-M7  voice/video
-M8  iOS + platform wake integration
-M9  hardening, testing, interoperability
-```
-
-Freedom è definito dalle proprietà tecniche del protocollo: identità verificabile, comunicazione E2EE, routing distribuito, relay non fidati e minima dipendenza dalla blockchain durante una sessione attiva.
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
+- [`docs/CHAIN.md`](docs/CHAIN.md)
+- [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md)
+- [`docs/PROTOCOL.md`](docs/PROTOCOL.md)
+- [`docs/STORE_COMPLIANCE.md`](docs/STORE_COMPLIANCE.md)
+- [`ANDROID.md`](ANDROID.md)

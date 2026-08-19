@@ -3,15 +3,22 @@
 package dev.freedom.app.contact
 
 import android.content.Context
+import dev.freedom.app.crypto.EncryptedJsonStore
 import org.json.JSONArray
 import org.json.JSONObject
 
 class ContactRepository(context: Context) {
-    private val preferences = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+    private val store = EncryptedJsonStore(
+        context = context,
+        preferencesName = PREFERENCES,
+        legacyKey = KEY_CONTACTS,
+        encryptedKey = KEY_CONTACTS_ENCRYPTED,
+        keyStoreAlias = KEYSTORE_ALIAS
+    )
 
     @Synchronized
     fun all(): List<FreedomContact> {
-        val raw = preferences.getString(KEY_CONTACTS, null) ?: return emptyList()
+        val raw = store.read() ?: return emptyList()
         return try {
             val array = JSONArray(raw)
             buildList {
@@ -57,12 +64,11 @@ class ContactRepository(context: Context) {
                     .put("network", contact.networkId)
                     .put("device_id", contact.deviceId)
                     .put("identity_key", contact.identityPublicKey)
-                    .put("rendezvous", contact.rendezvousCapability)
                     .put("mailbox_key", contact.mailboxPublicKey)
                     .put("key_epoch", contact.keyEpoch)
             )
         }
-        return preferences.edit().putString(KEY_CONTACTS, array.toString()).commit()
+        return store.write(array.toString())
     }
 
     private fun decode(value: JSONObject): FreedomContact? {
@@ -76,7 +82,6 @@ class ContactRepository(context: Context) {
             networkId = value.optString("network", "near-testnet"),
             deviceId = value.optString("device_id").takeIf { it.length == 64 },
             identityPublicKey = value.optString("identity_key").takeIf(String::isNotBlank),
-            rendezvousCapability = value.optString("rendezvous").takeIf(String::isNotBlank),
             mailboxPublicKey = value.optString("mailbox_key").takeIf(String::isNotBlank),
             keyEpoch = value.optLong("key_epoch").takeIf { it > 0 }
         )
@@ -85,5 +90,7 @@ class ContactRepository(context: Context) {
     private companion object {
         const val PREFERENCES = "freedom.contacts.v1"
         const val KEY_CONTACTS = "contacts"
+        const val KEY_CONTACTS_ENCRYPTED = "contacts.encrypted.v2"
+        const val KEYSTORE_ALIAS = "freedom.contacts.local.v2"
     }
 }

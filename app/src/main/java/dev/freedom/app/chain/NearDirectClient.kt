@@ -99,6 +99,7 @@ class NearDirectClient(
                         .put("wait_until", "FINAL")
                 )
         ).result
+        requireSuccessfulExecution(response)
         val hash = response.optJSONObject("transaction")?.optString("hash")
             ?: Base58.encode(transactionHash)
         NearTransactionResult(hash)
@@ -164,6 +165,46 @@ class NearDirectClient(
 
     private fun JSONArray.toStringSet(): Set<String> =
         buildSet { repeat(length()) { add(getString(it)) } }
+
+    private fun requireSuccessfulExecution(result: JSONObject) {
+        val finalStatus = result.optString("final_execution_status")
+        if (finalStatus.equals("FAILURE", ignoreCase = true)) {
+            throw IllegalStateException(executionFailureMessage(result.opt("status")))
+        }
+        executionFailure(result.opt("status"))?.let { failure ->
+            throw IllegalStateException(executionFailureMessage(failure))
+        }
+        val receiptOutcomes = result.optJSONArray("receipts_outcome") ?: return
+        for (index in 0 until receiptOutcomes.length()) {
+            val status = receiptOutcomes.optJSONObject(index)
+                ?.optJSONObject("outcome")
+                ?.opt("status")
+            executionFailure(status)?.let { failure ->
+                throw IllegalStateException(executionFailureMessage(failure))
+            }
+        }
+    }
+
+    private fun executionFailure(status: Any?): Any? =
+        (status as? JSONObject)?.takeIf { it.has("Failure") }?.opt("Failure")
+
+    private fun executionFailureMessage(failure: Any?): String {
+        fun findExecutionError(value: Any?): String? = when (value) {
+            is JSONObject -> {
+                value.optString("ExecutionError").takeIf(String::isNotBlank)
+                    ?: value.keys().asSequence().mapNotNull { findExecutionError(value.opt(it)) }.firstOrNull()
+            }
+            is JSONArray -> (0 until value.length()).asSequence()
+                .mapNotNull { findExecutionError(value.opt(it)) }
+                .firstOrNull()
+            else -> null
+        }
+        val detail = findExecutionError(failure)
+            ?.replace(Regex("[\\r\\n\\t]+"), " ")
+            ?.take(300)
+        return detail?.let { "Transazione NEAR rifiutata: $it" }
+            ?: "Transazione NEAR rifiutata dal contratto"
+    }
 
     private data class RpcResponse(val result: JSONObject, val endpoint: String)
 

@@ -31,15 +31,9 @@ data class ChainContactRecord(
     val freedomNumber: String,
     val deviceId: String,
     val identityPublicKey: ByteArray,
-    val rendezvousCapability: ByteArray,
     val mailboxPublicKey: ByteArray,
     val keyEpoch: Long,
     val updatedAtNs: Long
-)
-
-data class ChainRendezvousRecord(
-    val expiresAtNs: Long,
-    val ciphertext: ByteArray
 )
 
 data class ChainMessageRecord(
@@ -123,7 +117,6 @@ class NearChainAdapter(
             freedomNumber = value.getString("freedom_number"),
             deviceId = value.getString("device_id"),
             identityPublicKey = Base64.getDecoder().decode(value.getString("identity_public_key")),
-            rendezvousCapability = Base64.getDecoder().decode(value.getString("rendezvous_capability")),
             mailboxPublicKey = Base64.getDecoder().decode(value.getString("mailbox_public_key")),
             keyEpoch = value.getString("key_epoch").toLong(),
             updatedAtNs = value.getString("updated_at_ns").toLong()
@@ -152,20 +145,6 @@ class NearChainAdapter(
                 )
             }
         }
-    }
-
-    fun getRendezvous(slot: String): Result<ChainRendezvousRecord?> = runCatching {
-        require(DEVICE_ID.matches(slot)) { "Slot rendezvous non valido" }
-        val response = callView(
-            "get_rendezvous",
-            JSONObject().put("slot", slot)
-        )
-        if (response.value === JSONObject.NULL) return@runCatching null
-        val value = response.value as JSONObject
-        ChainRendezvousRecord(
-            expiresAtNs = value.getString("expires_at_ns").toLong(),
-            ciphertext = Base64.getDecoder().decode(value.getString("ciphertext"))
-        )
     }
 
     private fun callView(methodName: String, arguments: JSONObject): ViewResponse {

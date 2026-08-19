@@ -4,10 +4,8 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
-import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -44,6 +42,7 @@ import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
 import dev.freedom.app.chain.ChainSettings
 import dev.freedom.app.chain.ChainHealth
 import dev.freedom.app.chain.ChainDeviceRecord
+import dev.freedom.app.chain.ChainMessageRecord
 import dev.freedom.app.chain.IdentityNetwork
 import dev.freedom.app.chain.NearChainAdapter
 import dev.freedom.app.chain.NearCredentialStore
@@ -61,11 +60,6 @@ import dev.freedom.app.crypto.IdentityStore
 import dev.freedom.app.crypto.Crypto
 import dev.freedom.app.crypto.MailboxKeyStore
 import dev.freedom.app.diagnostics.CrashReporter
-import dev.freedom.app.net.FreedomNode
-import dev.freedom.app.net.LocalPeerDirectory
-import dev.freedom.app.net.PeerPresence
-import dev.freedom.app.net.PeerTrustVerifier
-import dev.freedom.app.net.SharedPreferencesPeerTrustStore
 import java.text.DateFormat
 import java.math.BigInteger
 import java.util.Base64
@@ -84,19 +78,15 @@ class MainActivity : AppCompatActivity() {
     private lateinit var nearChain: NearChainAdapter
     private lateinit var nearDirect: NearDirectClient
     private lateinit var nearCredentialStore: NearCredentialStore
-    private lateinit var node: FreedomNode
 
     private lateinit var toolbar: MaterialToolbar
     private lateinit var content: FrameLayout
     private lateinit var bottomNavigation: BottomNavigationView
     private lateinit var appRoot: View
 
-    private var directory: LocalPeerDirectory? = null
     private var currentScreen = Screen.CHATS
     private var currentContact: FreedomContact? = null
     private var connectedContactNumber: String? = null
-    private var activeRemoteFingerprint: String? = null
-    private var communicationStarted = false
     private var chatStatusRes = R.string.chat_waiting
     private var chainHealth: ChainHealth? = null
     private var chainHealthError: String? = null
@@ -119,7 +109,9 @@ class MainActivity : AppCompatActivity() {
     private val mailboxPollRunnable = object : Runnable {
         override fun run() {
             pollBlockchainMailbox()
-            mainHandler.postDelayed(this, MAILBOX_POLL_INTERVAL_MILLIS)
+            if (mailboxPollingStarted) {
+                mainHandler.postDelayed(this, MAILBOX_POLL_INTERVAL_MILLIS)
+            }
         }
     }
 
@@ -138,7 +130,6 @@ class MainActivity : AppCompatActivity() {
         rebuildNearClients()
 
         buildChrome()
-        node = buildNode()
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
                 when (currentScreen) {
@@ -151,29 +142,23 @@ class MainActivity : AppCompatActivity() {
             }
         })
         showChats()
-        startMailboxPolling()
         mainHandler.postDelayed(::showCrashReportIfPresent, CRASH_REPORT_DELAY_MILLIS)
     }
 
-    override fun onRequestPermissionsResult(
-        requestCode: Int,
-        permissions: Array<out String>,
-        grantResults: IntArray
-    ) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode != REQUEST_LOCAL_NETWORK) return
-        if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
-            startCommunication()
-        } else {
-            showMessage(getString(R.string.local_permission_denied))
-        }
+    override fun onStart() {
+        super.onStart()
+        startMailboxPolling()
+        refreshOwnIdentityOnChain()
+    }
+
+    override fun onStop() {
+        stopMailboxPolling()
+        super.onStop()
     }
 
     override fun onDestroy() {
         CrashReporter.record(this, "main_activity_on_destroy")
-        directory?.close()
-        mainHandler.removeCallbacks(mailboxPollRunnable)
-        if (::node.isInitialized) node.close()
+        stopMailboxPolling()
         chainExecutor.shutdownNow()
         super.onDestroy()
     }
@@ -185,7 +170,6 @@ class MainActivity : AppCompatActivity() {
         networkId = chainSettings.network.id,
         deviceId = identity.deviceId,
         identityPublicKey = Base64.getEncoder().encodeToString(identity.compressedPublicKey),
-        rendezvousCapability = Base64.getEncoder().encodeToString(identity.rendezvousCapability),
         mailboxPublicKey = Base64.getEncoder().encodeToString(mailboxIdentity.compressedPublicKey),
         keyEpoch = 1
     )
@@ -277,144 +261,6 @@ class MainActivity : AppCompatActivity() {
         appRoot = root
         ViewCompat.requestApplyInsets(root)
     }
-
-    private fun buildNode(): FreedomNode = FreedomNode(
-        identity,
-        PeerTrustVerifier(SharedPreferencesPeerTrustStore(this)),
-        object : FreedomNode.Listener {
-            override fun onStatus(message: String) = ui {
-                if (currentScreen == Screen.CHAT) showMessage(message)
-            }
-
-            override fun onPeerVerificationRequired(
-                endpoint: String,
-                remoteFingerprint: String,
-                sessionId: String
-            ) = ui {
-                val known = contacts.findByFingerprint(remoteFingerprint)
-                val expected = currentContact
-                when {
-                    known != null -> {
-                        currentContact = known
-                        node.approvePendingPeer()
-                    }
-                    expected != null && expected.fingerprint.equals(remoteFingerprint, ignoreCase = true) -> {
-                        node.approvePendingPeer()
-                    }
-                    expected != null -> {
-                        node.rejectPendingPeer()
-                        MaterialAlertDialogBuilder(this@MainActivity)
-                            .setTitle(R.string.identity_mismatch_title)
-                            .setMessage(R.string.identity_mismatch_body)
-                            .setPositiveButton(android.R.string.ok, null)
-                            .show()
-                    }
-                    else -> confirmUnknownPeer(remoteFingerprint)
-                }
-            }
-
-            override fun onConnected(
-                endpoint: String,
-                remoteFingerprint: String,
-                sessionId: String
-            ) = ui {
-                activeRemoteFingerprint = remoteFingerprint
-                val contact = contacts.findByFingerprint(remoteFingerprint) ?: currentContact
-                currentContact = contact
-                connectedContactNumber = contact?.freedomNumber
-                chatStatusRes = R.string.chat_connected
-                if (currentScreen == Screen.CHAT && contact != null) renderChat(contact)
-                else showMessage(getString(R.string.chat_connected))
-            }
-
-            override fun onDisconnected(reason: String) = ui {
-                connectedContactNumber = null
-                activeRemoteFingerprint = null
-                chatStatusRes = R.string.chat_offline
-                currentContact?.let { if (currentScreen == Screen.CHAT) renderChat(it) }
-            }
-
-            override fun onMessageSent(messageId: String, text: String) = ui {
-                activeContactForMessage()?.let { contact ->
-                    chats.add(
-                        ChatMessage(
-                            messageId = messageId,
-                            contactNumber = contact.freedomNumber,
-                            text = text,
-                            outgoing = true,
-                            timestampMillis = System.currentTimeMillis()
-                        )
-                    )
-                    if (currentScreen == Screen.CHAT) renderChat(contact)
-                }
-            }
-
-            override fun onMessageReceived(messageId: String, text: String) = ui {
-                activeContactForMessage()?.let { contact ->
-                    chats.add(
-                        ChatMessage(
-                            messageId = messageId,
-                            contactNumber = contact.freedomNumber,
-                            text = text,
-                            outgoing = false,
-                            timestampMillis = System.currentTimeMillis()
-                        )
-                    )
-                    if (currentScreen == Screen.CHAT) renderChat(contact)
-                    else showMessage("${contact.displayName}: $text")
-                }
-            }
-
-            override fun onAck(messageId: String) = Unit
-
-            override fun onError(message: String) = ui { showMessage(message) }
-        }
-    )
-
-    private fun activeContactForMessage(): FreedomContact? =
-        activeRemoteFingerprint?.let(contacts::findByFingerprint) ?: currentContact
-
-    private fun startCommunicationOrRequestPermission() {
-        if (hasLocalNetworkPermission()) {
-            startCommunication()
-            return
-        }
-        showMessage(getString(R.string.local_permission_explanation))
-        requestPermissions(arrayOf(LOCAL_NETWORK_PERMISSION), REQUEST_LOCAL_NETWORK)
-    }
-
-    private fun startBlockchainCommunication() {
-        directory?.close()
-        directory = null
-        if (!communicationStarted) {
-            communicationStarted = true
-            node.start()
-        }
-    }
-
-    private fun startCommunication() {
-        if (!communicationStarted) {
-            communicationStarted = true
-            node.start()
-        }
-        restartDirectory()
-    }
-
-    private fun restartDirectory() {
-        if (!hasLocalNetworkPermission()) return
-        directory?.close()
-        directory = LocalPeerDirectory(this, ownContact()) {
-            when (currentScreen) {
-                Screen.CHATS -> showChats()
-                Screen.CONTACTS -> showContacts()
-                else -> Unit
-            }
-        }.also(LocalPeerDirectory::start)
-    }
-
-    private fun hasLocalNetworkPermission(): Boolean =
-        Build.VERSION.SDK_INT < 37 ||
-            checkSelfPermission(LOCAL_NETWORK_PERMISSION) == PackageManager.PERMISSION_GRANTED
 
     private fun showChats() {
         currentScreen = Screen.CHATS
@@ -906,10 +752,6 @@ class MainActivity : AppCompatActivity() {
             val publishArguments = org.json.JSONObject()
                 .put("device_id", identity.deviceId)
                 .put("freedom_number", ownNumber)
-                .put(
-                    "rendezvous_capability",
-                    Base64.getEncoder().encodeToString(identity.rendezvousCapability)
-                )
                 .put("mailbox_public_key", Base64.getEncoder().encodeToString(mailboxKey))
                 .put("auth_nonce", publishNonce.toString())
                 .put("signature", Base64.getEncoder().encodeToString(signature))
@@ -958,16 +800,7 @@ class MainActivity : AppCompatActivity() {
                     .firstOrNull { it.messageId == sent.first }
                     ?: error("Il messaggio di test non è leggibile dopo la finalizzazione")
                 stage = "decrypt"
-                val decrypted = Crypto.decryptChainMessage(
-                    privateKey = mailboxIdentity.privateKey,
-                    senderDeviceId = stored.senderDeviceId,
-                    recipientDeviceId = stored.recipientDeviceId,
-                    messageId = stored.messageId,
-                    expiresAtNs = stored.expiresAtNs,
-                    ephemeralPublicKey = stored.ephemeralPublicKey,
-                    nonce = stored.nonce,
-                    ciphertext = stored.ciphertext
-                )
+                val decrypted = decryptMailboxMessage(stored)
                 require(decrypted.contentEquals(marker)) { "Contenuto decifrato non valido" }
                 sent.second
             }
@@ -1242,6 +1075,8 @@ class MainActivity : AppCompatActivity() {
                             Crypto.decodeCompressedP256PublicKey(chainContact.identityPublicKey)
                         }.getOrNull()
                         if (publicKey == null ||
+                            FreedomNumber.fromPublicKey(publicKey) != chainContact.freedomNumber ||
+                            chainContact.freedomNumber != contact.freedomNumber ||
                             !Crypto.fingerprint(publicKey).equals(contact.fingerprint, ignoreCase = true)
                         ) {
                             connectedContactNumber = null
@@ -1251,7 +1086,6 @@ class MainActivity : AppCompatActivity() {
                             val updated = contact.copy(
                                 deviceId = chainContact.deviceId,
                                 identityPublicKey = Base64.getEncoder().encodeToString(chainContact.identityPublicKey),
-                                rendezvousCapability = Base64.getEncoder().encodeToString(chainContact.rendezvousCapability),
                                 mailboxPublicKey = Base64.getEncoder().encodeToString(chainContact.mailboxPublicKey),
                                 keyEpoch = chainContact.keyEpoch
                             )
@@ -1326,6 +1160,23 @@ class MainActivity : AppCompatActivity() {
         mainHandler.postDelayed(mailboxPollRunnable, 2_000L)
     }
 
+    private fun stopMailboxPolling() {
+        mailboxPollingStarted = false
+        mainHandler.removeCallbacks(mailboxPollRunnable)
+    }
+
+    private fun refreshOwnIdentityOnChain() {
+        if (!nearCredentialStore.hasCredentials() || chainExecutor.isShutdown) return
+        val credentials = nearCredentialStore.load().getOrElse { return }
+        chainExecutor.execute {
+            runCatching { ensureOwnIdentityOnChain(credentials) }
+                .onFailure { error ->
+                    CrashReporter.record(this, "near_identity_refresh_failed:${error.javaClass.simpleName}")
+                    CrashReporter.recordHandledError(this, "near_identity_refresh", error)
+                }
+        }
+    }
+
     private fun pollBlockchainMailbox() {
         if (!nearCredentialStore.hasCredentials() || chainExecutor.isShutdown) return
         chainExecutor.execute {
@@ -1338,16 +1189,7 @@ class MainActivity : AppCompatActivity() {
                     val contact = contacts.findByDeviceId(stored.senderDeviceId) ?: return@forEach
                     if (chats.contains(stored.messageId)) return@forEach
                     runCatching {
-                        val plaintext = Crypto.decryptChainMessage(
-                            privateKey = mailboxIdentity.privateKey,
-                            senderDeviceId = stored.senderDeviceId,
-                            recipientDeviceId = stored.recipientDeviceId,
-                            messageId = stored.messageId,
-                            expiresAtNs = stored.expiresAtNs,
-                            ephemeralPublicKey = stored.ephemeralPublicKey,
-                            nonce = stored.nonce,
-                            ciphertext = stored.ciphertext
-                        )
+                        val plaintext = decryptMailboxMessage(stored)
                         val text = plaintext.toString(Charsets.UTF_8)
                         require(text.isNotBlank())
                         contact to ChatMessage(
@@ -1375,6 +1217,25 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
+    }
+
+    private fun decryptMailboxMessage(stored: ChainMessageRecord): ByteArray {
+        var lastFailure: Throwable? = null
+        mailboxIdentity.privateKeysNewestFirst().forEach { privateKey ->
+            runCatching {
+                Crypto.decryptChainMessage(
+                    privateKey = privateKey,
+                    senderDeviceId = stored.senderDeviceId,
+                    recipientDeviceId = stored.recipientDeviceId,
+                    messageId = stored.messageId,
+                    expiresAtNs = stored.expiresAtNs,
+                    ephemeralPublicKey = stored.ephemeralPublicKey,
+                    nonce = stored.nonce,
+                    ciphertext = stored.ciphertext
+                )
+            }.onSuccess { return it }.onFailure { lastFailure = it }
+        }
+        throw IllegalStateException("Messaggio non decifrabile con le chiavi mailbox conservate", lastFailure)
     }
 
     private fun showAddContactOptions() {
@@ -1504,6 +1365,10 @@ class MainActivity : AppCompatActivity() {
                         }
                         val publicKey = runCatching {
                             Crypto.decodeCompressedP256PublicKey(record.identityPublicKey)
+                                .also {
+                                    require(FreedomNumber.fromPublicKey(it) == record.freedomNumber)
+                                    Crypto.decodeCompressedP256PublicKey(record.mailboxPublicKey)
+                                }
                         }.getOrElse {
                             showMessage(getString(R.string.invalid_chain_contact))
                             return@ui
@@ -1519,8 +1384,6 @@ class MainActivity : AppCompatActivity() {
                                 deviceId = record.deviceId,
                                 identityPublicKey = Base64.getEncoder()
                                     .encodeToString(record.identityPublicKey),
-                                rendezvousCapability = Base64.getEncoder()
-                                    .encodeToString(record.rendezvousCapability),
                                 mailboxPublicKey = Base64.getEncoder()
                                     .encodeToString(record.mailboxPublicKey),
                                 keyEpoch = record.keyEpoch
@@ -1531,18 +1394,6 @@ class MainActivity : AppCompatActivity() {
             }
         }
         dialog.show()
-    }
-
-    private fun savePresenceAsContact(presence: PeerPresence, requestedName: String) {
-        val contact = FreedomContact(
-            displayName = requestedName.ifBlank {
-                presence.displayName.ifBlank { getString(R.string.contact_default_name) }
-            }.take(48),
-            freedomNumber = presence.freedomNumber,
-            fingerprint = presence.fingerprint,
-            networkId = chainSettings.network.id
-        )
-        saveContact(contact)
     }
 
     private fun saveContact(contact: FreedomContact) {
@@ -1558,36 +1409,6 @@ class MainActivity : AppCompatActivity() {
             showContacts()
             CrashReporter.record(this, "contacts_save_success_render_completed")
         }
-    }
-
-    private fun confirmUnknownPeer(fingerprint: String) {
-        MaterialAlertDialogBuilder(this)
-            .setTitle(R.string.unknown_peer_title)
-            .setMessage(getString(R.string.unknown_peer_body_format, fingerprint))
-            .setPositiveButton(R.string.authorize) { _, _ ->
-                val number = try {
-                    FreedomNumber.fromFingerprint(fingerprint)
-                } catch (_: Exception) {
-                    node.rejectPendingPeer()
-                    return@setPositiveButton
-                }
-                val contact = FreedomContact(
-                    displayName = getString(R.string.contact_default_name),
-                    freedomNumber = number,
-                    fingerprint = fingerprint,
-                    networkId = chainSettings.network.id
-                )
-                if (!contacts.save(contact)) {
-                    showMessage(getString(R.string.contact_save_error))
-                    node.rejectPendingPeer()
-                    return@setPositiveButton
-                }
-                currentContact = contact
-                node.approvePendingPeer()
-            }
-            .setNegativeButton(R.string.reject) { _, _ -> node.rejectPendingPeer() }
-            .setOnCancelListener { node.rejectPendingPeer() }
-            .show()
     }
 
     private fun prepareTopLevel(title: String, subtitle: String, selectedItem: Int) {
@@ -1719,7 +1540,6 @@ class MainActivity : AppCompatActivity() {
                 chainSettings.network = network
                 chainHealth = null
                 chainHealthError = null
-                restartDirectory()
                 showMessage(getString(R.string.network_saved_format, network.displayName))
                 if (!network.chainOperational) showMessage(getString(R.string.network_unavailable))
                 showSettings()
@@ -2066,8 +1886,6 @@ class MainActivity : AppCompatActivity() {
     private companion object {
         const val MATCH = ViewGroup.LayoutParams.MATCH_PARENT
         const val WRAP = ViewGroup.LayoutParams.WRAP_CONTENT
-        const val REQUEST_LOCAL_NETWORK = 2001
-        const val LOCAL_NETWORK_PERMISSION = "android.permission.ACCESS_LOCAL_NETWORK"
         const val ACTION_IDENTITY = 3001
         const val ACTION_SHARE = 3002
         const val TAG = "FreedomContacts"

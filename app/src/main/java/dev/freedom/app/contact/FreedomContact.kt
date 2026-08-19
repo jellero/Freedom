@@ -7,6 +7,7 @@ import java.net.URLDecoder
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import java.security.PublicKey
+import java.util.Base64
 
 data class FreedomContact(
     val displayName: String,
@@ -15,7 +16,6 @@ data class FreedomContact(
     val networkId: String,
     val deviceId: String? = null,
     val identityPublicKey: String? = null,
-    val rendezvousCapability: String? = null,
     val mailboxPublicKey: String? = null,
     val keyEpoch: Long? = null
 )
@@ -23,8 +23,12 @@ data class FreedomContact(
 object FreedomNumber {
     private val modulus = BigInteger.TEN.pow(PAYLOAD_LENGTH)
 
-    fun fromPublicKey(publicKey: PublicKey): String {
-        return fromDigest(Crypto.sha256(publicKey.encoded))
+    fun fromPublicKey(publicKey: PublicKey): String =
+        fromCompressedPublicKey(Crypto.compressP256PublicKey(publicKey))
+
+    fun fromCompressedPublicKey(publicKey: ByteArray): String {
+        Crypto.decodeCompressedP256PublicKey(publicKey)
+        return fromDigest(Crypto.sha256(publicKey))
     }
 
     fun fromFingerprint(fingerprint: String): String {
@@ -78,8 +82,8 @@ object FreedomNumber {
         return (10 - (sum % 10)) % 10
     }
 
-    private const val PAYLOAD_LENGTH = 11
-    private const val TOTAL_LENGTH = 12
+    private const val PAYLOAD_LENGTH = 19
+    private const val TOTAL_LENGTH = 20
 }
 
 object FreedomContactCodec {
@@ -87,8 +91,15 @@ object FreedomContactCodec {
         require(FreedomNumber.isValid(contact.freedomNumber))
         require(isFingerprint(contact.fingerprint))
         val hasBlockchainIdentity = contact.deviceId != null &&
-            contact.identityPublicKey != null && contact.rendezvousCapability != null &&
-            contact.mailboxPublicKey != null
+            contact.identityPublicKey != null && contact.mailboxPublicKey != null
+        if (hasBlockchainIdentity) {
+            validateBlockchainIdentity(
+                contact.freedomNumber,
+                contact.fingerprint,
+                contact.identityPublicKey.orEmpty(),
+                contact.mailboxPublicKey.orEmpty()
+            )
+        }
         return buildString {
             append("freedom://contact?v=").append(if (hasBlockchainIdentity) "2" else "1")
             append("&network=").append(encodeValue(contact.networkId))
@@ -98,7 +109,6 @@ object FreedomContactCodec {
             if (hasBlockchainIdentity) {
                 append("&device_id=").append(encodeValue(contact.deviceId.orEmpty()))
                 append("&identity_key=").append(encodeValue(contact.identityPublicKey.orEmpty()))
-                append("&rendezvous=").append(encodeValue(contact.rendezvousCapability.orEmpty()))
                 append("&mailbox_key=").append(encodeValue(contact.mailboxPublicKey.orEmpty()))
                 append("&key_epoch=").append(contact.keyEpoch ?: 1)
             }
@@ -128,10 +138,10 @@ object FreedomContactCodec {
         val name = values["name"]?.trim().orEmpty().take(MAX_NAME_LENGTH)
         val deviceId = values["device_id"]?.takeIf { DEVICE_ID.matches(it) }
         val identityKey = values["identity_key"]?.takeIf(String::isNotBlank)
-        val rendezvous = values["rendezvous"]?.takeIf(String::isNotBlank)
         val mailboxKey = values["mailbox_key"]?.takeIf(String::isNotBlank)
         if (version == "2") {
-            require(deviceId != null && identityKey != null && rendezvous != null && mailboxKey != null)
+            require(deviceId != null && identityKey != null && mailboxKey != null)
+            validateBlockchainIdentity(number, fingerprint, identityKey, mailboxKey)
         }
 
         return FreedomContact(
@@ -141,7 +151,6 @@ object FreedomContactCodec {
             networkId = network,
             deviceId = deviceId,
             identityPublicKey = identityKey,
-            rendezvousCapability = rendezvous,
             mailboxPublicKey = mailboxKey,
             keyEpoch = values["key_epoch"]?.toLongOrNull()
         )
@@ -149,6 +158,18 @@ object FreedomContactCodec {
 
     private fun isFingerprint(value: String): Boolean =
         FINGERPRINT.matches(value.uppercase())
+
+    private fun validateBlockchainIdentity(
+        number: String,
+        fingerprint: String,
+        identityKey: String,
+        mailboxKey: String
+    ) {
+        val identityPublicKey = Crypto.decodeCompressedP256PublicKey(Base64.getDecoder().decode(identityKey))
+        require(FreedomNumber.fromPublicKey(identityPublicKey) == number)
+        require(Crypto.fingerprint(identityPublicKey).equals(fingerprint, ignoreCase = true))
+        Crypto.decodeCompressedP256PublicKey(Base64.getDecoder().decode(mailboxKey))
+    }
 
     private fun encodeValue(value: String): String =
         URLEncoder.encode(value, StandardCharsets.UTF_8.name())

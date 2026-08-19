@@ -1,522 +1,87 @@
-# Freedom — Protocol Specification
+# Freedom — protocollo alpha v1
 
-Status: **design draft**
+## Encoding e primitive
 
-Questa specifica descrive gli oggetti logici e i flussi minimi del protocollo. Gli encoding binari definitivi e le primitive crittografiche concrete verranno fissati prima dell'interoperabilità pubblica.
+- Device ID e message ID: 32 byte, hex lowercase.
+- Identity/mailbox/ephemeral key: P-256 compressa, 33 byte.
+- Firma identity: ECDSA P-256 raw `r || s`, low-S, 64 byte.
+- Hash/KDF: SHA-256 e HKDF-SHA256.
+- Payload: AES-256-GCM, nonce casuale 12 byte.
+- Valori binari JSON: Base64 standard.
+- Interi NEAR oltre il range JSON sicuro: stringhe decimali.
 
-## 1. Principi
+## Authorization envelope
 
-- ogni oggetto parsabile è versionato;
-- gli oggetti di identità vengono verificati contro la blockchain;
-- le informazioni di routing non autenticano l'identità;
-- la blockchain non trasporta contenuti applicativi;
-- i relay inoltrano, non archiviano;
-- se il destinatario è offline non esiste consegna distribuita automatica;
-- read-before-write è obbligatorio per il rendezvous;
-- ogni rendezvous on-chain è autosufficiente e non dipende da revisioni precedenti;
-- una sessione attiva gestisce direttamente i propri route update.
-
-## 2. Header
+Ogni operazione identity-authenticated firma:
 
 ```text
-Header {
-    protocol_version
-    object_type
-}
-```
-
-Versioni obbligatorie sconosciute devono fallire closed.
-
-## 3. DeviceID
-
-`DeviceID` è un identificatore stabile a 256 bit generato con entropia crittografica.
-
-Non contiene PII e non è derivato direttamente dalla chiave pubblica corrente.
-
-```text
-DeviceRecord {
-    version
-    device_id
-    identity_public_key
-    key_epoch
-    status
-    protocol_version
-    updated_at
-}
-```
-
-## 4. Key rotation
-
-```text
-RotateDeviceKey {
-    device_id
-    old_epoch
-    new_epoch
-    new_public_key
-    authorization_proof
-}
-```
-
-Una rotazione valida incrementa l'epoch. La specifica della prova dipende dal modello del contratto chain, ma il client deve sempre poter determinare la chiave corrente e lo stato di revoca.
-
-`key_epoch` appartiene all'identità del device; non è una revisione del rendezvous.
-
-## 5. Contact descriptor
-
-```text
-FreedomContact {
-    version
-    network_id
-    device_id
-    rendezvous_capability
-    expires_at?
-}
-```
-
-La capability non è una identity key e non consente impersonation. È una capability di bootstrap/rendezvous.
-
-Il QR è solo una rappresentazione del descriptor.
-
-## 6. Pair rendezvous state
-
-Dopo il primo handshake i peer derivano:
-
-```text
-PairRendezvousState {
-    peer_device_id
-    rendezvous_secret
-}
-```
-
-Il segreto non viene scritto on-chain.
-
-Gli slot possono essere derivati in modo direzionale e rotante:
-
-```text
-slot_local(context)
-slot_remote(context)
-```
-
-La derivazione deve essere deterministica per entrambe le parti nel contesto corrente e non deve richiedere la conoscenza di un record precedente.
-
-Il formato concreto della KDF viene fissato con la crypto suite.
-
-## 7. Rendezvous record
-
-Ogni record on-chain è indipendente. Per il lettore è sempre equivalente a una nuova **rev 0**.
-
-```text
-RendezvousRecord {
-    version
-    expires_at
-    ciphertext
-}
-```
-
-Il key/slot blockchain è opaco e derivato da capability o pair secret.
-
-Il ciphertext protegge:
-
-```text
-RendezvousPayload {
-    sender_device_id
-    sender_key_epoch
-    rendezvous_nonce
-    route_candidates[]
-    relay_candidates[]
-    ephemeral_transport_public_key
-}
-```
-
-Il payload deve essere autenticato e cifrato.
-
-Non esiste `sequence`, `revision`, `previous_record_hash` o altro requisito che obblighi il destinatario a conoscere il rendezvous precedente.
-
-## 8. Read-before-write
-
-Algoritmo normativo per A che deve raggiungere B dopo aver perso tutti i route:
-
-```text
-remote = chain.readRendezvous(remote_slot)
-
-if remote.valid && !remote.expired:
-    try(remote.route_candidates)
-    DO_NOT_WRITE
-else:
-    local = chain.readRendezvous(local_slot)
-
-    if local.valid && !local.expired:
-        WAIT_AND_POLL(remote_slot)
-    else:
-        chain.writeRendezvous(local_slot, new_independent_record)
-```
-
-Il client non deve riscrivere un record soltanto perché non ha ancora ricevuto risposta. Deve rispettare TTL e backoff.
-
-Quando serve un nuovo rendezvous, questo viene generato da zero con nuovo nonce/materiale effimero e deve poter essere interpretato senza stato storico del rendezvous precedente.
-
-## 9. Route candidate
-
-```text
-RouteCandidate {
-    transport
-    endpoint
-    candidate_type
-    priority
-    observed_at
-    expires_at
-}
-```
-
-L'endpoint è una struttura trasporto-specifica. Per UDP/TCP può comprendere IP e porta.
-
-Candidate type iniziali:
-
-```text
-LOCAL
-OBSERVED
-DIRECT
-RELAY
-```
-
-## 10. Relay candidate
-
-```text
-RelayCandidate {
-    relay_id
-    endpoint
-    transport
-    capability_token?
-    expires_at
-}
-```
-
-Un relay candidate non implica fiducia nel relay.
-
-## 11. Route update in-session
-
-```text
-RouteUpdate {
-    sequence
-    candidates[]
-    relay_candidates[]
-    issued_at
-    expires_at
-}
-```
-
-Questo oggetto viaggia dentro la sessione autenticata.
-
-Il `sequence` di `RouteUpdate` appartiene alla sessione attiva e serve a ordinamento/anti-replay. Non è una revisione blockchain.
-
-Finché almeno un percorso valido permette di scambiare `RouteUpdate`, non si usa la blockchain per aggiornare il routing della coppia.
-
-## 12. Handshake
-
-L'handshake produce:
-
-```text
-SessionContext {
-    session_id
-    local_device_id
-    remote_device_id
-    local_key_epoch
-    remote_key_epoch
-    negotiated_version
-    negotiated_crypto_suite
-    tx_keys
-    rx_keys
-    created_at
-}
-```
-
-Il transcript deve includere:
-
-```text
-network_id
+"FREEDOM_REGISTRY_V1\0"
+contract_id_length || contract_id
+operation
+device_id
+auth_nonce
+key_epoch
 protocol_version
-A_device_id
-B_device_id
-A_key_epoch
-B_key_epoch
-A_ephemeral_key
-B_ephemeral_key
-A_nonce
-B_nonce
-crypto_suite
-session_id
+key_material_length || key_material
 ```
 
-Entrambi gli endpoint verificano la controparte usando la current public key risolta tramite `ChainAdapter`.
+Gli interi sono big-endian. Operazioni correnti: register `1`, rotate `2`, revoke `3`, publish contact `4`, send message `5`.
 
-## 13. Blockchain freshness durante l'handshake
-
-Prima del primo handshake con un DeviceID sconosciuto, il client deve risolvere il record chain.
-
-Per contatti già noti può usare cache verificata entro una policy di freshness, ma deve rivalidare quando:
-
-- l'epoch remoto cambia;
-- una firma non verifica;
-- riceve un'indicazione di key rotation;
-- la cache supera il limite previsto;
-- la sessione viene ristabilita dopo un periodo lungo.
-
-La policy concreta verrà definita con il chain adapter.
-
-## 14. Encrypted frame
+## Numero Freedom
 
 ```text
-EncryptedFrame {
-    version
-    session_hint
-    sequence
-    ciphertext
-}
+digest  = SHA-256(compressed_identity_public_key)
+payload = unsigned_big_endian(digest) mod 10^19
+number  = decimal(payload, width=19) || Luhn(payload)
 ```
 
-L'inner frame autenticato contiene:
+App e contratto devono produrre lo stesso valore. Il checksum rileva errori di digitazione, non è una firma. Il contratto confronta sempre il numero con la chiave registrata.
+
+## Registrazione
+
+`register_device` registra Device ID, identity public key e versione. La prova usa nonce `0`, epoch `1` e la chiave pubblica come key material. Operazioni successive richiedono `stored_nonce + 1`.
+
+## Contatto
+
+`publish_contact` associa al numero derivato:
 
 ```text
-InnerFrame {
-    frame_type
-    session_id
-    sequence
-    payload
-}
+device_id
+identity_public_key (dal DeviceRecord)
+mailbox_public_key
+key_epoch
+updated_at
 ```
 
-Il sequence è monotono per direzione e protetto dall'AEAD.
+Key material firmato: `UTF8(number) || mailbox_public_key`. Il QR può trasportare questi valori pubblici per bootstrap, ma il destinatario verifica lo stato NEAR corrente.
 
-Questo sequence appartiene esclusivamente alla sessione crittografica e non ha alcuna relazione con i rendezvous on-chain.
+## Messaggio
 
-## 15. Replay protection
-
-Requisiti:
-
-- reject dei sequence già accettati nella sessione;
-- finestra limitata se il trasporto ammette reorder;
-- memoria bounded;
-- nessun reset senza transizione autenticata di sessione.
-
-Il rendezvous on-chain non usa sequence storico: freshness e validità derivano dallo stato chain verificato, dallo slot atteso, da `expires_at` e dall'autenticazione del payload.
-
-## 16. Text message
+Il mittente genera message ID, scadenza e chiave P-256 effimera. Deriva:
 
 ```text
-ChatMessage {
-    message_id
-    conversation_id
-    sender_device_id
-    logical_sequence
-    sent_at
-    body
-    reply_to?
-}
+shared = ECDH(ephemeral_private, recipient_mailbox_public)
+salt   = SHA-256(sender_device_id || recipient_device_id || message_id)
+key    = HKDF-SHA256(shared, salt, "Freedom on-chain message v1", 32)
+aad    = sender_device_id || recipient_device_id || message_id || expires_at_ns
 ```
 
-Il messaggio è valido solo dentro una sessione autenticata.
-
-## 17. Delivery ACK
+Il contratto riceve e conserva metadata, ephemeral public key, nonce e ciphertext. Key material della firma:
 
 ```text
-MessageAck {
-    message_id
-    ack_type
-    receiver_device_id
-    logical_time
-}
+message_id || recipient_device_id || expires_at_ns || ephemeral_public_key || nonce || SHA-256(ciphertext)
 ```
 
-ACK iniziali:
+TTL valido: da 60 secondi a 7 giorni; il client usa 24 ore. Ciphertext massimo: 4096 byte. Mailbox massima: 100 messaggi attivi.
 
-```text
-RECEIVED
-PERSISTED
-READ   // opzionale
-```
+## Lettura e deduplicazione
 
-## 18. Offline behavior
+`get_messages(device_id)` restituisce solo record non scaduti. Il client deduplica per message ID e associa il mittente a un contatto già verificato. I self-test non vengono mostrati come conversazioni.
 
-Freedom non implementa un global offline store.
+## Rotazione mailbox
 
-Se non esiste alcuna sessione e il remote device non è raggiungibile:
+Il client pubblica la chiave del giorno corrente e conserva localmente le chiavi private della finestra breve. In assenza di un key ID nel record prova le chiavi dalla più recente finché AES-GCM autentica. Dopo l'eliminazione di una chiave, i ciphertext storici destinati a quella chiave non sono più decifrabili dal device.
 
-```text
-OutgoingMessage.status = WAITING_FOR_PEER
-```
+## Versioning
 
-Il plaintext o ciphertext resta esclusivamente nello storage locale del mittente finché il peer torna raggiungibile o l'utente lo elimina.
-
-Relay e blockchain non ricevono il messaggio applicativo.
-
-## 19. Relay packet
-
-```text
-RelayPacket {
-    version
-    packet_id
-    next_hop_token
-    hop_limit
-    expires_at
-    ciphertext
-}
-```
-
-Il relay deve rigettare:
-
-- packet troppo grandi;
-- TTL scaduti;
-- hop limit esaurito;
-- quota superata;
-- token/capability non validi quando richiesti.
-
-## 20. Relay storage semantics
-
-Un relay può mantenere soltanto buffer necessari al forwarding immediato.
-
-Non esiste una `StoreRequest` nel protocollo base.
-
-La perdita del relay può causare perdita dei pacchetti in volo; il livello endpoint gestisce retry all'interno dei limiti della sessione.
-
-## 21. Attachment
-
-```text
-AttachmentManifest {
-    attachment_id
-    media_type
-    plaintext_size
-    chunk_size
-    chunks[]
-    integrity
-}
-```
-
-Gli attachment vengono trasferiti soltanto quando esiste una sessione/route attiva. Nessun chunk viene depositato automaticamente sulla blockchain o su relay persistenti.
-
-## 22. Call signaling
-
-```text
-CallInvite {
-    call_id
-    media_capabilities
-    transport_capabilities
-}
-
-CallAccept {
-    call_id
-    selected_capabilities
-    candidates[]
-}
-
-CallCandidate {
-    call_id
-    candidate
-}
-
-CallEnd {
-    call_id
-    reason
-}
-```
-
-Il signaling viaggia E2EE. Le media key sono separate dalle message key.
-
-## 23. Presence
-
-Presence è off-chain e opportunistica.
-
-```text
-Presence {
-    state
-    capabilities
-    expires_at
-}
-```
-
-Non deve generare scritture chain continue.
-
-## 24. Errors
-
-Classi minime:
-
-```text
-MALFORMED
-UNSUPPORTED_VERSION
-CHAIN_IDENTITY_NOT_FOUND
-CHAIN_IDENTITY_REVOKED
-KEY_EPOCH_MISMATCH
-AUTHENTICATION_FAILED
-REPLAY_DETECTED
-ROUTE_UNAVAILABLE
-RENDEZVOUS_EXPIRED
-RELAY_REFUSED
-PEER_OFFLINE
-SESSION_REKEY_REQUIRED
-```
-
-## 25. Resource limits
-
-Ogni implementazione deve avere limiti espliciti per:
-
-- frame size;
-- handshake object size;
-- route candidates per record;
-- relay buffer;
-- connessioni simultanee;
-- write frequency on-chain;
-- retry/backoff;
-- message local queue.
-
-## 26. Chain abstraction
-
-Interfaccia concettuale:
-
-```text
-ChainAdapter {
-    registerDevice
-    resolveDevice
-    rotateDeviceKey
-    revokeDevice
-    readRendezvous
-    writeRendezvous
-    verifyState
-}
-```
-
-La prima implementazione usa NEAR Testnet.
-
-## 27. First executable milestones
-
-### M1 — identity
-
-- generazione DeviceID;
-- identity key nel keystore;
-- registrazione su NEAR Testnet;
-- resolve DeviceID;
-- QR contact descriptor;
-- key rotation/revocation di test.
-
-### M2 — rendezvous
-
-- capability bootstrap;
-- opaque slots;
-- read-before-write;
-- TTL;
-- rendezvous indipendenti sempre interpretabili come rev 0;
-- route payload cifrato.
-
-### M3 — secure communication
-
-- mutual authentication;
-- direct debug route;
-- encrypted text;
-- ACK;
-- replay rejection;
-- fresh session on reconnect.
-
-### M4 — network paths
-
-- candidate observation;
-- NAT traversal;
-- route update in-session;
-- relay forward-only.
+Protocol version resta `1`; il contract version cambia per semantica/deploy. Qualunque modifica incompatibile a domain, encoding, AAD o key material richiede una nuova versione esplicita e vettori di test incrociati.

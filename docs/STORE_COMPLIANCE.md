@@ -98,9 +98,10 @@ Il QR Freedom è un contact descriptor.
 
 ```text
 network_id
+freedom_number
 device_id
-rendezvous_capability
-expiry?
+identity_fingerprint
+mailbox_public_key
 ```
 
 Non sblocca contenuti digitali acquistati fuori dallo store e non è un meccanismo di pagamento.
