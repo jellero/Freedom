@@ -1,115 +1,68 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1280" viewBox="0 0 1600 1280" role="img" aria-labelledby="title desc">
   <title id="title">Freedom Protocol architecture</title>
-  <desc id="desc">Freedom architecture separating RootIdentity and pairwise identity, distributed control plane, adaptive path and transport selection, Freedom Communication E2EE live sessions, Freedom Gateway with explicit Internet egress, device relays, Shield and verified app distribution.</desc>
+  <desc id="desc">Freedom architecture separating root recovery and delegated device authorization, verified control-plane state, pairwise identity, adaptive transport, Freedom Communication, true Shield circuits, Freedom Gateway and verified app distribution.</desc>
   <defs>
     <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z" fill="#475569"/></marker>
-    <style>
-      .bg{fill:#fff}.title{font:700 40px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#0f172a}.subtitle{font:400 20px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#475569}.section{font:700 23px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#0f172a}.label{font:600 18px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#0f172a}.small{font:400 16px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#334155}.tiny{font:400 14px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#475569}.box{fill:#f8fafc;stroke:#cbd5e1;stroke-width:2}.device{fill:#eff6ff;stroke:#60a5fa;stroke-width:3}.chain{fill:#f5f3ff;stroke:#8b5cf6;stroke-width:3}.route{fill:#f0fdf4;stroke:#22c55e;stroke-width:3}.comm{fill:#ecfeff;stroke:#06b6d4;stroke-width:3}.gateway{fill:#fff7ed;stroke:#f59e0b;stroke-width:3}.relay{fill:#fff7ed;stroke:#fb923c;stroke-width:2}.shield{fill:#eef2ff;stroke:#6366f1;stroke-width:2}.dist{fill:#fefce8;stroke:#eab308;stroke-width:2}.line{stroke:#475569;stroke-width:3;fill:none;marker-end:url(#arrow)}.dash{stroke:#64748b;stroke-width:3;stroke-dasharray:10 9;fill:none;marker-end:url(#arrow)}.pair{stroke:#0ea5e9;stroke-width:3;stroke-dasharray:8 7;fill:none}
-    </style>
+    <style>.bg{fill:#fff}.title{font:700 40px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#0f172a}.subtitle{font:400 20px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#475569}.section{font:700 23px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#0f172a}.label{font:600 18px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#0f172a}.small{font:400 16px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#334155}.tiny{font:400 14px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#475569}.box{fill:#f8fafc;stroke:#cbd5e1;stroke-width:2}.device{fill:#eff6ff;stroke:#60a5fa;stroke-width:3}.chain{fill:#f5f3ff;stroke:#8b5cf6;stroke-width:3}.route{fill:#f0fdf4;stroke:#22c55e;stroke-width:3}.comm{fill:#ecfeff;stroke:#06b6d4;stroke-width:3}.gateway{fill:#fff7ed;stroke:#f59e0b;stroke-width:3}.relay{fill:#fff7ed;stroke:#fb923c;stroke-width:2}.shield{fill:#eef2ff;stroke:#6366f1;stroke-width:2}.dist{fill:#fefce8;stroke:#eab308;stroke-width:2}.line{stroke:#475569;stroke-width:3;fill:none;marker-end:url(#arrow)}.dash{stroke:#64748b;stroke-width:3;stroke-dasharray:10 9;fill:none;marker-end:url(#arrow)}.pair{stroke:#0ea5e9;stroke-width:3;stroke-dasharray:8 7;fill:none}</style>
   </defs>
-
   <rect class="bg" x="0" y="0" width="1600" height="1280"/>
   <text class="title" x="800" y="52" text-anchor="middle">Freedom Protocol — architecture</text>
-  <text class="subtitle" x="800" y="86" text-anchor="middle">Strong E2EE communication · adaptive network fabric · optional censorship-resilient Gateway</text>
+  <text class="subtitle" x="800" y="86" text-anchor="middle">Delegated endpoint identity · verified state · live E2EE · replaceable network paths</text>
 
   <rect class="chain" x="295" y="120" width="1010" height="220" rx="28"/>
   <text class="section" x="800" y="160" text-anchor="middle">Distributed / verifiable control plane</text>
   <text class="tiny" x="800" y="188" text-anchor="middle">NEAR Testnet = first ChainAdapter implementation, not the Freedom wire protocol</text>
-
-  <rect class="box" x="335" y="215" width="205" height="90" rx="18"/>
-  <text class="label" x="438" y="248" text-anchor="middle">Root identity</text>
-  <text class="tiny" x="438" y="276" text-anchor="middle">ownership · recovery · entitlement</text>
-
-  <rect class="box" x="565" y="215" width="205" height="90" rx="18"/>
-  <text class="label" x="668" y="248" text-anchor="middle">Device records</text>
-  <text class="tiny" x="668" y="276" text-anchor="middle">opaque commitment · rotation</text>
-
-  <rect class="box" x="795" y="215" width="205" height="90" rx="18"/>
-  <text class="label" x="898" y="248" text-anchor="middle">Pairwise recovery</text>
-  <text class="tiny" x="898" y="276" text-anchor="middle">rendezvous · RecoveryBeacon</text>
-
-  <rect class="box" x="1025" y="215" width="240" height="90" rx="18"/>
-  <text class="label" x="1145" y="248" text-anchor="middle">Policy / releases</text>
-  <text class="tiny" x="1145" y="276" text-anchor="middle">security · bulletin · signed manifests</text>
+  <rect class="box" x="335" y="215" width="205" height="90" rx="18"/><text class="label" x="438" y="248" text-anchor="middle">Verified state</text><text class="tiny" x="438" y="276" text-anchor="middle">checkpoint · proofs · freshness</text>
+  <rect class="box" x="565" y="215" width="205" height="90" rx="18"/><text class="label" x="668" y="248" text-anchor="middle">Opaque device state</text><text class="tiny" x="668" y="276" text-anchor="middle">record · rotation · revocation</text>
+  <rect class="box" x="795" y="215" width="205" height="90" rx="18"/><text class="label" x="898" y="248" text-anchor="middle">Pairwise recovery</text><text class="tiny" x="898" y="276" text-anchor="middle">signed slots · bounded state</text>
+  <rect class="box" x="1025" y="215" width="240" height="90" rx="18"/><text class="label" x="1145" y="248" text-anchor="middle">Policy / releases</text><text class="tiny" x="1145" y="276" text-anchor="middle">threshold · anti-rollback · freshness</text>
 
   <rect class="device" x="70" y="400" width="355" height="230" rx="26"/>
   <text class="section" x="248" y="438" text-anchor="middle">Alice — Freedom client</text>
-  <text class="small" x="112" y="485">RootIdentity</text>
-  <text class="small" x="112" y="518">DeviceKey</text>
-  <text class="small" x="112" y="551">DeviceRecordCommitment</text>
-  <text class="small" x="112" y="584">PairwiseContactAlias_AB</text>
+  <text class="small" x="112" y="480">RootIdentity / recovery policy</text>
+  <text class="small" x="112" y="514">DeviceAuthorizationDelegation</text>
+  <text class="small" x="112" y="548">DeviceCertificate · DeviceKey</text>
+  <text class="small" x="112" y="582">PairwiseContactAlias_AB</text>
   <text class="tiny" x="248" y="610" text-anchor="middle">no global DeviceID in network layer</text>
 
   <rect class="device" x="1175" y="400" width="355" height="230" rx="26"/>
   <text class="section" x="1352" y="438" text-anchor="middle">Bob — Freedom client</text>
-  <text class="small" x="1217" y="485">RootIdentity</text>
-  <text class="small" x="1217" y="518">DeviceKey</text>
-  <text class="small" x="1217" y="551">DeviceRecordCommitment</text>
-  <text class="small" x="1217" y="584">PairwiseContactAlias_BA</text>
+  <text class="small" x="1217" y="480">RootIdentity / recovery policy</text>
+  <text class="small" x="1217" y="514">DeviceAuthorizationDelegation</text>
+  <text class="small" x="1217" y="548">DeviceCertificate · DeviceKey</text>
+  <text class="small" x="1217" y="582">PairwiseContactAlias_BA</text>
   <text class="tiny" x="1352" y="610" text-anchor="middle">contact = person, not each device</text>
 
-  <path class="dash" d="M320 400 C390 345 445 335 535 330"/>
-  <path class="dash" d="M1280 400 C1210 345 1155 335 1065 330"/>
-  <text class="tiny" x="410" y="357" text-anchor="middle">verify / recover</text>
-  <text class="tiny" x="1190" y="357" text-anchor="middle">verify / recover</text>
+  <path class="dash" d="M320 400 C390 345 445 335 535 330"/><path class="dash" d="M1280 400 C1210 345 1155 335 1065 330"/>
+  <text class="tiny" x="410" y="357" text-anchor="middle">verified revocation / recovery</text><text class="tiny" x="1190" y="357" text-anchor="middle">verified revocation / recovery</text>
 
-  <path class="pair" d="M425 455 C665 375 935 375 1175 455"/>
-  <text class="small" x="800" y="395" text-anchor="middle">pairwise authenticated relationship · PairSecret · rotating aliases</text>
+  <path class="pair" d="M425 455 C665 375 935 375 1175 455"/><text class="small" x="800" y="395" text-anchor="middle">pairwise authenticated relationship · expected contact · PairSecret · rotating aliases</text>
 
   <rect class="route" x="500" y="455" width="600" height="135" rx="24"/>
   <text class="section" x="800" y="495" text-anchor="middle">Adaptive path / transport selector</text>
-  <text class="small" x="800" y="530" text-anchor="middle">direct · NAT · relay · bridge · Shield · multi-hop · pluggable transport</text>
-  <text class="tiny" x="800" y="562" text-anchor="middle">temporary TransportToken / RelayCircuitToken · no identity reuse as routing ID</text>
+  <text class="small" x="800" y="530" text-anchor="middle">direct · NAT · relay · bridge · Shield · pluggable transport</text>
+  <text class="tiny" x="800" y="562" text-anchor="middle">temporary transport/circuit tokens · stream/datagram semantics declared</text>
+  <path class="line" d="M425 545 L500 525"/><path class="line" d="M1175 545 L1100 525"/>
 
-  <path class="line" d="M425 545 L500 525"/>
-  <path class="line" d="M1175 545 L1100 525"/>
+  <rect class="relay" x="185" y="690" width="275" height="100" rx="20"/><text class="label" x="322" y="725" text-anchor="middle">Relay fabric</text><text class="tiny" x="322" y="754" text-anchor="middle">VPS · community · device relay</text><text class="tiny" x="322" y="776" text-anchor="middle">forward-only · not Internet exit</text>
+  <rect class="shield" x="515" y="690" width="275" height="100" rx="20"/><text class="label" x="652" y="725" text-anchor="middle">Freedom Shield</text><text class="tiny" x="652" y="754" text-anchor="middle">true circuit · per-hop keys</text><text class="tiny" x="652" y="776" text-anchor="middle">layered forwarding · no silent direct</text>
+  <rect class="relay" x="845" y="690" width="275" height="100" rx="20"/><text class="label" x="982" y="725" text-anchor="middle">Bridge / pluggable transport</text><text class="tiny" x="982" y="754" text-anchor="middle">non-public · obfuscated · adaptive</text><text class="tiny" x="982" y="776" text-anchor="middle">reachability target</text>
+  <rect class="gateway" x="1175" y="690" width="275" height="100" rx="20"/><text class="label" x="1312" y="725" text-anchor="middle">Explicit Internet Egress</text><text class="tiny" x="1312" y="754" text-anchor="middle">managed · private · business</text><text class="tiny" x="1312" y="776" text-anchor="middle">Gateway only</text>
 
-  <rect class="relay" x="185" y="690" width="275" height="100" rx="20"/>
-  <text class="label" x="322" y="725" text-anchor="middle">Relay fabric</text>
-  <text class="tiny" x="322" y="754" text-anchor="middle">VPS · community · device relay</text>
-  <text class="tiny" x="322" y="776" text-anchor="middle">forward-only · not Internet exit</text>
-
-  <rect class="shield" x="515" y="690" width="275" height="100" rx="20"/>
-  <text class="label" x="652" y="725" text-anchor="middle">Shield / multi-hop</text>
-  <text class="tiny" x="652" y="754" text-anchor="middle">separate adjacent knowledge</text>
-  <text class="tiny" x="652" y="776" text-anchor="middle">replaceable hops</text>
-
-  <rect class="relay" x="845" y="690" width="275" height="100" rx="20"/>
-  <text class="label" x="982" y="725" text-anchor="middle">Bridge / pluggable transport</text>
-  <text class="tiny" x="982" y="754" text-anchor="middle">non-public · obfuscated · adaptive</text>
-  <text class="tiny" x="982" y="776" text-anchor="middle">anti-censorship target</text>
-
-  <rect class="gateway" x="1175" y="690" width="275" height="100" rx="20"/>
-  <text class="label" x="1312" y="725" text-anchor="middle">Explicit Internet Egress</text>
-  <text class="tiny" x="1312" y="754" text-anchor="middle">managed · private · business</text>
-  <text class="tiny" x="1312" y="776" text-anchor="middle">Gateway only</text>
-
-  <path class="line" d="M650 590 C580 630 460 650 380 690"/>
-  <path class="line" d="M760 590 L680 690"/>
-  <path class="line" d="M885 590 L955 690"/>
-  <path class="line" d="M980 590 C1080 625 1190 650 1270 690"/>
+  <path class="line" d="M650 590 C580 630 460 650 380 690"/><path class="line" d="M760 590 L680 690"/><path class="line" d="M885 590 L955 690"/><path class="line" d="M980 590 C1080 625 1190 650 1270 690"/>
 
   <rect class="comm" x="160" y="865" width="610" height="175" rx="26"/>
-  <text class="section" x="465" y="907" text-anchor="middle">Freedom Communication</text>
-  <text class="small" x="465" y="942" text-anchor="middle">authenticated E2EE live session</text>
-  <text class="tiny" x="465" y="974" text-anchor="middle">keys remain at Freedom endpoints · selected path is transport only</text>
-  <text class="tiny" x="465" y="1000" text-anchor="middle">text · file · voice · video · no offline mailbox</text>
+  <text class="section" x="465" y="907" text-anchor="middle">Freedom Communication</text><text class="small" x="465" y="942" text-anchor="middle">authenticated E2EE live session</text><text class="tiny" x="465" y="974" text-anchor="middle">forward secrecy · bounded rekey · endpoint-held keys</text><text class="tiny" x="465" y="1000" text-anchor="middle">text · file · voice · video · no offline mailbox</text>
 
   <rect class="gateway" x="830" y="865" width="610" height="175" rx="26"/>
-  <text class="section" x="1135" y="907" text-anchor="middle">Freedom Gateway — post-V1</text>
-  <text class="small" x="1135" y="942" text-anchor="middle">selected apps / whole device → adaptive tunnel → explicit egress</text>
-  <text class="tiny" x="1135" y="974" text-anchor="middle">protects/diversifies network path; not the same E2EE trust boundary</text>
-  <text class="tiny" x="1135" y="1000" text-anchor="middle">browser · external apps · hostile firewall / DPI environments</text>
+  <text class="section" x="1135" y="907" text-anchor="middle">Freedom Gateway — post-V1</text><text class="small" x="1135" y="942" text-anchor="middle">selected apps / whole device → adaptive tunnel → explicit egress</text><text class="tiny" x="1135" y="974" text-anchor="middle">path protection boundary differs from Communication E2EE</text><text class="tiny" x="1135" y="1000" text-anchor="middle">browser · external apps · hostile firewall / DPI environments</text>
 
-  <path class="line" d="M460 790 L465 865"/>
-  <path class="line" d="M652 790 C620 820 560 835 520 865"/>
-  <path class="line" d="M982 790 C1040 820 1085 835 1110 865"/>
-  <path class="line" d="M1312 790 L1190 865"/>
+  <path class="line" d="M460 790 L465 865"/><path class="line" d="M652 790 C620 820 560 835 520 865"/><path class="line" d="M982 790 C1040 820 1085 835 1110 865"/><path class="line" d="M1312 790 L1190 865"/>
 
   <rect class="dist" x="305" y="1095" width="990" height="100" rx="22"/>
   <text class="label" x="800" y="1130" text-anchor="middle">Share Freedom / verified client distribution</text>
-  <text class="tiny" x="800" y="1158" text-anchor="middle">peer · relay · mirror · store → verify FreedomRelease / hash / signer → platform installer</text>
-  <text class="tiny" x="800" y="1180" text-anchor="middle">source of bytes is not the trust anchor</text>
+  <text class="tiny" x="800" y="1158" text-anchor="middle">untrusted bytes → exact hash → threshold release → verified policy/status → Android signer</text>
+  <text class="tiny" x="800" y="1180" text-anchor="middle">first install also enforces pinned trust anchor + bootstrap freshness floor</text>
 
   <text class="tiny" x="800" y="1245" text-anchor="middle">No single IP, relay, provider, RPC or transport is intended to be permanent. Universal firewall bypass is not guaranteed.</text>
 </svg>
