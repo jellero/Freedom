@@ -1,130 +1,104 @@
 # Freedom — Product Scope
 
-Status: **canonical product scope**
+Status: **canonical product scope**.
 
 Normative security rules: [`SECURITY_INVARIANTS.md`](SECURITY_INVARIANTS.md).
-Control-plane security: [`CONTROL_PLANE_SECURITY.md`](CONTROL_PLANE_SECURITY.md).
+Control-plane: [`CONTROL_PLANE_SECURITY.md`](CONTROL_PLANE_SECURITY.md).
+Revocation: [`REVOCATION.md`](REVOCATION.md).
 Advanced development: [`ADVANCED_DEVELOPMENT.md`](ADVANCED_DEVELOPMENT.md).
+Schema: [`../spec/freedom.cddl`](../spec/freedom.cddl).
 
 ## 1. Obiettivo
 
-Freedom Communication deve dimostrare: **comunicazione privata live, autenticata E2EE, sincrona, senza mailbox centrale e senza dipendenza permanente da un singolo percorso/provider.**
+Freedom Communication deve dimostrare comunicazione privata live, autenticata E2EE, sincrona, senza mailbox centrale e senza dipendenza permanente da un singolo percorso/provider.
 
-> **Semplice quando tutto funziona. Trasparente quando qualcosa cerca di impedirti di comunicare.**
+## 2. V1 core
 
-## 2. Launch scope — V1
+La prima release pubblica è 1:1 e richiede:
 
-La prima release pubblica è focalizzata sul **1:1**.
-
-Funzioni essenziali:
-
-- RootRecoveryKey/RootIdentity inizializzate localmente;
+- RootRecoveryKey/RootIdentity;
 - DeviceAuthorizationDelegation;
-- DeviceKey + DeviceRecordCommitment opaco;
 - DeviceCertificate verificabile offline;
-- Recovery Kit con KDF memory-hard + AEAD + >=128-bit recovery entropy;
-- registrazione sponsorizzata quando serve, senza wallet NEAR obbligatorio;
-- verified checkpoint/state proof per stato control-plane security-sensitive;
-- verified finality/state per mutazioni;
-- contatto-persona via QR/link;
-- `BOOTSTRAP_UNVERIFIED` / safety-code verification opzionale;
-- pairwise identity/rendezvous;
-- pairwise state recovery via device transfer o encrypted bundle;
-- expected-contact authenticated handshake;
-- handshake offer binding / anti-downgrade;
-- forward secrecy tra sessioni;
-- bounded key lifetime + rekey;
-- transport semantic separation stream/datagram;
-- 1 active device Free;
-- 10 active contacts Free come **product policy del client ufficiale**;
-- synchronous 1:1 text/media/file/voice/video;
-- Live mode;
-- relay forward-only;
-- RelayDescriptor/provenance-aware selection;
+- opaque DeviceRecord + scoped DeviceControlKey;
+- canonical deterministic encoding/signing domains;
+- verified control-plane checkpoint/state proof;
+- canonical revocation/freshness semantics;
+- BootstrapFreshnessFloor per fresh install;
+- contact bootstrap + `BOOTSTRAP_UNVERIFIED`/`CONTACT_VERIFIED`;
+- pairwise identity/rendezvous con write authorization;
+- pairwise encrypted backup/device transfer;
+- expected-contact handshake;
+- both-offer-set anti-downgrade;
+- forward secrecy;
+- bounded traffic-key lifetime;
+- complete RekeyInit/Commit/Ack state machine;
+- stream/datagram semantic separation;
+- synchronous text/file/media/voice/video;
+- no mailbox/offline queue;
+- forward-only relay;
 - device relay opt-in;
-- Relay Contributor +10 product contact slots;
 - Adaptive Defense base;
-- Network Indicator;
-- Emergency Shield bounded;
-- Share Freedom / Install QR;
-- BootstrapTrustAnchor pinned per first sideload;
-- threshold-verified release/security policy;
-- signer-set anti-rollback;
-- contract upgrade governance threshold/timelock oppure security core immutable;
-- block/report/store-compliance essentials.
+- Share Freedom with threshold release verification;
+- contract/signer governance anti-rollback;
+- stable Recovery Kit cryptographic envelope.
 
-## 3. Identity / recovery
+## 3. V1 commercial quotas are not protocol security
+
+Targets such as:
 
 ```text
-RootRecoveryKey
- -> DeviceAuthorizationDelegation
- -> privacy-preserving DeviceAuthorizationProof
- -> DeviceRecordCommitment + DeviceKey
- -> verified activation
- -> DeviceCertificate
+FREE 1 device
+FREE 10 contacts
+Relay Contributor +10 contacts
 ```
 
-Restore:
+are client/service product policy in V1.
 
-```text
-Recovery Kit
- -> RootIdentity/root epoch
- -> NEW DeviceAuthorizationKey if needed
- -> NEW DeviceKey
- -> verified activation
- -> NEW DeviceCertificate
- -> entitlement restore
- -> PairwiseRecoveryBundle/device transfer when available
-```
+A modified open-source client may bypass a purely local quota. Therefore:
 
-Root compromise usa `UserRootRotation`, non il semplice restore della stessa root.
+- peers do not reject a valid E2EE session because a remote client exceeded a local commercial quota;
+- the control-plane does not publish social/device graph merely to enforce monetization;
+- V1 does not require an unfinished ZK device-slot construction as a core protocol blocker;
+- future anti-tamper device/contact quota enforcement requires a separate privacy-preserving credential/nullifier/ZK design and review.
 
-## 4. Contact assurance
+Managed Gateway/Shield/egress capacity remains a more enforceable commercial surface.
 
-Un contatto rappresenta una persona/RootIdentity, non ogni device.
+## 4. Root compromise profile
 
-Prima del bootstrap un descriptor sostituito può collegare l'utente all'attaccante. Il client deve poter mostrare safety code/fingerprint e distinguere contatto verificato da bootstrap non indipendentemente verificato.
+Normal Recovery Kit restore handles device loss. Claiming recovery after complete RootRecoveryKey compromise requires a precommitted `UserRecoveryPolicy` with independent recovery quorum + delay.
 
-Pairwise alias non viene descritto come unlinkability assoluta contro contatti colludenti.
+If such a policy is not configured, the client/documentation must not claim compromise recovery.
 
 ## 5. Session security gate
 
-Prima del V1 pubblico:
+Before public V1:
 
 ```text
-expected-contact authentication
-DeviceCertificate/delegation validation
-DeviceKey possession proof
-verified revocation/freshness
+expected-contact auth
+canonical signing domains
+DeviceCertificate parent-scope validation
+revocation proof/freshness
+fresh-install bootstrap floor
 forward secrecy
-bounded traffic-key lifetime
-rekey
+rekey loss/duplicate/simultaneous-init behavior
 replay protection
-both-offer-set downgrade protection
-control/media sequence-space separation
+both-offer anti-downgrade
+control/media sequence separation
 ```
 
-## 6. Synchronous semantics
+## 6. Rendezvous/storage gate
 
-```text
-active authenticated session -> transmit now
-no active authenticated session -> fail/discard
-```
+Rendezvous/recovery uses derived one-time write keys, signed generation-monotonic records and bounded storage reclaim.
 
-Vietati mailbox on-chain, relay inbox persistente, automatic offline retry queue e store-and-forward.
+Blockers:
 
-## 7. Contatti Free / Relay Contributor
+- public slot overwrite possible without secret write authority;
+- map state grows forever despite TTL;
+- write generation rollback/replay accepted.
 
-```text
-FREE                     10 product contact slots
-FREE + RELAY CONTRIBUTOR 20 product contact slots
-```
+## 7. Control-plane gate
 
-V1: enforcement nel client ufficiale, rubrica locale/cifrata, nessun social graph pubblicato per enforcement commerciale. La quota non è una regola di interoperabilità tra client.
-
-## 8. Control-plane gate
-
-Security-sensitive read:
+Security read:
 
 ```text
 NetworkAnchor
@@ -133,30 +107,22 @@ NetworkAnchor
  -> canonical object
 ```
 
-Security-sensitive write:
+Security write:
 
 ```text
 submit
  -> finality proof
  -> execution success
- -> resulting state proof
- -> exact transition
- -> UX/local state
+ -> resulting-state proof
+ -> expected transition
+ -> local success
 ```
 
-RPC response o tx hash da soli non bastano.
+RPC response/tx hash alone never enough.
 
-## 9. Storage gate
+## 8. Governance gate
 
-Ogni temporary control-plane record implementa reclaim/overwrite/ring/lease concreto.
-
-Blocker:
-
-> active state che cresce indefinitamente perché ogni epoch crea una nuova map key senza prune/reclaim.
-
-## 10. Governance gate
-
-Prima della production:
+Production:
 
 ```text
 ReleaseAuthorization   >= 3-of-5
@@ -166,125 +132,70 @@ ContractUpgrade        >= 3-of-5 + timelock
 GovernanceRootRotation >= 3-of-5 + recovery
 ```
 
-Signer-set transitions sono monotonic/cross-authorized e highest-seen state impedisce rollback.
+Signer custody/operator independence is an explicit trust assumption. A single organization controlling a quorum cannot be marketed as absence of a single administrative actor merely because there are five key files.
 
-## 11. Device Relay
+## 9. Shield
 
-Device relay opt-in/resource-bounded; non possiede plaintext/session keys e non diventa Internet egress.
+True Freedom Shield remains post-core until `SHIELD.md` circuit setup/per-hop/layered-forwarding/provenance gates pass.
 
-Relay diversity usa provenance/observed metadata; `N relay IDs` non viene assunto come `N independent operators`.
+`SHIELDED` label is unavailable before that.
 
-## 12. Shield
+## 10. Gateway
 
-Freedom Shield forte è post-core fino a implementazione di [`SHIELD.md`](SHIELD.md): circuit setup, per-hop keys, layered forwarding, Sybil/provenance tests.
-
-La label production `SHIELDED` non appare prima di quei gate.
-
-## 13. Share Freedom / release security
-
-```text
-source bytes
- -> exact SHA-256
- -> threshold FreedomRelease
- -> signer-set transition/epoch anti-rollback
- -> Android signer lineage
- -> ReleaseStatus proof
- -> SecurityPolicy proof
- -> install
-```
-
-First sideload usa pinned BootstrapTrustAnchor indipendente dalla source.
-
-## 14. Payment / entitlement
-
-Payment flow preferito:
-
-```text
-PaymentAttestation
- -> one-time EntitlementVoucher / blind credential
- -> redemption nullifier
- -> verified entitlement transition
-```
-
-Timing correlation può restare e non viene negata.
-
-## 15. Adaptive Defense / Network Indicator
-
-```text
-NORMAL
-SHIELDED
-DEGRADED
-SUSPECTED
-UNAVAILABLE
-```
-
-`SUSPECTED` è inferenza di rete, non prova di censura/sorveglianza.
-
-## 16. Gateway — post-V1
+Post-V1 capability:
 
 ```text
 app -> local Gateway -> Freedom path -> explicit Egress -> Internet
 ```
 
-Target Free iniziale managed Gateway: `100 MB/day`, separato da Communication/Emergency Shield.
+Target managed Free capacity can remain 100 MB/day as a product target, separate from Communication.
 
-`DEVICE_RELAY` non diventa egress.
-
-## 17. Cosa NON blocca V1
-
-Non sono prerequisiti: groups, group media, communities, bots, mailbox/cloud history, full Shield multi-hop production, full Maximum Resilience, advanced padding, tokenized relay economy, embedded browser, whole-device Gateway.
-
-## 18. Roadmap
+## 11. Release / first install
 
 ```text
-V1
-  identity/root/delegation/recovery
-  DeviceCertificate + verified control-plane proofs
-  pairwise contact/recovery
-  anti-downgrade authenticated session
-  FS/rekey/transport semantics
-  1:1 communication
-  relay/device relay + provenance
-  Adaptive Defense base
-  Share Freedom + threshold governance
-
-V1.5
-  Live Groups
-
-V2
-  scalable multi-party media
-
-Pro/Shield evolution
-  true Shield circuit protocol
-  Always-Shielded
-  Maximum Resilience
-
-Post-V1 Gateway
-  explicit egress
-  selected-app/whole-device
-  managed quota
-  Maximum Reachability
+untrusted bytes
+ -> exact hash
+ -> threshold FreedomRelease
+ -> signer epoch/transition
+ -> verified ReleaseStatus / SecurityPolicy
+ -> Android signer lineage
+ -> BootstrapTrustAnchor
+ -> BootstrapFreshnessFloor
+ -> install
 ```
 
-## 19. Launch blockers
+## 12. Development gates
 
-- control-plane state accettato da RPC senza proof;
-- link pubblico RootIdentity→device presentato come privacy production;
-- active temporary state non reclaimable/bounded;
-- RootRecoveryKey usata come daily operational key;
-- root compromise senza `UserRootRotation`;
-- pairwise recovery non definito;
-- first-contact substitution non gestibile/verificabile;
-- handshake offer stripping/downgrade non testato;
-- stream/datagram semantics confuse;
-- transaction Failure/state mismatch accettati;
-- signer-set rollback possibile;
-- single-key contract upgrade production;
-- Recovery Kit brute-forceable;
-- global DeviceID reintrodotto;
-- mailbox/offline queue reintrodotta;
-- release first-install senza independent pinned anchor;
-- Relay diversity basata solo su self-declared IDs;
-- claim `SHIELDED` prima del vero circuit protocol;
-- merchant/payment identity linkata inutilmente all'entitlement;
-- social graph pubblicato per enforcement della quota contatti.
+Protocol/control-plane/routing development is simulator-first according to `ADVANCED_DEVELOPMENT.md`.
+
+Before public V1, at least L0/L1/L2/L3 coverage exists for core protocol/control-plane behavior; Android gates are added for platform-specific properties.
+
+## 13. Non-blockers for V1
+
+- groups;
+- group media;
+- cloud history;
+- production Shield multi-hop;
+- full Gateway;
+- advanced padding;
+- hard anti-tamper contact/device quota;
+- tokenized relay economy;
+- embedded browser.
+
+## 14. Launch blockers
+
+- canonical schema drift between docs/code;
+- ad-hoc non-domain-separated signatures;
+- stale fresh-install checkpoint accepted below floor;
+- RPC `not found` interpreted as non-revoked;
+- rendezvous overwrite/front-run without write key;
+- active state not reclaimable;
+- root-compromise claim without independent recovery policy;
+- rekey split-brain/loss behavior undefined;
+- first-contact substitution ignored;
+- signer quorum operationally centralized while marketed as no single actor;
+- chain migration without StateMigrationProof;
+- global DeviceID or public social/device graph reintroduced;
+- mailbox/offline queue reintroduced;
+- release first-install without pinned trust/freshness anchor;
+- `SHIELDED` claim before real circuit protocol.
