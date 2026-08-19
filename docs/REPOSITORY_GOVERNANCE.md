@@ -40,6 +40,7 @@ spec/**
 docs/SECURITY_INVARIANTS.md
 docs/CONTROL_PLANE_SECURITY.md
 docs/REVOCATION.md
+docs/PAIRWISE_RECOVERY.md
 docs/IDENTITY_MODEL.md
 docs/PROTOCOL.md
 docs/THREAT_MODEL.md
@@ -48,6 +49,8 @@ docs/EMERGENCY_UPDATES.md
 docs/APP_DISTRIBUTION.md
 AGENTS.md
 ```
+
+`spec/crypto-domains.txt` is specifically treated as a normative security file because changing a fixed SIGN/MAC/AEAD/HASH/KDF domain can change cross-object/network/purpose acceptance semantics.
 
 `CODEOWNERS` names the human owner for these paths.
 
@@ -62,7 +65,7 @@ Agents may:
 - respond to review;
 - update non-normative docs consistent with canonical state.
 
-Agents MUST NOT independently merge a change that weakens a security invariant, changes a trust assumption, signing/AEAD domain, recovery/revocation/governance state machine or canonical signed schema.
+Agents MUST NOT independently merge a change that weakens a security invariant, changes a trust assumption, cryptographic domain, recovery/revocation/governance/rekey state machine or canonical signed schema.
 
 ## 5. Specification consistency CI
 
@@ -74,8 +77,10 @@ The checker is intentionally small and dependency-free. It verifies repository-l
 - README does not absorb the internal Codex/Docker development method;
 - known stale terminology/formulas do not reappear;
 - required CDDL object families remain present;
+- required cryptographic domain families remain registered;
+- pairwise recovery anchor objects/docs remain present;
 - SVG concept/architecture assets remain well-formed XML;
-- key normative docs continue linking to the canonical schema.
+- key normative docs continue linking to canonical schema/domain sources.
 
 It does **not** prove cryptographic correctness. It is drift detection, not security review.
 
