@@ -25,7 +25,7 @@ L1 deterministic sim
 L2 Docker/kernel network
    |
    v
-L3 real ChainAdapter differential
+L3 real NEAR Sandbox ChainAdapter differential
    |
    v
 L4/L5 Android + physical networks
@@ -43,16 +43,7 @@ core/src/main/java/dev/freedom/core/
 
 Lo stesso source tree è incluso nell'Android source set.
 
-`sim/simctl.py` gestisce soltanto:
-
-- scenario DSL;
-- virtual clock;
-- scheduling;
-- fault injection;
-- process orchestration;
-- assertions/evidence.
-
-Non deve reimplementare una state machine già presente nel core.
+`sim/simctl.py` gestisce soltanto scenario DSL, virtual clock, scheduling, fault injection, process orchestration e assertions/evidence. Non deve reimplementare una state machine già presente nel core.
 
 Baseline implementata:
 
@@ -99,10 +90,11 @@ Per modifiche network/routing, su host Docker disposable:
 python sim/l2/run_docker.py
 ```
 
-Quando esiste il driver NearChainAdapter reale:
+Per L3 reale:
 
 ```bash
-python sim/l3/differential.py --adapter-cmd "<NearChainAdapter test driver>"
+python sim/l3/differential.py \
+  --adapter-cmd "cargo run --quiet --manifest-path near/l3-adapter/Cargo.toml"
 ```
 
 `--oracle-only` **non è L3 reale**.
@@ -113,7 +105,7 @@ python sim/l3/differential.py --adapter-cmd "<NearChainAdapter test driver>"
 L0  core unit/self-tests + canonical byte vectors
 L1  deterministic virtual-time simulation
 L2  real Docker/container/socket/network behavior
-L3  real ChainAdapter local/test differential
+L3  real NEAR Sandbox ChainAdapter differential
 L4  Android emulator
 L5  physical devices + Wi-Fi/mobile/CGNAT
 L6  external security/interoperability review
@@ -123,14 +115,7 @@ Ogni livello risponde a una domanda diversa; nessun livello sostituisce automati
 
 ## 6. L0 — core e bytes
 
-L0 include:
-
-- `Freedom-DCBOR-1` exact byte vectors;
-- strict decoding/negative vectors;
-- crypto-domain registry checks;
-- shared-core transition self-tests.
-
-Modificare expected bytes o una state machine normativa richiede review umana.
+L0 include `Freedom-DCBOR-1` exact byte vectors, strict decoding/negative vectors, crypto-domain registry checks e shared-core transition self-tests. Modificare expected bytes o una state machine normativa richiede review umana.
 
 ## 7. L1 — deterministic simulator
 
@@ -157,7 +142,7 @@ L1 deve crescere con handshake, revocation, rendezvous, storage, recovery races,
 
 ## 8. L2 — Docker/network chaos reale
 
-`sim/l2/run_docker.py` è già eseguibile e usa container/network namespace/TCP reali.
+`sim/l2/run_docker.py` è eseguibile e usa container/network namespace/TCP reali.
 
 Baseline:
 
@@ -173,66 +158,49 @@ relay A stopped/blocked
 
 Questo prova integrazione kernel/socket/container, non carrier CGNAT.
 
-Espansioni previste:
-
-- `tc netem` latency/loss/reorder/jitter;
-- nftables/iptables block by IP/port/subnet;
-- UDP/QUIC-like blocking;
-- DNS failure/poisoning;
-- SNI/domain filtering test endpoints;
-- active reset/proxy fault injection;
-- bridge/egress failure;
-- path mutation mid-session.
+Espansioni previste: `tc netem` latency/loss/reorder/jitter, nftables/iptables block by IP/port/subnet, UDP/QUIC-like blocking, DNS failure/poisoning, SNI/domain filtering, active reset/proxy fault injection, bridge/egress failure e path mutation mid-session.
 
 ## 9. Docker safety
 
-Non dare a Codex il Docker socket di una workstation sensibile.
-
-Preferire:
-
-```text
-disposable VM
-isolated CI runner
-rootless disposable runtime
-nested lab host
-```
-
-Production/mainnet/release secrets non entrano nel laboratorio.
+Non dare a Codex il Docker socket di una workstation sensibile. Preferire disposable VM, isolated CI runner, rootless disposable runtime o nested lab host. Production/mainnet/release secrets non entrano nel laboratorio.
 
 ## 10. L3 — differential control-plane
 
 Il control-plane mock/oracle non è sufficiente.
 
-`sim/l3/differential.py` confronta i canonical transition vector con un adapter reale persistente.
+`sim/l3/differential.py` confronta i canonical transition vector con `near/l3-adapter`, che avvia un vero NEAR Sandbox tramite `near-workspaces`, compila/deploya `near/control-plane-contract`, esegue transazioni e rilegge lo stato risultante.
 
-Baseline vector:
+Baseline reale:
 
-- freshness floor;
-- stale/fresh/highest-seen checkpoint;
-- failed execution is not success;
-- verified resulting-state transition;
-- state rollback rejection.
+- bootstrap floor scritto e riletto dal contract;
+- stale/fresh/highest-seen checkpoint con block read reale dal sandbox;
+- failed contract execution is not success;
+- failed tx non cambia lo stato committed;
+- successful mutation + post-transaction state read;
+- lower-version rollback respinto dal contract.
 
-Acceptance reale:
+Acceptance:
 
 ```text
 shared-core oracle result
         ==
-NearChainAdapter local/test result
+NEAR Sandbox + NearChainAdapter result
 ```
 
-Confrontare almeno:
+Confrontare progressivamente anche revocation semantics, storage reclaim, pairwise recovery-anchor update, rendezvous authorization e governance transitions.
 
-- accepted/rejected;
-- failure class;
-- verified height/epoch;
-- resulting canonical state/version;
-- revocation semantics;
-- storage reclaim;
-- pairwise recovery-anchor update;
-- finality/execution/state-proof behavior.
+### L3 non equivale a light client production
 
-Il repo attuale non contiene ancora il nuovo canonical NearChainAdapter/contract: L3 resta esplicitamente pending fino a quell'implementazione, non fake-green.
+`near-workspaces` parla con un sandbox locale fidato. Questo gate dimostra integrazione con esecuzione/transaction outcome/state read NEAR reali, ma **non** dimostra da solo:
+
+```text
+untrusted RPC response
+ -> independently verified NEAR finality/light-client proof
+ -> independently verified state proof
+ -> VERIFIED_STATE
+```
+
+Il verifier production contro `NetworkAnchor` resta un gate distinto. Raw RPC success non diventa `VERIFIED_STATE` solo perché L3 Sandbox è verde.
 
 ## 11. Adversarial matrix obbligatoria
 
@@ -286,50 +254,17 @@ malicious first-install source
 
 ## 12. Storage/resource tests
 
-Simulare create/renew/expire/prune/overwrite su grandi cardinalità logiche.
-
-Assert:
-
-- active-state upper bound;
-- reclaim/refund/bounty bounded;
-- no message/media/mailbox state;
-- resource/concurrency caps;
-- no unbounded queues introduced by recovery/routing.
+Simulare create/renew/expire/prune/overwrite su grandi cardinalità logiche. Assert active-state upper bound, reclaim/refund/bounty bounded, no message/media/mailbox state, resource/concurrency caps e no unbounded queues introdotte da recovery/routing.
 
 ## 13. Android gates
 
-APK/emulator/device resta obbligatorio per proprietà Android-specifiche:
-
-```text
-Keystore
-process death
-Doze/background
-permissions
-package signing/update
-real socket handover
-camera/QR
-VpnService
-```
+APK/emulator/device resta obbligatorio per proprietà Android-specifiche: Keystore, process death, Doze/background, permissions, package signing/update, real socket handover, camera/QR e `VpnService`.
 
 Il fatto che L0-L3 passino non prova queste proprietà.
 
 ## 14. Evidence artifacts
 
-Ogni run deve conservare quando applicabile:
-
-```text
-scenario/version
-seed
-spec/core commit hash
-virtual/network event trace
-node/adapter versions
-assertions
-failure class
-redacted logs
-result
-```
-
-Mai loggare session keys, recovery private material o plaintext conversazioni.
+Ogni run deve conservare quando applicabile scenario/version, seed, spec/core commit hash, virtual/network event trace, node/adapter versions, assertions, failure class, redacted logs e result. Mai loggare session keys, recovery private material o plaintext conversazioni.
 
 ## 15. Parallel agent roles
 
@@ -350,21 +285,7 @@ Reviewer e fixer idealmente separati per evitare che lo stesso agente definisca,
 
 ## 16. Definition of done
 
-Una feature security/network non è done con una demo manuale.
-
-Richiede, dove applicabile:
-
-```text
-canonical semantics
-shared-core implementation
-positive + negative tests
-adversarial scenario
-resource bound
-replay/rollback behavior
-safe evidence/logging
-relevant L0/L1/L2/L3 gate
-Android/platform gate se specifico
-```
+Una feature security/network non è done con una demo manuale. Richiede, dove applicabile, canonical semantics, shared-core implementation, positive + negative tests, adversarial scenario, resource bound, replay/rollback behavior, safe evidence/logging, relevant L0/L1/L2/L3 gate e Android/platform gate se specifico.
 
 ## 17. Regola finale
 
