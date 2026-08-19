@@ -1,0 +1,55 @@
+version: 1
+name: pairwise-backup-rollback-after-total-device-loss
+seed: 2001
+clock: virtual
+nodes:
+  - restored_alice
+  - bob
+  - rpc_honest
+  - backup_mirror_latest
+  - backup_mirror_stale
+steps:
+  - at: 0s
+    action: restore_root_identity
+    target: restored_alice
+
+  - at: 1s
+    action: fetch_verified_pairwise_recovery_anchor
+    target: restored_alice
+    from: rpc_honest
+    expect:
+      latest_backup_generation: 9
+
+  - at: 2s
+    action: fetch_pairwise_backup
+    target: restored_alice
+    from: backup_mirror_stale
+    returns_generation: 7
+    integrity: valid
+
+  - at: 3s
+    assert: pairwise_backup_rejected
+    reason: PAIRWISE_BACKUP_ROLLBACK_OR_MISMATCH
+
+  - at: 4s
+    action: fetch_pairwise_backup
+    target: restored_alice
+    from: backup_mirror_latest
+    returns_generation: 9
+    hash_matches_anchor: true
+    state_commitment_matches_anchor: true
+    integrity: valid
+
+  - at: 5s
+    assert: pairwise_backup_accepted
+
+  - at: 6s
+    action: reauthenticate_peer
+    from: restored_alice
+    to: bob
+
+  - at: 7s
+    assert: future_rendezvous_state_rotated
+
+  - at: 7s
+    assert: old_backup_not_future_authority
