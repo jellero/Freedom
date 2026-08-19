@@ -4,7 +4,9 @@ Status: **canonical design draft**.
 
 Normative security rules: [`SECURITY_INVARIANTS.md`](SECURITY_INVARIANTS.md).
 Identity: [`IDENTITY_MODEL.md`](IDENTITY_MODEL.md).
+Pairwise recovery: [`PAIRWISE_RECOVERY.md`](PAIRWISE_RECOVERY.md).
 Schema: [`../spec/freedom.cddl`](../spec/freedom.cddl).
+Crypto domains: [`../spec/crypto-domains.txt`](../spec/crypto-domains.txt).
 
 ## 1. Separazione
 
@@ -55,9 +57,19 @@ ROOT_COMPROMISE
 
 Se l'utente possiede soltanto una RootRecoveryKey e nessun recovery factor indipendente precommitted, Freedom non può distinguere proprietario e ladro dopo furto completo di quella secret. In quel profilo non promette compromise recovery.
 
-## 5. UserRecoveryPolicy — sticky by default
+## 5. UserRecoveryPolicy — validity and stickiness
 
 Schema canonico: `user-recovery-policy`.
+
+Una policy valida richiede:
+
+```text
+>= 2 recovery key commitments
+all commitments distinct
+1 <= threshold <= number of distinct keys
+```
+
+Un profilo production che dichiara **independent compromise recovery** dovrebbe usare threshold >=2 e custody domains realmente separati dalla RootRecoveryKey/device environment attiva.
 
 La policy viene fissata **prima dell'incidente** e non può essere rimossa/sostituita unilateralmente dalla sola RootRecoveryKey corrente.
 
@@ -120,39 +132,76 @@ B. encrypted PairwiseRecoveryBundle -> bytes from user-chosen backup source
 
 La source del backup è non fidata.
 
-Dopo restore:
+Il bundle canonico contiene almeno:
 
 ```text
-reject detectable rollback
+bundle_id
+backup_generation
+previous_bundle_hash
+recovery_key_epoch
+state_commitment
+ciphertext
+```
+
+**Bundle integrity != bundle freshness.** Dopo perdita totale dei device, un mirror può restituire un vecchio bundle valido.
+
+Per il profilo rollback-detectable si usa `PairwiseRecoveryAnchor`, piccolo e verificabile indipendentemente dalla source dei byte:
+
+```text
+latest_backup_generation
+latest_bundle_hash
+latest_state_commitment
+recovery_key_epoch
+```
+
+Restore con anchor:
+
+```text
+verified latest anchor
+ -> exact generation/hash/state match
+ -> decrypt
  -> re-authenticate each peer
- -> rotate/re-derive future rendezvous state
+ -> rotate/re-derive future rendezvous/recovery state
  -> establish fresh session
 ```
+
+Mismatch fallisce chiuso.
+
+Senza surviving device o anchor, il client può verificare l'integrità del bundle ma non deve dichiararlo `LATEST_VERIFIED_BACKUP`.
 
 Una vecchia copia del bundle non deve diventare future rendezvous authority indefinita.
 
 Se manca surviving device e backup valido, ownership/entitlement possono tornare ma i contatti richiedono re-bootstrap.
 
-## 9. Device/contact quotas V1
+## 9. RecoveryStateKey rotation
+
+`RecoveryStateKey` possiede un epoch separato e viene ruotato almeno dopo root-compromise recovery o quando è sospettata esposizione del backup state.
+
+Un nuovo key epoch non rende automaticamente current un vecchio bundle.
+
+## 10. Device/contact quotas V1
 
 `max_devices`, `base_contact_slots` e bonus Relay Contributor sono product/service policy, non security/interoperability invariants.
 
 Un client modificato può aggirare una quota locale; il protocollo non pubblica social/device graph per impedirlo.
 
-## 10. Verified state / revocation
+## 11. Verified state / revocation
 
-Activation, revocation, root rotation ed entitlement changes richiedono finality proof + execution success + resulting-state proof + anti-rollback.
+Activation, revocation, root rotation, pairwise anchor update ed entitlement changes richiedono finality proof + execution success + resulting-state proof + anti-rollback.
 
 Freshness/revocation segue `REVOCATION.md`; `RPC not found` non è non-revocation proof.
 
-## 11. Invarianti
+## 12. Invarianti
 
 - RootRecoveryKey distinta da authorization/control/device keys;
 - compromise recovery richiede independent precommitment;
+- recovery quorum commitments distinti e threshold valido;
 - recovery policy V1 è sticky across normal root rotation;
 - compromised root alone cannot remove recovery policy or cancel pending compromise recovery;
 - normal restore genera nuova DeviceKey;
 - pairwise backup resta ciphertext;
+- backup source non è freshness authority;
+- rollback-detectable total-device-loss recovery usa surviving state o independent monotonic anchor;
 - post-restore future pairwise state viene ruotato/re-derivato;
 - contact/device quota V1 non è interoperability rule;
 - tx hash != success.
