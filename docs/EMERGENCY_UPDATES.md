@@ -16,6 +16,8 @@ filename / URL           != proof of authenticity
 
 Dettagli: [`APP_DISTRIBUTION.md`](APP_DISTRIBUTION.md).
 
+![Freedom Release Network](assets/freedom-release-network.svg)
+
 ## 2. Emergency Bulletin
 
 ```text
