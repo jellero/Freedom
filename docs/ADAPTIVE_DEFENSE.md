@@ -1,90 +1,49 @@
 # Freedom — Adaptive Defense
 
-Status: **canonical design draft**
+Status: **canonical design draft**.
 
-Normative security rules: [`SECURITY_INVARIANTS.md`](SECURITY_INVARIANTS.md).
-Control-plane proof model: [`CONTROL_PLANE_SECURITY.md`](CONTROL_PLANE_SECURITY.md).
-Advanced test lab: [`ADVANCED_DEVELOPMENT.md`](ADVANCED_DEVELOPMENT.md).
+Normative security: [`SECURITY_INVARIANTS.md`](SECURITY_INVARIANTS.md).
+Revocation/freshness: [`REVOCATION.md`](REVOCATION.md).
+Network UI: [`NETWORK_STATUS_UI.md`](NETWORK_STATUS_UI.md).
+Shield: [`SHIELD.md`](SHIELD.md).
 
 ## 1. Obiettivo
 
-Freedom distingue, per quanto possibile:
+Adaptive Defense classifica failure/reachability e tenta automaticamente percorsi alternativi. Non è una prova di censura o sorveglianza.
 
-- peer offline;
-- normale route/NAT failure;
-- relay/provider/control-plane failure;
-- probabile filtering/interference del data path.
-
-Non dichiara di rilevare sorveglianza passiva invisibile.
-
-> **peer activity verificata + data path indisponibile può giustificare `INTERFERENCE_OR_ROUTE_FAILURE_SUSPECTED`, non attribuzione.**
-
-## 2. Control-plane signal deve essere verificato
-
-Non basta:
+## 2. Control-plane / data-plane
 
 ```text
-RPC returned a beacon
+CONTROL PLANE
+verified identity/revocation/rendezvous/recovery state
+
+DATA PLANE
+messages/files/audio/video/session traffic
 ```
 
-Serve:
-
-```text
-VerifiedControlPlaneCheckpoint
-+ state proof
-+ fresh pairwise RecoveryBeacon
-```
-
-Un RPC malevolo non deve poter fabbricare `SUSPECTED` facendo credere che il peer sia recentemente attivo.
+No continuous blockchain heartbeat durante sessione normale.
 
 ## 3. RecoveryBeacon
 
-```text
-RecoveryBeacon {
-    version
-    issued_at
-    expires_at
-    recovery_nonce
-    route_generation
-    state
-    candidate_hints[]?
-}
-```
+RecoveryBeacon è pairwise, cifrato, bounded e firmato con la one-time rendezvous write key derivata dal `PairRendezvousSecret`.
 
-- pairwise;
-- encrypted/authenticated;
-- opaque slot;
-- short TTL;
-- no root/device/IP plaintext when avoidable;
-- no continuous heartbeat.
+Osservare lo slot non concede overwrite authority.
 
-## 4. Bounded active state
+## 4. Inference
 
-TTL logico non basta. Beacon/rendezvous devono usare overwrite/ring/prune/lease/reclaim concreto e convergere a un active-state bound.
-
-Il recovery engine smette di scrivere appena una sessione valida viene ristabilita.
-
-## 5. Detection condition
+Esempio:
 
 ```text
-local connectivity                    OK
-verified control-plane checkpoint     OK
-fresh peer beacon proof               OK
-current data path                     FAIL
-independent path/transport evidence    optional/additional
+local connectivity OK
++ verified control-plane path OK
++ peer beacon recent
++ current data path repeatedly FAIL
+ -> INTERFERENCE_OR_ROUTE_FAILURE_SUSPECTED
 ```
 
-può produrre:
+È inferenza, non attribution.
 
-```text
-PEER_RECENTLY_ACTIVE
-DATA_PATH_UNAVAILABLE
-INTERFERENCE_OR_ROUTE_FAILURE_SUSPECTED
-```
-
-Un singolo timeout non basta.
-
-## 6. State machine
+## 5. Adaptive state machine
 
 ```text
 NORMAL
@@ -94,128 +53,61 @@ NORMAL
  -> RECOVERED
 ```
 
-Alternative:
+Il motore può tentare:
 
 ```text
-different endpoint
-relay with different provenance
-provider/RPC path
-transport family
+alternate direct/NAT
+alternate relay
+alternate provider
+alternate transport
 bridge
-Shield circuit
+build Shield circuit
 ```
 
-Retry/probing/backoff sono bounded.
+## 6. `SHIELDED` non è uno stato di severità
 
-## 7. Failure classes
+`SHIELDED` descrive una proprietà del **path** e può coesistere con una diagnosi network separata.
+
+Esempio:
 
 ```text
-PEER_OFFLINE_PROBABLE
-PATH_FAILURE
-CONTROL_PLANE_PROVIDER_FAILURE
-CONTROL_PLANE_PROOF_FAILURE
-PROTOCOL_BLOCK_SUSPECTED
-DPI_OR_FILTERING_SUSPECTED
-BRIDGE_UNREACHABLE
-SHIELD_PATH_FAILURE
+Network inference: NORMAL
+Protection: SHIELDED
 ```
 
-`CONTROL_PLANE_PROOF_FAILURE` non viene trasformato in “peer online/offline”: significa che il signal non è verificabile.
-
-## 8. RPC failure
+oppure:
 
 ```text
-RPC A unavailable -> try B
-RPC A stale       -> reject rollback/proof mismatch
-RPC A lies        -> proof verification fails
+Network inference: SUSPECTED
+Protection: SHIELDED
 ```
 
-Provider rotation è availability; state proof è authenticity.
+La label `SHIELDED` è consentita solo dopo il gate di `SHIELD.md`.
 
-## 9. Network Indicator
+## 7. Revocation freshness durante failure
 
-```text
-NORMAL
-SHIELDED
-DEGRADED
-SUSPECTED
-UNAVAILABLE
-```
+Control-plane degraded non equivale automaticamente a peer revoked/non-revoked.
 
-`SHIELDED` richiede vero circuit state secondo `SHIELD.md`, non semplicemente due proxy/relay.
+Se revocation state è stale, il motore espone `REVOCATION_STATE_STALE` e applica la freshness class prevista. Una existing authenticated session può avere una policy bounded diversa da un nuovo high-risk handshake.
 
-`SUSPECTED` = inference. Il client mostra fatti osservati separati dall'inferenza.
+## 8. Recovery write bounds
 
-## 10. NAT / route dynamics
+Beacon/recovery write usa read-before-write, generation monotonic, TTL/height bounds, backoff e concrete storage reclaim.
 
-Adaptive Defense deve distinguere NAT rebinding/handover da censorship inference quando possibile.
+Stop recovery writes appena una valid session/path è ristabilita.
 
-Scenario minimi:
+## 9. Free / paid boundary
 
-- Wi-Fi -> mobile;
-- mobile IP change;
-- NAT mapping change;
-- relay failure;
-- transport-specific blocking;
-- control-plane provider block;
-- verified peer activity with all current data paths failing.
+Core Free riceve la stessa diagnosi tecnica fondamentale. Paid tiers possono comprare managed capacity/path diversity, non una classificazione più favorevole.
 
-## 11. Privacy trade-off
+## 10. Claim boundary
 
-Recovery writes possono produrre timing metadata osservabili.
+Freedom può dire:
 
-Mitigazioni:
+> **Interferenza o anomalia di rete sospetta; Freedom sta tentando/usando un percorso alternativo.**
 
-- no global presence;
-- pairwise rotating slots;
-- encrypted payload;
-- read-before-write;
-- bounded frequency;
-- no identity/IP plaintext;
-- stop writes after recovery.
+Non può dire senza evidenza:
 
-Non elimina traffic analysis.
-
-## 12. Core / premium
-
-Core Free mantiene:
-
-- meaningful route health;
-- provider/relay fallback;
-- pairwise recovery;
-- same diagnostic truth;
-- Free alternatives before commercial prompt.
-
-Premium può comprare capacità/path diversity più costosa, non una classificazione tecnica più favorevole.
-
-## 13. Test lab
-
-Automatizzare in Docker/scenario simulator:
-
-```text
-NAT rebinding
-relay ban/block
-provider block
-stale RPC
-fabricated RPC state with invalid proof
-packet loss/reorder
-UDP/QUIC block
-DNS/SNI filter
-bridge probing
-clock skew
-Shield hop failure
-```
-
-Dettagli: [`ADVANCED_DEVELOPMENT.md`](ADVANCED_DEVELOPMENT.md).
-
-## 14. Invarianti
-
-- no messages/media on control-plane;
-- no global presence;
-- peer-activity signal security-sensitive deve essere proof-verified;
-- no single RPC trust;
-- no continuous heartbeat;
-- no censorship/surveillance attribution without evidence;
-- recovery state physically reclaimable/bounded;
-- `SHIELDED` only after actual Shield circuit gate;
-- same core diagnostics for Free/paid tiers.
+- “sei sorvegliato”;
+- “il governo ti sta bloccando”;
+- “passiamo ogni firewall”.
