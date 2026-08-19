@@ -19,6 +19,7 @@ Il traffico applicativo viaggia fuori dalla blockchain, direttamente tra endpoin
 - modalità Live/effimera nei client compatibili;
 - comunicazione diretta quando il percorso di rete e la policy privacy lo consentono;
 - NAT traversal, relay e percorsi alternativi;
+- relay eseguibili da VPS/server/VM/community node e anche da normali dispositivi Freedom opt-in;
 - aggiornamenti di route scambiati direttamente durante una sessione attiva;
 - scritture blockchain ridotte al minimo tramite read-before-write;
 - nessun messaggio persistito nella rete Freedom;
@@ -33,6 +34,7 @@ Il traffico applicativo viaggia fuori dalla blockchain, direttamente tra endpoin
 - entitlement/licenze ripristinabili con controllo on-chain del numero di device attivi;
 - pagamenti provider-agnostic tramite PayPal, crypto e futuri adapter senza rendere il provider parte del trust model;
 - registrazione Free sponsorizzabile ma protetta da anti-abuse/rate limit/budget bounded;
+- incentivo `Relay Contributor`: +10 contatti attivi per utenti Free che forniscono capacità relay utile;
 - emergency bulletin e security policy verificabili;
 - aggiornamenti applicativi autenticati da manifest firmati e distribuibili da sorgenti sostituibili;
 - protocollo indipendente da Android, iOS, store e servizi commerciali ufficiali;
@@ -86,6 +88,8 @@ Il Recovery Kit prevede QR/bundle cifrato + recovery code separato. Dopo reset/n
 La licenza segue la RootIdentity e la chain fa rispettare un limite `max_devices`; il restore non deve permettere di clonare la stessa licenza su telefoni illimitati.
 
 Policy iniziale Free: **1 device attivo e 10 contatti attivi**. Il limite contatti riguarda slot attivi liberabili; la rubrica resta locale/cifrata e non diventa un social graph pubblico.
+
+Un benefit temporaneo `Relay Contributor` può aggiungere **10 slot contatto**, portando il Free qualificato a **20 contatti attivi** senza trasformarlo in Pro.
 
 Dettagli: [`docs/ACCOUNT_RECOVERY_LICENSES.md`](docs/ACCOUNT_RECOVERY_LICENSES.md).
 
@@ -213,15 +217,55 @@ Bootstrap, RPC, relay, fee relayer e provider devono essere multipli e sostituib
 
 ## Relay
 
-Un relay Freedom è un nodo di transito, non un server di messaggistica.
+Un relay Freedom è fisicamente **una macchina o un dispositivo che esegue il software di forwarding Freedom**.
+
+Può essere:
+
+```text
+VPS / VM
+server dedicato
+mini PC / Raspberry Pi
+community node
+managed/private node
+telefono / tablet / desktop Freedom
+```
+
+Un dispositivo Freedom può quindi essere contemporaneamente endpoint per il proprio utente e, se l'utente lo abilita, `DEVICE_RELAY` per circuiti altrui.
 
 ```text
 Alice -> ciphertext -> Relay -> ciphertext -> Bob
 ```
 
-Un relay non possiede le chiavi E2EE, non crea mailbox persistenti, usa buffer limitati/temporanei e può essere sostituito durante la sessione.
+Un relay:
 
-Principio: **forward, not store**.
+- non possiede le chiavi E2EE;
+- non crea mailbox persistenti;
+- usa buffer limitati/temporanei;
+- è sostituibile;
+- può essere malevolo senza poter autenticare o impersonare Bob;
+- non deve diventare un proxy Internet generico;
+- inoltra soltanto circuiti/pacchetti Freedom validi e bounded.
+
+Un device relay è opt-in e deve rispettare policy di Wi-Fi/rete metered, batteria, charging, CPU, RAM, temperatura, banda e circuiti simultanei.
+
+Non necessita sempre di IP pubblico: può contribuire tramite NAT mapping, altri transport o connessioni outbound/circuiti già stabiliti.
+
+### Relay Contributor
+
+Policy iniziale:
+
+```text
+FREE                      10 contatti attivi
+FREE + RELAY CONTRIBUTOR  20 contatti attivi
+```
+
+Il bonus di +10 richiede contributo relay realmente utile secondo una policy privacy-preserving; **accendere il toggle per pochi secondi non è sufficiente**.
+
+Il benefit ha expiry/grace policy. Se scade mentre l'utente ha più di 10 contatti, Freedom non cancella automaticamente i contatti: impedisce soltanto nuove aggiunte finché l'account torna entro quota o si riqualifica.
+
+Principio: **forward, not store.**
+
+Dettagli: [`docs/RELAYS.md`](docs/RELAYS.md).
 
 ## Sessione sicura e messaggistica sincrona
 
@@ -238,7 +282,7 @@ I client possono offrire modalità **Live** senza cronologia persistente locale 
 
 ## Scope prodotto
 
-Il primo lancio di Freedom Messenger è deliberatamente focalizzato sul **1:1**: onboarding, contatto, sessione, messaggi, media, vocali, chiamata, videochiamata, Live mode e Network Indicator.
+Il primo lancio di Freedom Messenger è deliberatamente focalizzato sul **1:1**: onboarding, contatto, sessione, messaggi, media, vocali, chiamata, videochiamata, Live mode, Network Indicator e relay forward-only/device relay.
 
 I gruppi arrivano successivamente come **Live Groups / Live Rooms**, senza mailbox condivisa o consegna automatica della cronologia agli utenti assenti.
 
@@ -294,6 +338,8 @@ Dettagli: [`docs/EMERGENCY_UPDATES.md`](docs/EMERGENCY_UPDATES.md).
 
 Free comprende core E2EE, 1 device attivo, 10 contatti attivi, Network Indicator, resilienza base ed Emergency Shield con capacità gestita limitata.
 
+Un Free qualificato come **Relay Contributor** ottiene +10 contatti attivi, per un totale di 20, in cambio di capacità relay utile best-effort secondo policy anti-farming.
+
 Freedom Plus / Shield può offrire contatti/slot device superiori, capacità relay maggiore, Always-Shielded, multi-hop, pre-warming, failover parallelo e Maximum Resilience.
 
 Freedom Business può offrire SDK, deployment, relay dedicati, supporto e SLA.
@@ -316,6 +362,7 @@ Non rappresenta più l'M1 canonico.
 - [`docs/PROTOCOL.md`](docs/PROTOCOL.md) — oggetti e flussi del protocollo.
 - [`docs/CHAIN.md`](docs/CHAIN.md) — blockchain/control-plane, identity, recovery, entitlement e manifest.
 - [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md) — modello di sicurezza.
+- [`docs/RELAYS.md`](docs/RELAYS.md) — relay fisici, device relay, forwarding, privacy, resource limits e Relay Contributor.
 - [`docs/ADAPTIVE_DEFENSE.md`](docs/ADAPTIVE_DEFENSE.md) — liveness/recovery pairwise, rilevamento interferenza e Freedom Shield.
 - [`docs/NETWORK_STATUS_UI.md`](docs/NETWORK_STATUS_UI.md) — indicatore multistato, trasparenza e Emergency Shield Free.
 - [`docs/ACCOUNT_RECOVERY_LICENSES.md`](docs/ACCOUNT_RECOVERY_LICENSES.md) — RootIdentity, Recovery Kit, entitlement e limiti multi-device.
@@ -336,7 +383,7 @@ M1  RootIdentity + DeviceID + Recovery Kit + sponsored registration
 M2  NEAR Testnet registry + QR + rendezvous read-before-write
 M3  authenticated secure session
 M4  NAT traversal + route updates
-M5  relay forward-only
+M5  relay forward-only + community/device relay + Relay Contributor
 M6  V1: 1:1 messaging + media + voice/video + Live + Network Indicator
 M7  entitlement + max_devices + Free contact policy + payment adapters
 M8  emergency bulletin + signed secure update plane
@@ -353,6 +400,8 @@ M13 hardening, censorship resistance, testing, interoperability
 - [ ] **RootIdentity / Recovery Kit:** QR/bundle cifrato + recovery code separato; restore con nuova DeviceKey.
 - [ ] **Sponsored registration / anti-Sybil:** install senza write, PoW/adaptive proof, relayer multipli, rate limit e budget bounded.
 - [ ] **Free policy:** 1 device attivo e 10 contatti attivi; contatti liberabili e nessun social graph pubblico.
+- [ ] **Relay core:** relay forward-only eseguibile su VPS/server/VM/community node e dispositivo Freedom; nessuna mailbox e nessun open proxy generico.
+- [ ] **Relay Contributor:** +10 contatti attivi ai Free qualificati; contribution proof privacy-preserving, expiry/grace period e anti-farming.
 - [ ] **Entitlement / multi-device:** licenza legata alla RootIdentity con `max_devices` enforced on-chain tramite slot/commitment opachi.
 - [ ] **Payments:** adapter PayPal + crypto; PayPal senza server pubblico obbligatorio, worker outbound-only per attestazione; nessun merchant secret nell'APK.
 - [ ] **Censorship resistance / path diversity:** nessun singolo server, relay, RPC endpoint, provider blockchain, fee relayer, IP o percorso di rete deve costituire un punto unico di controllo o interruzione.
@@ -371,4 +420,4 @@ M13 hardening, censorship resistance, testing, interoperability
 - [ ] **Monetizzazione:** core interoperabile gratuito e monetizzazione di capacità/feature senza contenuti/metadati e senza dark pattern.
 - [ ] **Launch:** Founder Cohort, security/privacy review, Creator Pilot e criteri Go/No-Go prima della scala pubblica.
 
-Freedom è definito dalle proprietà tecniche del protocollo: identità verificabile e recuperabile, comunicazione E2EE sincrona, routing distribuito, relay non fidati, path diversity, adaptive recovery, entitlement verificabili, control-plane di sicurezza e minima dipendenza dal registro distribuito durante una sessione attiva.
+Freedom è definito dalle proprietà tecniche del protocollo: identità verificabile e recuperabile, comunicazione E2EE sincrona, routing distribuito, relay non fidati e sostituibili anche su device, path diversity, adaptive recovery, entitlement verificabili, control-plane di sicurezza e minima dipendenza dal registro distribuito durante una sessione attiva.
