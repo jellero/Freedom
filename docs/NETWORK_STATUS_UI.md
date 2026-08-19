@@ -2,269 +2,279 @@
 
 ## 1. Obiettivo
 
-Freedom Messenger non deve nascondere completamente lo stato della rete come un messenger generalista.
+Freedom non deve nascondere completamente lo stato della rete.
 
-Il prodotto deve restare semplice nell'uso normale, ma quando la rete degrada, filtra o interrompe un percorso deve rendere visibile all'utente **cosa Freedom ha osservato, cosa può inferire e quale contromisura sta applicando**.
+Quando la rete degrada, filtra o interrompe un percorso, il client deve rendere visibile:
+
+- cosa Freedom ha osservato;
+- cosa può inferire;
+- quale contromisura sta applicando;
+- **se lo stato riguarda Freedom Communication oppure Freedom Gateway**.
 
 Principio UX:
 
 > **Semplice quando tutto funziona. Trasparente quando qualcosa cerca di impedirti di comunicare.**
 
-Freedom è pensato anche per utenti che hanno bisogno di capire se la propria capacità di comunicare viene limitata. La trasparenza sullo stato di rete è quindi una feature del prodotto, non una schermata diagnostica nascosta.
-
----
-
 ## 2. Freedom Network Indicator
 
-Il client ufficiale deve mostrare un piccolo indicatore di stato di rete sempre accessibile dalla schermata principale/chat.
+Indicatore sempre accessibile dalla schermata principale/chat.
 
-L'indicatore è cliccabile e apre il pannello **Freedom Network**.
-
-Stati concettuali:
+Stati base:
 
 ```text
-NORMAL       percorso funzionante, nessuna anomalia significativa rilevata
-SHIELDED     traffico instradato attraverso un percorso protetto/shielded
-DEGRADED     degradazione, instabilità o fallback in corso
-SUSPECTED    probabile filtraggio/interferenza o route failure selettiva
-UNAVAILABLE  peer recentemente attivo ma nessun percorso valido disponibile
+NORMAL       percorso funzionante
+SHIELDED     percorso protetto/shielded attivo
+DEGRADED     degradazione o fallback
+SUSPECTED    probabile filtraggio/interferenza o failure selettiva
+UNAVAILABLE  nessun percorso valido trovato
 ```
 
-Una possibile rappresentazione visiva usa un pallino multicolore, ma **il colore non deve essere l'unico segnale**. Stato testuale, icona e descrizione devono rendere il significato accessibile anche a utenti con daltonismo o display non affidabili.
+Il colore non è mai l'unico segnale: usare testo/icona/descrizione accessibile.
 
-Esempio semantico:
+## 3. Communication e Gateway non sono la stessa cosa
+
+Il pannello deve distinguere due security boundary.
+
+### Freedom Communication
 
 ```text
-● NORMAL      Network OK
-● SHIELDED    Shielded route active
-● DEGRADED    Network degraded
-● SUSPECTED   Interference suspected
-● UNAVAILABLE No working route
+COMMUNICATION
+Security      Endpoint-to-endpoint encrypted
+Peer          Verified
+Session       Active
+Route         Shielded relay
+Interference  None / Suspected
 ```
 
-Colori definitivi, contrasto e accessibilità sono una decisione di design system/client, non del wire protocol.
+Se la sessione è autenticata E2EE, può essere mostrato chiaramente:
 
----
+> **End-to-end encrypted by Freedom**
 
-## 3. Apertura automatica in caso di problema
-
-Normalmente il pannello resta chiuso e l'indicatore è discreto.
-
-Quando Freedom passa per la prima volta a uno stato importante come `SUSPECTED` o `UNAVAILABLE`, il pannello può aprirsi automaticamente per spiegare l'evento.
-
-Non deve aprirsi ripetutamente durante lo stesso incidente di rete.
-
-Esempio:
+### Freedom Gateway
 
 ```text
-Freedom Network
+GATEWAY
+Mode          Selected apps / Whole device
+Tunnel        Protected
+Egress        Active
+Route         Shielded / Bridge / Direct egress
+Filtering     None / Suspected
+```
+
+Il Gateway **non deve** mostrare `End-to-end encrypted by Freedom` per traffico Internet generico.
+
+Copy corretto:
+
+> **Protected path to Freedom egress**
+
+oppure:
+
+> **Shielded network path active**
+
+La sicurezza oltre l'egress dipende anche dal protocollo dell'applicazione finale, ad esempio HTTPS.
+
+## 4. Apertura automatica
+
+Normalmente il pannello resta chiuso.
+
+Quando passa per la prima volta a `SUSPECTED` o `UNAVAILABLE`, può aprirsi una volta per incidente.
+
+Esempio Communication:
+
+```text
+Freedom Network — Communication
 
 Peer activity        RECENT
-Registry             REACHABLE / VERIFIED
+Control-plane        REACHABLE / VERIFIED
 Current path         FAILED
 Alternate path       AVAILABLE
 Protection           SHIELDED
 
-Possibile filtraggio, interferenza o anomalia di rete rilevata.
-Freedom ha attivato un percorso alternativo.
+Possibile filtraggio o anomalia di rete.
+Freedom sta usando un percorso alternativo.
 ```
 
-L'utente deve poter chiudere il pannello e continuare a usare l'app.
+Esempio Gateway:
 
----
+```text
+Freedom Network — Gateway
 
-## 4. Evidenza, inferenza e linguaggio
+Local Internet       AVAILABLE
+Current transport    FILTERED / FAILED
+Bridge               ACTIVE
+Egress               REACHABLE
+Gateway path          RECOVERED
 
-Freedom deve distinguere chiaramente tra fatti osservati e inferenze.
+Il percorso normale è stato degradato.
+Freedom Gateway sta usando un transport alternativo.
+```
+
+## 5. Evidenza vs inferenza
 
 ### Fatti osservabili
 
-Esempi:
-
-- peer con `RecoveryBeacon` recente;
-- RPC A non raggiungibile;
-- RPC B raggiungibile;
-- direct path fallito;
-- relay A fallito;
-- relay B riuscito;
-- handshake alterato/non autenticabile;
-- route ripristinata tramite transport alternativo.
+- RecoveryBeacon recente;
+- RPC A fail / RPC B ok;
+- direct path fail;
+- relay A fail / relay B ok;
+- bridge raggiungibile;
+- transport family A fail;
+- transport family B ok;
+- egress reachability;
+- handshake authentication failure;
+- route recovery.
 
 ### Inferenze
 
-Esempi:
-
 - `INTERFERENCE_OR_ROUTE_FAILURE_SUSPECTED`;
-- filtraggio selettivo probabile;
+- `PROTOCOL_BLOCK_SUSPECTED`;
+- `DPI_OR_FILTERING_SUSPECTED`;
 - provider specifico probabilmente indisponibile.
 
-Il client **non deve dichiarare**:
+Non dichiarare:
 
 - "sei monitorato";
 - "il governo ti sta bloccando";
-- "la tua rete è sotto sorveglianza";
-- attribuzioni a ISP, Stato, azienda o altro attore senza evidenza sufficiente.
+- "questo firewall non può fermarci";
+- attribuzioni a ISP/Stato senza evidenza.
 
-Un osservatore passivo può monitorare senza lasciare segnali rilevabili. Freedom può rilevare anomalie/interferenza del percorso, non provare ogni forma di sorveglianza.
+## 6. Vista semplice
 
----
-
-## 5. Pannello Freedom Network
-
-Il pannello deve avere due livelli.
-
-### 5.1 Vista semplice
-
-Mostra solo ciò che serve per capire la situazione:
+Communication:
 
 ```text
-FREEDOM NETWORK
+FREEDOM COMMUNICATION
 
-Status             Interference suspected
-Peer               Recently active
-Current route       Failed
-Fallback            Active
-Protection          Shielded
+Status             Connected
+Peer               Verified
+Encryption         End-to-end
+Route              Shielded
+Interference       None
 ```
 
-Azioni possibili:
+Gateway:
 
 ```text
-View details
-Retry paths
-Enable Shield
-Network settings
+FREEDOM GATEWAY
+
+Status             Connected
+Mode               3 selected apps
+Path               Shielded
+Egress             CH / private-managed
+Filtering          None
 ```
 
-Le azioni disponibili dipendono dalla policy e dallo stato reale del client.
+## 7. Vista tecnica
 
-### 5.2 Vista tecnica
-
-Per gli utenti che la vogliono:
+Campi possibili:
 
 ```text
-registry state
+control-plane state
 recovery beacon freshness
 route generation
 candidate class
-relay class
-transport class
+relay / bridge class
+transport family
 provider/RPC health
 last failure reason
 fallback attempts
 current protection policy
+Gateway egress class
+Gateway DNS/leak state
 ```
 
-Non mostrare per default secret, private key, session key o identificatori che aumentano il rischio di leakage.
+Non mostrare secret, private key, session key o identificatori globali non necessari.
 
----
+## 8. Maximum Reachability UI
 
-## 6. Core Free: informazione e bypass non sono un paywall
+Modalità futura Gateway/transport:
+
+```text
+Maximum Reachability: ON
+
+Normal path          BLOCKED
+Transport A          FAILED
+Transport B          FAILED
+Private bridge       ACTIVE
+Egress               REACHABLE
+Parallel fallback    READY
+```
+
+Copy consigliato:
+
+> **Freedom ha trovato un percorso alternativo attraverso la rete filtrata.**
+
+Non:
+
+> **Freedom passa qualsiasi firewall.**
+
+## 9. Core Free e anti-paywall
 
 Un utente Free deve:
 
-- vedere lo stesso stato di rete significativo;
-- ricevere la stessa spiegazione del problema;
-- beneficiare del rilevamento `peer recently active + data path unavailable`;
-- usare fallback RPC/provider;
+- vedere lo stesso stato significativo;
+- ricevere la stessa spiegazione tecnica;
+- beneficiare del recovery/fallback core;
 - cambiare route/relay/transport quando esistono alternative gratuite/community;
-- ricevere una quantità limitata di capacità Shield gestita di emergenza quando l'infrastruttura commerciale è necessaria per superare il blocco.
+- ricevere quota Emergency Shield quando prevista.
 
 Principio:
 
-> **Freedom non deve rilevare che un utente è probabilmente censurato e poi lasciarlo intenzionalmente offline per vendergli Pro.**
+> **La censura non deve diventare un paywall.**
 
-Non deve comparire un paywall aggressivo nel momento critico prima che il client abbia tentato le contromisure Free disponibili.
+La futura policy commerciale Gateway può limitare capacità egress gestita, ma non deve falsificare classificazioni o indebolire la comunicazione Freedom core.
 
----
+## 10. Emergency Shield / Pro
 
-## 7. Emergency Shield Budget
-
-La capacità Shield gratuita può essere limitata perché relay, multi-hop e media hanno costi reali.
-
-Il limite definitivo deve essere deciso dopo test di costo e abuso.
-
-Possibili unità interne:
-
-- byte/giorno su managed relay;
-- minuti audio/video shielded;
-- sessioni di emergenza;
-- token/capability di capacità;
-- combinazione pesata per tipo di traffico.
-
-Il client può tradurre questa quota in una UX semplice, ad esempio **messaggi/sessioni di emergenza disponibili**, senza fingere che cento messaggi di testo abbiano lo stesso costo di cento video.
-
-Non fissare un numero permanente prima di misurare costi reali di relay, bandwidth e abuse resistance.
-
-Quando il budget Free è quasi esaurito, il client può informare l'utente in modo neutro. L'upgrade Pro deve essere una scelta, non una condizione per capire cosa sta succedendo.
-
----
-
-## 8. Freedom Pro / Shield
-
-Pro estende la capacità e l'automazione, non la verità mostrata all'utente.
-
-Possibili benefici:
+Pro può aumentare:
 
 ```text
 Always-Shielded
-larger managed relay budget
+managed relay budget
 multi-hop
-wider relay/provider diversity
-pre-warmed alternate paths
+relay/provider diversity
+pre-warmed alternatives
 parallel failover
 aggressive transport rotation
 bridge/non-public pools
 Maximum Resilience
 ```
 
-Free e Pro devono usare gli stessi principi di autenticazione E2EE e la stessa classificazione onesta degli eventi di rete.
+Free e Pro usano gli stessi principi di autenticazione e la stessa interpretazione tecnica degli eventi.
 
----
+## 11. Anti-dark-pattern
 
-## 9. Anti-dark-pattern
+Il client non deve:
 
-Il client ufficiale non deve:
+- chiamare ogni packet loss `SUSPECTED`;
+- elevare severità per vendere Pro;
+- nascondere il motivo del fallback;
+- usare paura/sorveglianza non dimostrata;
+- degradare route Free funzionanti;
+- mostrare `E2EE Freedom` su Gateway generico;
+- nascondere che un egress Gateway è una trust boundary differente;
+- dichiarare universal firewall bypass.
 
-- chiamare `SUSPECTED` ogni normale perdita di pacchetto per spingere Pro;
-- aumentare artificialmente la severità di un evento quando il budget Free finisce;
-- nascondere il motivo di un fallback agli utenti Free;
-- usare paura o claim non verificati per vendere Shield;
-- degradare deliberatamente route Free funzionanti;
-- bloccare recovery protocollare di base perché l'utente non paga.
-
-Il livello commerciale può determinare **quanta infrastruttura gestita** viene consumata, non alterare l'interpretazione tecnica dei segnali.
-
----
-
-## 10. Notification policy
-
-Gli eventi devono essere classificati per severità.
+## 12. Notification policy
 
 ```text
-INFO       route cambiata senza impatto significativo
-NOTICE     degradazione o fallback
-WARNING    interferenza/filtraggio sospetto
-CRITICAL   peer recentemente attivo ma nessun percorso valido trovato
+INFO       route cambiata senza impatto
+NOTICE     degradazione/fallback
+WARNING    filtering/interference suspected
+CRITICAL   nessun percorso valido trovato
 ```
 
-Le notifiche devono evitare spam.
+Gli eventi devono essere deduplicati per incidente.
 
-Per un incidente persistente il client aggiorna lo stesso stato invece di produrre popup continui.
+Recovery Communication:
 
-Quando la rete viene recuperata:
+> **Percorso ripristinato. La sessione Freedom è nuovamente attiva.**
 
-> **Percorso ripristinato. Freedom sta comunicando tramite una route alternativa.**
+Recovery Gateway:
 
-Il pannello conserva eventualmente solo uno stato diagnostico locale limitato secondo la privacy policy; non deve creare una cronologia centrale degli eventi di censura associata all'identità dell'utente.
+> **Gateway ripristinato tramite un percorso alternativo.**
 
----
-
-## 11. Posizionamento prodotto
-
-Freedom non cerca di essere invisibile nella propria architettura per sembrare un messenger tradizionale.
-
-L'interfaccia principale rimane essenziale:
+## 13. Main UI
 
 ```text
 Chat
@@ -274,21 +284,27 @@ Live
 Network indicator
 ```
 
-La complessità tecnica appare solo quando è utile oppure quando l'utente la richiede.
+Gateway, quando implementato:
 
-Questo permette a Freedom di essere semplice nell'uso quotidiano senza rinunciare alla propria natura di strumento per persone che attribuiscono valore a resilienza, privacy di rete e trasparenza.
+```text
+Gateway toggle/status
+  |- Selected apps
+  |- Whole device
+  |- Protection mode
+  `- Network details
+```
 
----
+Non serve integrare un browser generalista.
 
-## 12. Invarianti UX
+## 14. Invarianti UX
 
-- indicatore di rete sempre accessibile;
-- apertura automatica solo per eventi rilevanti e senza spam;
-- colore mai unico vettore informativo;
+- Network Indicator sempre accessibile;
+- Communication e Gateway chiaramente separati;
+- E2EE label solo dove tecnicamente corretta;
 - fatti e inferenze separati;
+- colore mai unico segnale;
 - nessun claim di sorveglianza passiva rilevata;
-- stato significativo visibile anche agli utenti Free;
-- bypass/recovery base disponibile anche Free;
-- una quota di emergenza Shield Free può usare infrastruttura gestita;
-- Pro aumenta capacità/resilienza, non compra una classificazione più onesta;
-- nessun dark pattern di paura durante un incidente di rete.
+- nessun universal firewall claim;
+- diagnostica significativa anche Free;
+- Pro aumenta capacità/resilienza, non la verità mostrata;
+- egress Gateway visibile come ruolo separato dal relay.
