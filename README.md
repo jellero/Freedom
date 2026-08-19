@@ -15,7 +15,7 @@ peer non raggiungibile                    -> fail/discard, non accodare
 
 Il protocollo base non crea mailbox offline, non deposita messaggi sulla blockchain e non usa relay come storage persistente.
 
-Le regole normative di sicurezza sono in [`docs/SECURITY_INVARIANTS.md`](docs/SECURITY_INVARIANTS.md). Gli object shape canonici sono in [`spec/freedom.cddl`](spec/freedom.cddl).
+Le regole normative di sicurezza sono in [`docs/SECURITY_INVARIANTS.md`](docs/SECURITY_INVARIANTS.md). Gli object shape canonici sono in [`spec/freedom.cddl`](spec/freedom.cddl) e i domain/purpose crittografici fissi in [`spec/crypto-domains.txt`](spec/crypto-domains.txt).
 
 ## Product family
 
@@ -93,6 +93,7 @@ DeviceRecordCommitment   -> opaque control-plane handle
 DeviceControlKey         -> scoped record rotation/revocation
 PairwiseContactAlias     -> relationship-specific alias
 PairRendezvousSecret     -> relationship rendezvous authority
+RecoveryStateKey         -> encrypted pairwise-backup state
 TransportToken           -> temporary route/circuit token
 Session keys             -> ephemeral E2EE material
 ```
@@ -151,6 +152,20 @@ PairRendezvousSecret
 Each rendezvous direction/epoch derives a one-time write key. Public observation of a used slot does not grant overwrite authority.
 
 Rendezvous/recovery records are encrypted, pairwise, bounded and reclaimable; TTL alone is not considered storage cleanup.
+
+## Pairwise recovery
+
+A surviving authorized device can transfer current pairwise state directly. Otherwise an encrypted `PairwiseRecoveryBundle` may be stored on an untrusted user-chosen source.
+
+**Backup integrity is not backup freshness.** After total device loss, a mirror can return an old but valid bundle.
+
+For rollback-detectable recovery, Freedom uses a small independently verified `PairwiseRecoveryAnchor` that commits to the latest backup generation/hash/state commitment without publishing the contact list or pairwise plaintext.
+
+Without surviving device state or that independent anchor, a restored bundle may be integrity-valid but is not labeled `LATEST_VERIFIED_BACKUP`.
+
+After restore, peers are re-authenticated and future rendezvous/recovery/session state is rotated so an old backup does not remain indefinite future authority.
+
+Details: [`docs/PAIRWISE_RECOVERY.md`](docs/PAIRWISE_RECOVERY.md).
 
 ## First-contact assurance
 
@@ -321,10 +336,12 @@ Paying does not make Freedom Communication's base cryptography stronger.
 ## Canonical documentation
 
 - [`spec/freedom.cddl`](spec/freedom.cddl) — canonical object shapes.
-- [`spec/README.md`](spec/README.md) — deterministic encoding/signing-domain rules.
+- [`spec/crypto-domains.txt`](spec/crypto-domains.txt) — canonical SIGN/MAC/AEAD/HASH/KDF domains.
+- [`spec/README.md`](spec/README.md) — deterministic encoding/domain rules.
 - [`docs/SECURITY_INVARIANTS.md`](docs/SECURITY_INVARIANTS.md) — MUST/MUST NOT security baseline.
 - [`docs/CONTROL_PLANE_SECURITY.md`](docs/CONTROL_PLANE_SECURITY.md) — checkpoint/proof/bootstrap/governance/migration model.
 - [`docs/REVOCATION.md`](docs/REVOCATION.md) — device/authorization/root revocation and freshness.
+- [`docs/PAIRWISE_RECOVERY.md`](docs/PAIRWISE_RECOVERY.md) — pairwise backup lifecycle/freshness/rollback model.
 - [`docs/IDENTITY_MODEL.md`](docs/IDENTITY_MODEL.md) — identity/recovery/pairwise model.
 - [`docs/PROTOCOL.md`](docs/PROTOCOL.md) — protocol state machines.
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — architecture overview.
