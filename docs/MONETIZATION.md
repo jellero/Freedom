@@ -4,17 +4,15 @@
 
 Freedom non monetizza il contenuto delle conversazioni e non richiede una mailbox centrale per generare ricavi.
 
-Il modello economico deve restare coerente con il trust model del protocollo:
+Il modello economico deve restare coerente con il trust model:
 
 - nessuna vendita di messaggi o metadati di conversazione;
 - nessuna pubblicità basata sul contenuto E2EE;
 - nessuna master key;
-- nessun server centrale necessario per leggere, conservare o consegnare i messaggi;
+- nessun server centrale necessario per leggere, conservare o consegnare messaggi;
 - nessun relayer di pagamento o relay di rete deve diventare autorità sull'identità dell'utente.
 
-Principio: **monetizzare capacità, comodità e servizi professionali; non la conversazione.**
-
-Principio commerciale obbligatorio:
+> **monetizzare capacità, comodità e servizi professionali; non la conversazione.**
 
 > **la censura non deve diventare un paywall.**
 
@@ -22,7 +20,8 @@ Principio commerciale obbligatorio:
 
 Policy iniziale Free:
 
-- identità Freedom e Recovery Kit;
+- RootIdentity e Recovery Kit;
+- DeviceKey autorizzata tramite record opaco, senza global DeviceID di rete;
 - **1 device attivo**;
 - fino a **10 contatti attivi**;
 - sessioni E2EE;
@@ -32,33 +31,30 @@ Policy iniziale Free:
 - possibilità opt-in di contribuire come `DEVICE_RELAY`;
 - chiamate base;
 - relay community/best-effort quando disponibili;
-- rilevamento base di route failure;
-- fallback tra RPC/provider, relay e route disponibili;
-- recovery rendezvous;
+- route/RPC/provider fallback;
+- recovery rendezvous pairwise;
 - Freedom Network Indicator;
 - quota limitata di **Emergency Shield** gestita quando necessaria e disponibile;
 - operazioni chain essenziali sponsorizzabili secondo policy anti-abuso.
 
-Il limite di 10 contatti riguarda contatti **attivi simultaneamente**, non il numero totale di persone mai aggiunte. Eliminare/disattivare un contatto libera uno slot.
+Il limite di 10 contatti riguarda persone/RootIdentity attive nella rubrica, non device e non contatti lifetime. Eliminare/disattivare un contatto libera uno slot.
 
-La rubrica resta locale e cifrata. Se serve enforcement resistente a client modificati, usare commitment/slot opachi senza pubblicare `Account -> DeviceID[]`.
+La rubrica resta locale e cifrata. Se serve enforcement resistente a client modificati, usare commitment/slot opachi senza pubblicare social graph o mapping leggibili `RootIdentity -> devices[]`.
 
 ## 3. Relay Contributor
 
 Un utente Free che mette a disposizione un dispositivo come relay Freedom utile alla rete riceve **10 slot contatto attivi aggiuntivi**.
 
-Policy iniziale:
-
 ```text
-FREE                    10 contatti attivi
+FREE                     10 contatti attivi
 FREE + RELAY CONTRIBUTOR 20 contatti attivi
 ```
 
 Il bonus non equivale a Pro e non compra capacità Shield premium.
 
-Il reward deve dipendere da una partecipazione relay realmente utile, non dal semplice stato del toggle. La policy può usare finestre di disponibilità, circuiti accettati, traffico inoltrato bounded o receipt/commitment opachi, evitando di pubblicare social graph o dettagli dei circuiti.
+Il reward deve dipendere da partecipazione relay realmente utile, non dal semplice toggle. La policy può usare finestre di disponibilità, circuiti accettati, traffico inoltrato bounded o receipt/commitment opachi, evitando social graph e dettagli dei circuiti.
 
-Se il contributo cessa, il bonus può scadere dopo una grace period. I contatti sopra il limite base non vengono cancellati automaticamente; l'utente non può aggiungerne di nuovi finché non torna entro la quota o riqualifica il relay.
+Se il contributo cessa, il bonus può scadere dopo una grace period. I contatti sopra il limite base non vengono cancellati automaticamente; l'utente non può aggiungerne di nuovi finché non torna entro quota o riqualifica il relay.
 
 Dettagli: [`RELAYS.md`](RELAYS.md).
 
@@ -90,7 +86,7 @@ La licenza appartiene alla `RootIdentity`, non al singolo APK/device.
 
 ```text
 FreedomEntitlement {
-    account_commitment
+    root_commitment
     tier
     entitlement_epoch
     max_devices
@@ -99,7 +95,11 @@ FreedomEntitlement {
 }
 ```
 
-Dopo reset/nuovo telefono, Recovery Kit -> RootIdentity -> nuova DeviceKey -> restore entitlement.
+Dopo reset/nuovo telefono:
+
+```text
+Recovery Kit -> RootIdentity -> nuova DeviceKey -> nuovo DeviceRecordCommitment -> restore entitlement
+```
 
 La chain fa rispettare `active_devices <= max_devices`; il restore non deve trasformarsi in clonazione illimitata della licenza.
 
@@ -140,9 +140,7 @@ future providers
 
 PayPal non richiede un server Freedom pubblico: il checkout può essere aperto dall'app, mentre worker privati outbound-only verificano il provider e pubblicano una `PaymentAttestation` on-chain.
 
-Il callback/OK nell'app non è sufficiente come prova economica autoritativa.
-
-Per crypto verificabile on-chain, l'entitlement può essere attivato direttamente dal pagamento verificato dal contratto/adaptor.
+Il callback/OK nell'app non è sufficiente come prova economica autoritativa. Per crypto verificabile on-chain, l'entitlement può essere attivato direttamente dal pagamento verificato dal contratto/adaptor.
 
 Nessun merchant `client_secret` deve essere distribuito nell'APK.
 
@@ -162,11 +160,9 @@ Treasury e fee relayer indipendenti possono sponsorizzare registrazione e rare o
 
 Il costo on-chain non cresce con i messaggi: messaggi, ACK, file, audio, video e route update restano off-chain.
 
-I device/community relay possono inoltre ridurre la dipendenza da capacità relay managed, ma non devono essere trattati come infrastruttura garantita.
+I device/community relay possono ridurre la dipendenza da capacità relay managed, ma non devono essere trattati come infrastruttura garantita.
 
 ## 9. Sponsored registration e anti-abuse
-
-La registrazione iniziale Free può essere sponsorizzata ma non illimitata.
 
 ```text
 valid RootIdentity
@@ -229,6 +225,7 @@ Un client compatibile deve continuare a usare Freedom Protocol anche se i serviz
 
 Riferimenti:
 
+- [`IDENTITY_MODEL.md`](IDENTITY_MODEL.md)
 - [`ACCOUNT_RECOVERY_LICENSES.md`](ACCOUNT_RECOVERY_LICENSES.md)
 - [`PAYMENTS.md`](PAYMENTS.md)
 - [`REGISTRATION_ECONOMICS.md`](REGISTRATION_ECONOMICS.md)
