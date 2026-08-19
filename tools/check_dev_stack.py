@@ -80,7 +80,8 @@ def main() -> int:
         "apply_mutation",
         "FREEDOM_L3",
         "is_failure()",
-        "read_committed_version",
+        "client_committed_version",
+        "read_chain_version",
     ):
         if marker not in adapter:
             errors.append(f"NEAR L3 adapter missing executable marker: {marker}")
