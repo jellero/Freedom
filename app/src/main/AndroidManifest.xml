@@ -7,7 +7,7 @@
 
     <application
         android:allowBackup="false"
-        android:label="Freedom M1"
+        android:label="Freedom Communication M1"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
 
