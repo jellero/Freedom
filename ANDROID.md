@@ -4,11 +4,9 @@
 
 Android è la prima piattaforma di implementazione.
 
-Il codice attualmente presente sotto `app/` è un **transport/crypto spike** sviluppato prima della specifica corrente. Dimostra connessione TCP diretta, handshake cifrato e scambio E2EE di test, ma usa ancora IP manuale e fingerprint/TOFU.
+Il codice sotto `app/` è ancora un **transport/crypto spike** precedente alla specifica corrente. Dimostra TCP diretto, handshake cifrato e scambio E2EE di test, ma usa IP manuale e fingerprint/TOFU.
 
-Questa parte resta utile come laboratorio di trasporto, ma **non è l'M1 canonico**.
-
-La nuova implementazione deve partire dal modello:
+La nuova implementazione canonica parte da:
 
 ```text
 RootIdentity
@@ -22,11 +20,7 @@ Non esiste un `DeviceID` globale richiesto dal client o dal wire protocol.
 
 Dettagli: [`docs/IDENTITY_MODEL.md`](docs/IDENTITY_MODEL.md).
 
-## Obiettivo UX iniziale
-
-Il primo client deve essere estremamente semplice.
-
-Schermate:
+## UX iniziale
 
 ```text
 Home
@@ -39,11 +33,9 @@ Settings
 Blocked Contacts
 ```
 
-Commitment, epoch, RPC e dettagli chain restano nel debug/advanced UI salvo necessità di recovery.
+Commitment, epoch, RPC e dettagli chain restano nel debug/advanced UI salvo recovery/errori.
 
 ## A1 — RootIdentity e device authorization
-
-### Primo avvio
 
 ```text
 Install Freedom
@@ -54,43 +46,27 @@ Generate DeviceKey
       |
 Generate opaque DeviceRecordCommitment
       |
-Private material -> Android Keystore / protected storage
+protected storage / Android Keystore
       |
 Generate Recovery Kit
       |
 0 mandatory chain writes
 ```
 
-Quando l'identità deve diventare verificabile:
+Quando serve identità verificabile:
 
 ```text
 anti-abuse proof
-      |
-sponsored registration when eligible
-      |
-RootIdentity + authorized device record
-      |
-READY
+ -> sponsored registration when eligible
+ -> RootIdentity + authorized device record
+ -> READY
 ```
 
-La schermata `My Freedom` non mostra un global device identifier come identità dell'utente.
-
-Può mostrare:
-
-```text
-Recovery status
-Current device: authorized / revoked
-Network
-security/update status
-[Show Contact QR]
-[Recovery Kit]
-```
-
-La raw Root private key e la DeviceKey privata non vengono mai mostrate.
+`My Freedom` non mostra un global device identifier come identità utente.
 
 ## A2 — Contact QR
 
-Il contatto rappresenta una persona/RootIdentity, non ogni singolo telefono.
+Il contatto rappresenta una persona/RootIdentity.
 
 ```text
 FreedomContact {
@@ -104,17 +80,7 @@ FreedomContact {
 }
 ```
 
-La `contact_capability` viene generata con CSPRNG e deve poter essere ruotata/scadere.
-
-Azioni:
-
-```text
-[Show Contact QR]
-[Share contact]
-[Rotate contact QR]
-```
-
-Dopo il primo handshake i peer derivano:
+Dopo il primo handshake:
 
 ```text
 PairSecret
@@ -122,45 +88,9 @@ PairwiseContactAlias
 PairRendezvousSecret
 ```
 
-Alias differenti devono essere usati per contatti differenti.
-
-## Add Contact
-
-```text
-[ Scan Contact QR ]
-
-oppure
-
-Paste Freedom contact
-```
-
-Dopo il parse:
-
-```text
-root identity proof
-      |
-bootstrap device authorization verification
-      |
-authenticated first handshake
-      |
-derive pairwise identity state
-      |
-CONTACT VERIFIED
-```
-
-La UI distingue:
-
-```text
-Contact verified
-Current device verified
-Device revoked
-Control-plane unavailable
-Contact capability expired
-```
+Alias differenti per contatti differenti.
 
 ## A3 — Rendezvous
-
-Quando Alice vuole aprire una conversazione con Bob:
 
 ```text
 known route?
@@ -168,129 +98,88 @@ known route?
   no
 
 read pairwise remote rendezvous
-  found -> try it, no write
+  found -> try, no write
   empty
 
-check local current rendezvous
-  already valid -> wait/poll for peer coordination
+read local rendezvous
+  valid -> wait/poll
   empty -> publish one bounded offer
 ```
 
-Gli slot derivano dal `PairRendezvousSecret`, non da RootIdentity o DeviceRecordCommitment pubblico.
-
-Ogni rendezvous è autosufficiente, con nuovo nonce/materiale effimero e TTL breve.
-
-La UI normale non mostra transazioni o dettagli chain salvo errore.
-
-Debug:
-
-```text
-pairwise slot hash
-expires_at
-chain tx id when written
-candidate count
-```
+Gli slot derivano da `PairRendezvousSecret`, non da RootIdentity/device commitment pubblico.
 
 ## A4 — Secure session
 
-Dopo aver trovato un percorso:
-
 ```text
 verify expected RootIdentity/contact
-      |
-verify current DeviceKey authorization / epoch
-      |
-mutual authenticated handshake
-      |
-fresh session keys
-      |
-E2EE ACTIVE
+ -> verify DeviceKey authorization / epoch
+ -> mutual authenticated handshake
+ -> fresh session keys
+ -> E2EE ACTIVE
 ```
 
-Il transcript usa identity proof/alias pairwise e device authorization proof; non richiede un global DeviceID.
-
-La UI mostra semplicemente:
-
-```text
-Contact verified
-End-to-end encrypted
-```
-
-Il fingerprint manuale/TOFU del vecchio spike viene rimosso dal normale flusso.
+Il transcript usa identity proof/alias pairwise e device authorization proof.
 
 ## A5 — Messaging sincrono
-
-Freedom non implementa retry offline implicito.
 
 ```text
 SEND
   |
   +-- active authenticated session? -- no --> FAIL / DISCARD
   |
-  +-- yes --> transmit --> ACK/session result
+  `-- yes --> transmit --> ACK/session result
 ```
 
-La conversation screen implementa:
+Nessun retry offline implicito e nessuna queue di delivery futura.
 
-```text
-text
-sent
-received ACK
-read ACK optional
-```
-
-Se il peer non è raggiungibile:
-
-```text
-Peer not reachable
-Message not sent
-```
-
-Il protocollo base **non mette il messaggio in una coda per inviarlo quando il peer torna online** e non lo deposita su chain/relay.
-
-Se il client conserva una bozza digitata dall'utente, quella bozza resta UI state e non deve essere confusa con una delivery queue.
+Una bozza UI locale non è una mailbox.
 
 ## A6 — Route maintenance
 
-Durante la sessione Android monitora il percorso e condivide route update direttamente con il peer.
-
-Eventi rilevanti:
-
-- cambio Wi-Fi/mobile;
-- cambio endpoint osservato;
-- perdita candidate;
-- nuovo candidate;
-- relay disponibile/non disponibile.
-
-Se almeno un route rimane valido:
+Durante una sessione:
 
 ```text
+Wi-Fi/mobile change
+candidate change
+relay availability
+transport health
+        |
+        v
 RouteUpdate -> E2EE session
 ```
 
-Nessuna write blockchain.
+Nessuna write blockchain se almeno un path resta valido.
 
-Sequence number di `RouteUpdate`/frame appartengono alla sessione attiva e non sono revisioni del rendezvous.
-
-## A7 — NAT traversal
+## A7 — NAT / transport fabric
 
 Supporto progressivo:
 
 ```text
-direct
-observed candidate
+DIRECT
+OBSERVED
 UDP hole punching
-relay
-shielded / future transports
+RELAY
+BRIDGE
+SHIELDED / MULTI_HOP
+PLUGGABLE / OBFUSCATED TRANSPORT
 ```
 
-Per debugging può esistere IP/porta manuale marcato `Developer / Debug`; non rappresenta l'identità del contatto.
+Il transport layer deve essere modulare:
 
-Un observer fornisce soltanto una candidate di rete. La connessione viene autenticata con Root/contact identity + current DeviceKey authorization.
+```text
+TransportAdapter
+  connect()
+  probe_capabilities()
+  health()
+  classify_failure()
+  close()
+```
+
+Il core non deve dipendere da un singolo protocollo di rete.
 
 ## A8 — Relay mode
 
-Android può offrire `DEVICE_RELAY` opt-in.
+`DEVICE_RELAY` è opt-in.
 
 ```text
 Relay mode: OFF/ON
@@ -305,24 +194,20 @@ Relay mode:
 
 - non salva conversazioni;
 - usa circuit token temporanei;
-- non riceve RootIdentity/device commitment se non necessario;
-- non diventa un open proxy Internet;
-- può qualificare il Free al benefit Relay Contributor secondo policy verificabile.
-
-Il ruolo futuro `FREEDOM_GATEWAY`/Internet egress è separato da `DEVICE_RELAY`.
+- non riceve RootIdentity/device commitment quando non necessario;
+- non diventa open proxy Internet;
+- può qualificare al Relay Contributor benefit.
 
 ## A9 — Attachments
-
-Trasferimento solo con sessione/route attiva:
 
 ```text
 active secure session
  -> encrypted chunks
- -> direct/relay transport
+ -> direct/relay/Shield transport
  -> receiver endpoint
 ```
 
-Se il route cade, il trasferimento corrente può fallire o essere ripreso solo come parte di una nuova sessione/negoziazione esplicita; non diventa automaticamente storage offline di rete.
+La perdita route non trasforma il file in storage offline di rete.
 
 ## A10 — Voice/video
 
@@ -333,9 +218,174 @@ CallCandidate
 CallEnd
 ```
 
-Il signaling è E2EE; media keys separate dalle messaging keys. Media può viaggiare direct o tramite relay compatibile.
+Signaling E2EE; media keys separate; path direct/relay/Shield compatibile.
 
-## Chain module Android
+## Network Indicator
+
+Il client deve mostrare almeno:
+
+```text
+NORMAL
+SHIELDED
+DEGRADED
+SUSPECTED
+UNAVAILABLE
+```
+
+Advanced status può mostrare:
+
+```text
+current path
+transport family
+relay/bridge class
+control-plane status
+failure classification
+active fallback
+```
+
+## Adaptive Defense
+
+Dopo failure selettive:
+
+```text
+PATH_FAILURE
+PROTOCOL_BLOCK_SUSPECTED
+DPI_OR_FILTERING_SUSPECTED
+BRIDGE_UNREACHABLE
+CONTROL_PLANE_DEGRADED
+```
+
+Il client prova alternative bounded senza attribuire censura/sorveglianza a un attore specifico.
+
+## Share Freedom
+
+```text
+Share Freedom
+ -> Install QR
+ -> peer / relay / mirror / store
+ -> verify release/hash/signer
+ -> Android installer
+```
+
+La Direct build può servire una cache APK standalone già verificata. Non incorporare per default una seconda copia dell'APK.
+
+## Freedom Gateway — post-V1
+
+Gateway è separato dalla chat Freedom e dal `DEVICE_RELAY`.
+
+```text
+Chrome / Firefox / selected apps
+           |
+           v
+     Android VpnService
+           |
+     Freedom tunnel
+           |
+ path / transport selector
+   |- relay
+   |- bridge
+   |- Shield / multi-hop
+   `- alternate transport
+           |
+     explicit Egress
+           |
+        Internet
+```
+
+Modalità:
+
+```text
+OFF
+SELECTED_APPS
+WHOLE_DEVICE
+```
+
+Requisiti Android:
+
+- consenso VPN esplicito;
+- selected-app allowlist quando richiesta;
+- whole-device mode opzionale;
+- DNS dentro tunnel quando la policy lo richiede;
+- IPv4/IPv6 leak test;
+- split tunneling visibile;
+- kill-switch/strict mode opzionale;
+- current egress/path status;
+- nessun silent fallback direct in strict mode;
+- conflitto con altra VPN spiegato all'utente.
+
+Il Gateway non integra un browser generalista: usa il browser/app già installato dall'utente.
+
+Dettagli: [`docs/GATEWAY.md`](docs/GATEWAY.md).
+
+## Gateway security boundary
+
+```text
+Freedom Communication
+  endpoint-authenticated E2EE
+  strongest communication boundary
+
+Freedom Gateway
+  encrypted path to egress
+  application protocol remains responsible after egress
+```
+
+Non usare la UI "End-to-end encrypted by Freedom" per traffico Gateway generico.
+
+Stati Gateway separati possibili:
+
+```text
+GATEWAY_OFF
+GATEWAY_DIRECT_EGRESS
+GATEWAY_SHIELDED
+GATEWAY_DEGRADED
+GATEWAY_FILTERING_SUSPECTED
+GATEWAY_UNAVAILABLE
+```
+
+## Maximum Reachability — post-V1
+
+Android deve poter supportare una policy avanzata:
+
+```text
+MAXIMUM_REACHABILITY
+  maintain bounded alternative candidates
+  try independent providers
+  rotate transport family after filtering evidence
+  use non-public bridge when available
+  parallel connect within battery/data policy
+  aggressive bounded failover
+```
+
+Nessun claim "passa tutti i firewall". Il test target è misurare quante classi di blocco reali vengono superate.
+
+## Censorship / firewall test lab
+
+Prima di claim pubblici forti creare test riproducibili:
+
+```text
+block known relay IPs
+block one provider ASN
+block UDP
+block QUIC
+block known protocol fingerprint
+DNS poisoning/blocking
+SNI/domain filtering
+active probe simulated
+high loss / latency / reordering
+partial allowlist environment
+RPC provider block
+```
+
+Acceptance criteria devono misurare:
+
+- time-to-detect;
+- time-to-failover;
+- successful alternate transport rate;
+- false positive rate;
+- battery/data cost;
+- inability to correlate identity through fallback artifacts.
+
+## Module target
 
 ```text
 app/
@@ -344,6 +394,7 @@ core/
   protocol/
   session/
   routing/
+  adaptive/
 chain/
   ChainAdapter
   near/
@@ -351,96 +402,75 @@ transport/
   direct/
   nat/
   relay/
+  bridge/
+  pluggable/
+gateway/
+  android-vpn/
+  tunnel/
+  egress/
 platform-android/
 ```
 
-La separazione può inizialmente vivere come package/module graduali senza sovra-ingegnerizzare la prima build.
+La separazione può essere introdotta gradualmente senza sovra-ingegnerizzare lo spike.
 
 ## Secure storage
 
-Android Keystore viene usato per chiavi applicabili quando supportato.
+Separare almeno:
 
-Il database locale separa:
-
-- RootIdentity metadata non segreto;
+- RootIdentity metadata/private material;
 - device authorization metadata;
-- contacts / pairwise aliases;
+- contacts/pairwise aliases;
 - pair rendezvous secrets;
-- conversation data secondo modalità/policy;
-- network cache.
+- conversation data secondo policy;
+- network cache;
+- Gateway configuration;
+- trusted release/update state.
 
-Pair secret e materiale sensibile devono essere protetti a riposo secondo le primitive Android disponibili.
-
-## Share Freedom
-
-La Direct build può mostrare un Install QR e, opzionalmente, servire un APK standalone già verificato tramite endpoint locale temporaneo/capability.
-
-```text
-Share Freedom
- -> Install QR
- -> peer / relay / mirror
- -> verify release manifest/hash/signer
- -> Android installer
-```
-
-Non incorporare per default una seconda copia dell'APK nel client.
-
-Dettagli: [`docs/APP_DISTRIBUTION.md`](docs/APP_DISTRIBUTION.md).
-
-## Gateway candidato post-V1
-
-Un eventuale `Freedom Gateway` Android può usare il meccanismo VPN della piattaforma per instradare traffico di app selezionate o dell'intero device dentro un tunnel Freedom verso egress espliciti.
-
-Questo è **separato dal relay messenger** e non è un blocker V1.
-
-```text
-selected apps / whole device
-       |
-Android VPN interface
-       |
-Freedom path selector
-       |
-PRIVATE / MANAGED / EGRESS gateway
-       |
-Internet
-```
-
-Un `DEVICE_RELAY` community non diventa automaticamente egress Internet.
+Non loggare private/session/rendezvous/Gateway tunnel keys.
 
 ## Debug screen
 
-Durante lo sviluppo:
-
 ```text
-Root commitment hash (abbreviato)
-Device record commitment hash (abbreviato)
+Root commitment hash abbreviated
+Device record commitment hash abbreviated
 Key epoch
 Chain state/finality
-RPC endpoint selected
+RPC selected
 Pairwise alias hash
-Rendezvous slot hash
-Rendezvous TTL
+Rendezvous slot hash / TTL
 Known route candidates
 Current path
-Public/observed endpoint
-Relay / circuit token hash
+Transport family
+Relay / bridge / egress class
 Session ID
 TX/RX sequence
 RTT
+Failure classification
+Gateway mode/status when active
 ```
 
-Non mostrare private/session/rendezvous secrets in chiaro.
+## Build / CI
 
-## Build
-
-La CI deve eseguire almeno:
+Minimo:
 
 ```text
 assembleDebug
 unit tests
 protocol serialization tests
 crypto vectors
+transport adapter tests
 lint
+```
+
+Successivamente:
+
+```text
+network namespace / emulator integration tests
+DPI/firewall simulation
+relay failover tests
+Gateway DNS/leak tests
+multi-device tests
+fuzzing
 ```
 
 ## Roadmap Android
@@ -462,6 +492,17 @@ A13 attachments
 A14 voice/video
 A15 Share Freedom Direct
 A16 Network Indicator / Adaptive Defense
-A17 store compliance polish
-A18 optional Freedom Gateway evaluation/implementation
+A17 transport abstraction / bridge support
+A18 store compliance polish
+
+POST-V1 GATEWAY
+G1  explicit egress protocol
+G2  selected-app VpnService
+G3  whole-device + DNS/leak controls
+G4  egress failover / diversity
+G5  shielded multi-hop Gateway
+G6  pluggable anti-censorship transports
+G7  bridge anti-enumeration
+G8  DPI/firewall lab
+G9  Maximum Reachability
 ```
