@@ -1,28 +1,31 @@
 # Freedom — Protocol Specification
 
-Status: **design draft**
+Status: **canonical design draft**
 
-Questa specifica descrive gli oggetti logici e i flussi minimi del protocollo. Gli encoding binari definitivi e le primitive concrete verranno fissati prima dell'interoperabilità pubblica.
+Normative security rules: [`SECURITY_INVARIANTS.md`](SECURITY_INVARIANTS.md).
+Identity details: [`IDENTITY_MODEL.md`](IDENTITY_MODEL.md).
 
-## 1. Principi
+Questa specifica descrive oggetti logici e flussi minimi. Gli encoding binari definitivi e le suite concrete devono essere congelati con test vector prima dell'interoperabilità pubblica.
+
+## 1. Principi normativi
 
 - ogni oggetto parsabile è versionato;
-- RootIdentity, DeviceKey, device commitment, alias pairwise e session keys hanno ruoli separati;
+- RootIdentity, DeviceCertificate, DeviceKey, commitment, alias pairwise, transport token e session keys hanno ruoli separati;
 - **non esiste un `DeviceID` globale richiesto dal wire protocol**;
-- le informazioni di routing non autenticano l'identità;
 - la blockchain/control-plane non trasporta contenuti applicativi o APK;
-- i relay inoltrano, non archiviano;
-- un relay può essere dedicated, community, private, managed o un normale dispositivo Freedom opt-in;
+- relay/bridge inoltrano ciphertext, non creano mailbox;
 - i contenuti applicativi vengono inviati soltanto dentro una sessione autenticata attiva;
 - nessuna consegna offline automatica nel protocollo base;
 - read-before-write è obbligatorio per rendezvous/recovery;
 - una sessione attiva gestisce direttamente i propri route update;
 - installare l'app non implica una write chain;
-- entitlement e pagamento non alterano le primitive E2EE del core.
+- entitlement/pagamento non alterano le primitive E2EE;
+- un transaction hash non equivale a successo;
+- forward secrecy tra sessioni è obbligatoria;
+- traffic-key lifetime e rekey sono bounded/normativi;
+- governance production critica non può essere `1-of-1`.
 
-Dettagli identità: [`IDENTITY_MODEL.md`](IDENTITY_MODEL.md).
-
-## 2. RootIdentity
+## 2. RootIdentity e commitment domain-separated
 
 ```text
 RootIdentity {
@@ -33,18 +36,20 @@ RootIdentity {
 }
 ```
 
-La RootIdentity serve per:
+La RootIdentity serve a ownership/recovery e autorizzazione. Non è message key, transport ID o payment reference.
 
-- recovery ownership;
-- autorizzazione/revoca device;
-- entitlement/licenze;
-- sponsorship state quando necessario.
+Stato account/service stabile usa commitment separati:
 
-Non viene usata come chiave di sessione, message key o identificatore di routing.
+```text
+DeviceAuthorizationCommitment
+EntitlementCommitment
+PaymentBindingCommitment
+SponsorshipCommitment
+```
 
-## 3. Device record opaco
+Il riuso indiscriminato dello stesso `root_commitment` tra domini è vietato quando evitabile.
 
-Ogni device genera una DeviceKey e un handle tecnico del control-plane:
+## 3. Device record
 
 ```text
 DeviceRecord {
@@ -58,26 +63,45 @@ DeviceRecord {
 }
 ```
 
-`device_record_commitment` non è username, contact ID o endpoint di rete. Non deve essere inserito nei normali frame applicativi quando il contesto di sessione è sufficiente.
+`device_record_commitment` è un handle opaco del control-plane, non username/contact/routing ID.
 
-## 4. Device authorization
+## 4. DeviceCertificate
 
-Un nuovo device recuperato/aggiunto genera nuova DeviceKey e nuovo commitment, quindi viene autorizzato dalla RootIdentity:
+La DeviceKey corrente è autorizzata dalla RootIdentity tramite un certificato verificabile offline:
+
+```text
+DeviceCertificate {
+    version
+    network_id
+    root_identity_commitment_or_proof
+    device_public_key
+    key_epoch
+    protocol_version
+    capabilities?
+    issued_at
+    expires_at
+    certificate_id
+    root_authorization_signature
+}
+```
+
+Un nuovo handshake deve poter verificare firma, binding alla RootIdentity attesa, epoch, network e expiry senza dipendere da una RPC nel packet hot path.
+
+Il control-plane fornisce revocation/rotation/freshness; cache verificate possono essere usate secondo policy.
+
+## 5. Device activation / rotation / revocation
 
 ```text
 ActivateDevice {
-    root_commitment
+    device_authorization_commitment
     device_record_commitment
     device_public_key
+    key_epoch
     entitlement_epoch
     nonce
     root_signature
 }
 ```
-
-Il control-plane deve poter far rispettare `active_devices <= max_devices` senza richiedere un elenco pubblico leggibile dei device dell'account.
-
-## 5. Key rotation / revocation
 
 ```text
 RotateDeviceKey {
@@ -89,29 +113,25 @@ RotateDeviceKey {
 }
 ```
 
-Una rotazione valida incrementa l'epoch. Revocation e recovery devono impedire l'uso di chiavi obsolete per nuovi handshake.
+Dopo activation/rotation finalizzata e verificata viene emesso/usato un `DeviceCertificate` coerente col nuovo stato.
 
-Il commitment tecnico può restare stabile durante una normale rotazione, ma non viene usato come global network identity.
+Una revoca impedisce nuovi handshake con il certificato/epoch revocato secondo freshness policy.
 
 ## 6. Recovery Kit
-
-Il formato utente è QR/bundle cifrato + recovery code separato. Il protocollo non impone che la Root private key sia mai pubblicata.
-
-Un restore produce:
 
 ```text
 recover RootIdentity
  -> generate NEW DeviceKey
  -> generate NEW DeviceRecordCommitment
  -> ActivateDevice
+ -> wait verified finality/state
+ -> issue/use NEW DeviceCertificate
  -> resolve entitlement
 ```
 
-Dettagli: [`ACCOUNT_RECOVERY_LICENSES.md`](ACCOUNT_RECOVERY_LICENSES.md).
+Il restore non riusa automaticamente vecchie DeviceKey.
 
 ## 7. Contact descriptor
-
-Il contatto logico rappresenta una persona/RootIdentity, non ogni suo singolo device.
 
 ```text
 FreedomContact {
@@ -125,13 +145,9 @@ FreedomContact {
 }
 ```
 
-La capability è una capability di bootstrap/rendezvous e non consente impersonation.
-
-Un contatto può successivamente usare più device autorizzati senza diventare più contatti nella rubrica.
+Il contatto logico rappresenta una persona/RootIdentity. La capability abilita bootstrap/rendezvous iniziale, non impersonation.
 
 ## 8. Pairwise identity state
-
-Dopo il primo handshake autenticato:
 
 ```text
 PairIdentityState {
@@ -142,7 +158,7 @@ PairIdentityState {
 }
 ```
 
-Il secret non viene scritto on-chain. Alias e slot sono specifici della relazione e devono essere differenti tra coppie differenti.
+Alias e slot sono specifici della relazione e differenti tra coppie differenti.
 
 ## 9. Rendezvous record
 
@@ -159,7 +175,7 @@ Payload cifrato:
 ```text
 RendezvousPayload {
     sender_pairwise_alias
-    sender_device_proof
+    sender_device_certificate_hash_or_proof
     sender_key_epoch
     rendezvous_nonce
     route_candidates[]
@@ -168,7 +184,7 @@ RendezvousPayload {
 }
 ```
 
-Il record pubblico non espone una relazione leggibile RootIdentity/device/route. Ogni record è autosufficiente; non esiste sequence/revision storica obbligatoria.
+Il record pubblico non espone mapping leggibile RootIdentity/device/route.
 
 ## 10. Read-before-write
 
@@ -181,11 +197,9 @@ else:
   else -> write(new independent record)
 ```
 
-TTL/backoff impediscono write continue.
+TTL/backoff e size bounds sono obbligatori.
 
 ## 11. RecoveryBeacon
-
-Quando il data-plane è perso:
 
 ```text
 RecoveryBeacon {
@@ -199,11 +213,9 @@ RecoveryBeacon {
 }
 ```
 
-Il beacon è pairwise/opaco/cifrato e indica attività recente, non presenza globale.
+Pairwise, opaco, cifrato, TTL breve; indica attività recente, non presence globale.
 
-Dettagli: [`ADAPTIVE_DEFENSE.md`](ADAPTIVE_DEFENSE.md).
-
-## 12. Route candidate
+## 12. RouteCandidate
 
 ```text
 RouteCandidate {
@@ -216,9 +228,9 @@ RouteCandidate {
 }
 ```
 
-Candidate iniziali: `LOCAL`, `OBSERVED`, `DIRECT`, `RELAY`; future classi possono includere shielded/bridge/obfuscated transport.
+Classi: `LOCAL`, `OBSERVED`, `DIRECT`, `RELAY`, con estensioni future `BRIDGE`, `SHIELDED`, `OBFUSCATED`.
 
-## 13. Relay candidate
+## 13. RelayCandidate
 
 ```text
 RelayCandidate {
@@ -232,27 +244,11 @@ RelayCandidate {
 }
 ```
 
-Classi iniziali:
+Classi: `DEDICATED`, `COMMUNITY`, `DEVICE`, `PRIVATE`, `MANAGED`.
 
-```text
-DEDICATED
-COMMUNITY
-DEVICE
-PRIVATE
-MANAGED
-```
+La classe non è un trust signal crittografico.
 
-La classe descrive la natura operativa del relay, **non il suo livello di fiducia**.
-
-Un `DEVICE` relay può essere un telefono/tablet/desktop Freedom opt-in. Non deve necessariamente avere un IP pubblico: può essere raggiungibile tramite NAT mapping, transport compatibile o connessioni outbound/circuiti già stabiliti.
-
-Dettagli: [`RELAYS.md`](RELAYS.md).
-
-## 14. Transport token
-
-Routing e identità sono separati.
-
-Il transport layer usa capability temporanee:
+## 14. Transport tokens
 
 ```text
 TransportToken
@@ -261,9 +257,9 @@ NextHopToken
 RouteCapability
 ```
 
-Un relay non dovrebbe ricevere RootIdentity o DeviceRecordCommitment quando un token di circuito è sufficiente.
+Un relay non deve ricevere RootIdentity o DeviceRecordCommitment quando un token temporaneo è sufficiente.
 
-## 15. Route update in-session
+## 15. RouteUpdate in-session
 
 ```text
 RouteUpdate {
@@ -275,65 +271,107 @@ RouteUpdate {
 }
 ```
 
-Viaggia nella sessione autenticata. Finché almeno un path è valido non si usa la blockchain per aggiornare il routing della coppia.
+Viaggia E2EE nella sessione. Finché un path è valido, la chain non viene usata per ogni cambio route.
 
-## 16. Handshake
+## 16. Handshake canonico
 
 ```text
 SessionContext {
     session_id
     local_pairwise_alias
     remote_pairwise_alias
-    local_device_record_commitment_or_proof
-    remote_device_record_commitment_or_proof
+    local_device_certificate_hash_or_proof
+    remote_device_certificate_hash_or_proof
     local_key_epoch
     remote_key_epoch
     negotiated_version
     negotiated_crypto_suite
+    traffic_key_epoch
     tx_keys
     rx_keys
     created_at
 }
 ```
 
-Il transcript lega almeno:
+Il transcript **MUST** legare almeno:
 
 ```text
 network_id
 protocol_version
-pairwise aliases
-current device authorization proofs
+expected pairwise relationship
+pairwise aliases/commitments
+local/remote DeviceCertificate hash/proof
 key epochs
-ephemeral keys
+ephemeral key material
 nonces
 suite
 session_id
 ```
 
-Entrambi verificano che la DeviceKey corrente sia autorizzata dalla RootIdentity attesa e non revocata, tramite `ChainAdapter`/cache verificata secondo freshness policy.
+Entrambi verificano:
+
+1. RootIdentity/contact identity attesa;
+2. DeviceCertificate valido;
+3. possesso della DeviceKey;
+4. freshness/revocation secondo policy;
+5. transcript corrente.
+
+È vietato accettare una chiave soltanto perché firma correttamente se non è legata al contatto atteso.
 
 Il relay non partecipa come authority all'autenticazione endpoint-to-endpoint.
 
-## 17. Encrypted frame / replay
+## 17. Forward secrecy, traffic-key epochs e rekey
+
+Ogni nuova sessione usa ephemeral key exchange con forward secrecy rispetto alle chiavi statiche di identity/device.
+
+La compromissione futura di RootIdentity/DeviceKey non deve permettere di derivare le session key di sessioni completate precedentemente.
+
+Per sessioni lunghe:
+
+```text
+TrafficKeyEpoch {
+    epoch
+    activated_at
+    frame_count
+    byte_count
+}
+```
+
+L'implementazione deve imporre limiti bounded per:
+
+- tempo;
+- frame;
+- byte;
+- policy di suite.
+
+Prima del limite:
+
+```text
+RekeyInit
+RekeyCommit
+```
+
+sono autenticati nella sessione corrente e producono nuove traffic keys. Se il rekey richiesto fallisce, la sessione termina con `SESSION_REKEY_REQUIRED`/failure esplicita.
+
+Messaging keys e media keys sono separate. Una ratchet construction standard/reviewata è il target per post-compromise security.
+
+## 18. Encrypted frame / replay
 
 ```text
 EncryptedFrame {
     version
     session_hint
+    traffic_key_epoch
     sequence
     ciphertext
 }
 ```
 
-Sequence monotono per direzione e protetto da AEAD. Reject di replay e memoria bounded.
+Sequence monotona per direzione e traffic-key epoch; AEAD autentica epoch/sequence/session context. Replay e gap non validi vengono rifiutati con memoria bounded.
 
-`session_hint` deve essere temporaneo e non trasformarsi in identificatore globale stabile.
+`session_hint` è temporaneo e non diventa identificatore globale stabile.
 
-## 18. Text message
-
-Una volta stabilita la sessione, l'identità del mittente è già implicita nel contesto autenticato.
-
-Preferire:
+## 19. Text message
 
 ```text
 ChatMessage {
@@ -345,11 +383,9 @@ ChatMessage {
 }
 ```
 
-Non inserire un device identifier stabile in ogni messaggio salvo necessità protocollare dimostrata.
+Valido solo dentro sessione autenticata attiva. Nessun device identifier globale nei frame se il session context basta.
 
-Valido solo dentro una sessione autenticata attiva. Nessuna queue di retry/offline delivery.
-
-## 19. ACK
+## 20. ACK
 
 ```text
 MessageAck {
@@ -359,25 +395,25 @@ MessageAck {
 }
 ```
 
-ACK: `RECEIVED`, `READ` opzionale. `RECEIVED` non implica persistenza su disco.
+`RECEIVED`, `READ` opzionale. `RECEIVED` non implica persistenza su disco.
 
-## 20. Synchronous / offline behavior
+## 21. Synchronous / offline behavior
 
 ```text
 SEND
   |
-  +-- active authenticated session? -- no --> DISCARD/FAIL
+  +-- active authenticated session? -- no --> DISCARD / FAIL
   |
-  +-- yes --> transmit --> ACK/session result
+  `-- yes --> transmit --> ACK/session result
 ```
 
 Nessun deposito su blockchain, relay persistente o mailbox locale futura.
 
-## 21. Live / ephemeral mode
+## 22. Live / local ephemerality
 
-In Live mode il client può evitare cronologia persistente, backup/preview plaintext e distruggere session state/key al termine. Non può impedire al peer remoto o a un OS compromesso di copiare ciò che riceve.
+Live mode può evitare cronologia persistente, backup/preview plaintext e distruggere session state/key al termine. Non può impedire al peer o a un OS compromesso di copiare il plaintext ricevuto.
 
-## 22. Relay packet e circuiti
+## 23. RelayPacket
 
 ```text
 RelayPacket {
@@ -392,20 +428,9 @@ RelayPacket {
 
 Buffer/size/TTL/hop/quota bounded. Nessuna `StoreRequest` nel protocollo base.
 
-Il relay usa capability/token di circuito e non richiede un mapping pubblico tra identità stabili e destinatari.
+`ENDPOINT_CONTEXT` e `RELAY_CONTEXT` restano separati.
 
-Un device che funge da relay mantiene separati:
-
-```text
-ENDPOINT_CONTEXT
-RELAY_CONTEXT
-```
-
-Le chiavi/sessioni dell'utente locale non vengono usate per decifrare traffico relayato.
-
-## 23. Relay contribution proof
-
-Il client può ottenere un benefit `Relay Contributor` solo se il device soddisfa una policy minima di contributo.
+## 24. RelayContributionProof
 
 ```text
 RelayContributionProof {
@@ -420,15 +445,7 @@ RelayContributionProof {
 }
 ```
 
-Requisiti:
-
-- il semplice toggle `relay_enabled` non è sufficiente;
-- la prova non deve contenere plaintext o lista dei peer serviti;
-- evitare reward proporzionali senza limite al volume;
-- supportare aggregazione/commitment opachi;
-- TTL/epoch bounded, così il benefit scade se il contributo termina.
-
-Il proof può autorizzare:
+Il semplice toggle non basta. La prova non contiene plaintext o lista dei peer serviti.
 
 ```text
 EntitlementBenefit {
@@ -439,15 +456,7 @@ EntitlementBenefit {
 }
 ```
 
-Policy iniziale Free:
-
-```text
-base contacts               10
-Relay Contributor bonus    +10
-maximum while qualified     20
-```
-
-## 24. Attachment
+## 25. Attachment
 
 ```text
 AttachmentManifest {
@@ -460,9 +469,9 @@ AttachmentManifest {
 }
 ```
 
-Trasferimento solo con sessione/route attiva; niente storage persistente automatico.
+Trasferimento solo durante sessione/route attiva; niente storage persistente automatico.
 
-## 25. Call signaling
+## 26. Call signaling
 
 ```text
 CallInvite
@@ -471,18 +480,18 @@ CallCandidate
 CallEnd
 ```
 
-Il signaling viaggia E2EE; media keys separate dalle messaging keys.
+Signaling E2EE; media keys separate e soggette a rekey/lifetime bounded.
 
-## 26. Presence
+## 27. Presence
 
-Presence è off-chain, opportunistica e preferibilmente pairwise. Non genera heartbeat blockchain continui e non richiede un identificatore globale di presence.
+Presence è off-chain, opportunistica e preferibilmente pairwise. Nessun heartbeat blockchain continuo o global presence ID.
 
-## 27. Entitlement
+## 28. Entitlement
 
 ```text
 FreedomEntitlement {
     version
-    root_commitment
+    entitlement_commitment
     tier
     entitlement_epoch
     max_devices
@@ -494,16 +503,14 @@ FreedomEntitlement {
 }
 ```
 
-Policy iniziale Free: 1 active device, 10 active contacts. La contact list resta locale/cifrata; eventuali contact-slot commitment non devono rivelare il social graph.
+La contact list resta locale/cifrata. L'entitlement commitment è domain-separated dall'identità/routing/payment state.
 
-Benefit temporanei, incluso `RELAY_CONTRIBUTOR_CONTACTS`, modificano la capacità effettiva senza cambiare il tier principale.
-
-## 28. PurchaseIntent / PaymentAttestation
+## 29. PurchaseIntent / PaymentAttestation
 
 ```text
 PurchaseIntent {
     purchase_ref_hash
-    root_commitment
+    payment_binding_commitment
     product
     amount
     currency_or_asset
@@ -524,25 +531,28 @@ PaymentAttestation {
 }
 ```
 
-Il callback di pagamento nel client non è prova autoritativa. PayPal può essere verificato da worker outbound-only; crypto può essere verificata on-chain quando compatibile.
+Il callback client non è prova autoritativa. Payment reference e provider metadata non usano RootIdentity/DeviceRecordCommitment/pairwise alias in plaintext.
 
-Dettagli: [`PAYMENTS.md`](PAYMENTS.md).
-
-## 29. EmergencyBulletin / SecurityPolicy / FreedomRelease
+## 30. EmergencyBulletin / SecurityPolicy / FreedomRelease
 
 ```text
 EmergencyBulletin {
+    version
     bulletin_id
     severity
     issued_at
     expires_at
     geographic_scope?
     payload_hash
+    issuer_set_epoch
     signatures[]
 }
+```
 
+```text
 SecurityPolicy {
     policy_epoch
+    latest_version
     min_supported_version
     min_secure_version
     vulnerable_versions[]
@@ -550,39 +560,65 @@ SecurityPolicy {
     severity
     reason_hash
     remediation_release
-    signatures[]
-}
-
-FreedomRelease {
-    version_code
-    package_id
-    artifact_sha256
-    artifact_size
-    signing_cert_fingerprint
-    source_descriptors[]
+    issued_at
+    expires_at?
+    signer_set_epoch
     signatures[]
 }
 ```
 
-L'APK resta off-chain. La posizione utente per bulletin geografici resta locale. Policy critiche dovrebbero supportare threshold signatures.
+Schema **unico e canonico** della release:
 
-Dettagli: [`EMERGENCY_UPDATES.md`](EMERGENCY_UPDATES.md).
+```text
+FreedomRelease {
+    manifest_version
+    release_id
+    version_code
+    version_name
+    package_id
+    artifact_sha256
+    artifact_size
+    signing_cert_fingerprint
+    signing_lineage_commitment?
+    min_supported_version
+    min_secure_version
+    criticality
+    release_locator_hash
+    issued_at
+    signer_set_epoch
+    signatures[]
+}
+```
 
-## 30. Sponsored registration proof
+L'APK resta off-chain. Critical SecurityPolicy, release authorization e global revocation richiedono threshold governance production secondo `SECURITY_INVARIANTS.md`.
 
-La registrazione iniziale può richiedere una prova anti-abuso/adaptive PoW firmata/contestualizzata e validata dal relayer/contratto secondo policy.
+## 31. Verified control-plane mutation
 
-La sponsorship deve essere bounded per RootIdentity, relayer e budget globale.
+Un hash di transazione **non** è successo.
 
-Dettagli: [`REGISTRATION_ECONOMICS.md`](REGISTRATION_ECONOMICS.md).
+Per ogni mutazione security-sensitive:
 
-## 31. Error classes
+```text
+submit signed operation
+ -> wait acceptable finality
+ -> inspect execution result
+ -> reject Failure / partial failure
+ -> read/verify resulting state
+ -> commit local transition
+```
+
+Si applica a activation/revocation/rotation, entitlement, sponsorship, payment effects, release/policy state e rendezvous/recovery quando influenzano la state machine.
+
+## 32. Error classes
 
 ```text
 MALFORMED
 UNSUPPORTED_VERSION
 CHAIN_IDENTITY_NOT_FOUND
 CHAIN_IDENTITY_REVOKED
+DEVICE_CERTIFICATE_INVALID
+DEVICE_CERTIFICATE_EXPIRED
+REVOCATION_STATE_STALE
 KEY_EPOCH_MISMATCH
 AUTHENTICATION_FAILED
 REPLAY_DETECTED
@@ -596,16 +632,18 @@ CONTACT_LIMIT_REACHED
 ENTITLEMENT_INVALID
 RELAY_CONTRIBUTION_EXPIRED
 PAYMENT_PENDING
+CONTROL_PLANE_EXECUTION_FAILED
+CONTROL_PLANE_STATE_MISMATCH
 SECURITY_UPDATE_REQUIRED
 ```
 
-## 32. Resource limits
+## 33. Resource limits
 
-Ogni implementazione deve limitare frame/handshake size, route candidates, relay buffer, connessioni, write frequency, rendezvous retry/backoff, recovery writes, sponsorship rate e temporary state.
+Ogni implementazione limita frame/handshake size, route candidate, relay buffer, connessioni, handshake concorrenti, idle timeout, write frequency, rendezvous retry/backoff, recovery writes, sponsorship rate e temporary state.
 
-Per `DEVICE_RELAY` sono obbligatori limiti di banda, CPU, RAM, batteria/temperatura e circuiti simultanei secondo policy locale.
+Per `DEVICE_RELAY`: banda, CPU, RAM, batteria/temperatura e circuiti simultanei bounded.
 
-## 33. Chain abstraction
+## 34. ChainAdapter
 
 ```text
 ChainAdapter {
@@ -624,64 +662,45 @@ ChainAdapter {
     readEmergencyBulletins
     readSecurityPolicy
     readReleaseManifest
+    readReleaseStatus
     verifyState
+    verifyFinalOutcome
 }
 ```
 
-L'attestazione Relay Contributor può vivere nel control-plane o essere verificata tramite un adapter/benefit layer separato; non deve essere inserita nel packet hot path.
+NEAR Testnet è la prima implementazione; non è Freedom Protocol.
 
-La prima implementazione usa NEAR Testnet.
+## 35. Primitive vietate
 
-## 34. Milestone eseguibili
+Freedom Protocol **MUST NOT** introdurre:
 
-### M1 — identity/recovery
+```text
+global user/device network ID
+on-chain messages/mailbox
+persistent relay inbox
+automatic offline delivery queue
+RootIdentity as routing ID
+DeviceRecordCommitment as contact ID
+public readable social graph
+mandatory central delivery server
+mandatory single RPC/provider/relay
+master decryption key
+single production super-admin key
+transaction-hash-is-success semantics
+silent downgrade from strict/Shield policy
+```
 
-- RootIdentity + DeviceKey + DeviceRecordCommitment;
-- Recovery Kit;
-- install senza write;
-- sponsored registration;
-- device record resolve/rotation/revocation;
-- QR contact basato su RootIdentity/contact capability;
-- alias pairwise.
+La lista normativa completa è in [`SECURITY_INVARIANTS.md`](SECURITY_INVARIANTS.md).
 
-### M2 — rendezvous/recovery
+## 36. Interoperability gates
 
-- capability bootstrap;
-- pairwise opaque slots;
-- read-before-write;
-- TTL;
-- RecoveryBeacon bounded.
+Prima dell'interoperabilità pubblica:
 
-### M3 — secure communication
-
-- mutual authentication RootIdentity + current DeviceKey authorization;
-- encrypted text/ACK senza global device identifier nei frame;
-- no offline queue;
-- fresh session on reconnect.
-
-### M4 — network paths / relays
-
-- NAT traversal;
-- route update;
-- dedicated/community relay forward-only;
-- `DEVICE_RELAY` opt-in;
-- RelayCandidate discovery;
-- transport/circuit tokens;
-- Adaptive Defense.
-
-### M5 — account/commercial control plane
-
-- entitlement;
-- max_devices;
-- Free contact policy;
-- Relay Contributor +10 contact benefit;
-- contribution proof/expiry;
-- PayPal/crypto payment adapters;
-- payment attestation idempotency.
-
-### M6 — safety/update plane
-
-- EmergencyBulletin;
-- SecurityPolicy;
-- FreedomRelease;
-- multi-source artifact verification.
+- encoding canonici;
+- suite congelate e versionate;
+- test vector handshake/rekey/frame;
+- negative/replay/downgrade tests;
+- control-plane finality/failure tests;
+- bounded parser/resource tests;
+- release/first-install trust tests;
+- review crittografica e security review indipendente.
