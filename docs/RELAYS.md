@@ -16,11 +16,7 @@ Può essere:
 
 Il relay non è un account server, non è una mailbox e non è un trust anchor.
 
-Principio:
-
 > **forward, not store.**
-
----
 
 ## 2. Tipi di relay
 
@@ -43,8 +39,6 @@ MANAGED_RELAY
 
 Il wire protocol non deve dipendere dall'operatore del nodo.
 
----
-
 ## 3. Device Relay
 
 Un dispositivo Freedom può svolgere contemporaneamente due ruoli:
@@ -62,8 +56,6 @@ I due ruoli devono essere separati logicamente. Essere relay non concede accesso
 ### 3.1 Opt-in e policy
 
 La modalità `DEVICE_RELAY` deve essere **opt-in** nei client ufficiali salvo deployment esplicitamente amministrati.
-
-Policy configurabili:
 
 ```text
 relay_enabled
@@ -91,11 +83,7 @@ Può essere utilizzabile quando:
 - mantiene connessioni outbound verso il fabric Freedom e inoltra tra circuiti già stabiliti;
 - è disponibile localmente tramite LAN/Wi-Fi Direct/transport futuri.
 
-Quindi `DEVICE_RELAY` descrive una **capacità di forwarding**, non implica necessariamente `public_ip:port` permanente.
-
-La raggiungibilità concreta viene annunciata come `RelayCandidate` temporaneo.
-
----
+`DEVICE_RELAY` descrive una **capacità di forwarding**, non implica necessariamente `public_ip:port` permanente.
 
 ## 4. RelayCandidate
 
@@ -115,11 +103,9 @@ RelayCandidate {
 
 Un relay candidate deve avere TTL ed essere sostituibile.
 
----
+## 5. Identity separation e forwarding
 
-## 5. Forwarding
-
-Flusso minimo:
+Il relay non deve richiedere RootIdentity, `DeviceRecordCommitment` o altri identificatori stabili quando un token di circuito è sufficiente.
 
 ```text
 Alice
@@ -133,7 +119,13 @@ Relay
 Bob
 ```
 
-Il relay usa token/capability di circuito invece di richiedere un mapping pubblico leggibile `DeviceID -> peer`.
+Il forwarding usa capability temporanee:
+
+```text
+TransportToken
+RelayCircuitToken
+NextHopToken
+```
 
 ```text
 RelayPacket {
@@ -148,7 +140,7 @@ RelayPacket {
 
 Il relay può conoscere quanto necessario al forwarding, ma non deve ricevere le session keys endpoint-to-endpoint.
 
----
+Dettagli identità: [`IDENTITY_MODEL.md`](IDENTITY_MODEL.md).
 
 ## 6. Nessuna mailbox
 
@@ -169,13 +161,9 @@ Vietato nel protocollo base:
 
 La caduta del relay può perdere pacchetti in-flight. Gli endpoint possono cambiare route o ristabilire la sessione, ma non trasformano il messaggio in consegna asincrona.
 
----
-
 ## 7. Privacy
 
 Un singolo relay può osservare metadata di rete come timing, volume e connessioni adiacenti.
-
-Un percorso semplice:
 
 ```text
 Alice -> Relay A -> Bob
@@ -189,11 +177,11 @@ Per privacy superiore Freedom Shield può usare circuiti multi-hop:
 Alice -> Relay A -> Relay B -> Bob
 ```
 
-Obiettivo del multi-hop: nessun singolo relay dovrebbe conoscere contemporaneamente origine finale, destinazione finale e contenuto.
+Obiettivo: nessun singolo relay dovrebbe conoscere contemporaneamente origine finale, destinazione finale e contenuto.
 
 Il multi-hop deve usare un design crittografico/circuit protocol dedicato; concatenare semplici proxy non è sufficiente.
 
----
+Alias pairwise, RootIdentity e device commitment non devono essere inseriti nei relay header se non strettamente necessari.
 
 ## 8. Relay discovery e diversity
 
@@ -206,17 +194,9 @@ Relay candidate possono provenire da:
 - directory/pool compatibili non autoritativi;
 - peer Freedom che annunciano temporaneamente capacità relay.
 
-Nessuna singola directory deve autenticare il relay come identità del destinatario.
+Nessuna singola directory autentica l'identità del destinatario.
 
-Il path selector deve preferire diversity tra:
-
-- operatori;
-- ASN/provider;
-- geografia;
-- classi di transport;
-- relay dedicated e device/community quando appropriato.
-
----
+Il path selector deve preferire diversity tra operatori, ASN/provider, geografia, classi di transport e relay dedicated/device/community quando appropriato.
 
 ## 9. Abuse e resource bounds
 
@@ -238,35 +218,39 @@ Può richiedere capability/token per evitare uso arbitrario.
 
 Un device relay deve poter interrompere immediatamente nuovi circuiti quando cambiano batteria, rete, temperatura o policy; i circuiti esistenti possono essere chiusi secondo una breve graceful policy bounded.
 
----
-
 ## 10. Security invariants
 
 Un relay non deve poter:
 
 - decifrare payload E2EE;
 - impersonare un endpoint;
-- firmare come DeviceID del peer;
+- firmare come RootIdentity o DeviceKey del peer;
 - creare ACK applicativi validi per conto del destinatario;
 - trasformarsi in mailbox persistente;
-- diventare percorso obbligatorio permanente.
+- diventare percorso obbligatorio permanente;
+- diventare automaticamente un exit proxy Internet.
 
-Un relay può:
-
-- rifiutare;
-- droppare;
-- ritardare;
-- osservare metadata adiacenti;
-- limitare capacità;
-- uscire dalla rete.
+Un relay può rifiutare, droppare, ritardare, osservare metadata adiacenti, limitare capacità e uscire dalla rete.
 
 Il protocollo deve quindi trattarlo come **non fidato e sacrificabile**.
 
----
+## 11. Relay ≠ Internet gateway
 
-## 11. Relay Contributor reward
+Il ruolo `DEVICE_RELAY` / `COMMUNITY_RELAY` inoltra **circuiti Freedom**, non traffico arbitrario verso Internet.
 
-Freedom incentiva gli utenti Free che mettono a disposizione il proprio dispositivo come relay utile alla rete.
+Vietato nel relay base:
+
+```text
+phone user / remote client
+ -> DEVICE_RELAY
+ -> arbitrary Internet IP:port
+```
+
+Un eventuale futuro servizio `FREEDOM_GATEWAY` deve essere un ruolo separato, esplicitamente opt-in e con egress node `PRIVATE`, `MANAGED` o `EGRESS` autorizzati. Non deve trasformare automaticamente gli utenti Relay Contributor in exit node.
+
+Questo separa responsabilità, abuso, policy, reputazione IP e rischio legale dalla funzione relay del messenger.
+
+## 12. Relay Contributor reward
 
 Policy iniziale:
 
@@ -281,49 +265,45 @@ FREE + RELAY CONTRIBUTOR
 
 Il bonus è un **entitlement di partecipazione**, non una licenza Pro e non modifica la sicurezza crittografica.
 
-### 11.1 Requisito di contributo
+### 12.1 Requisito di contributo
 
-Non deve essere sufficiente accendere `relay_enabled` per pochi secondi e ottenere il bonus permanentemente.
+Non deve essere sufficiente accendere `relay_enabled` per pochi secondi.
 
-Il beneficio resta attivo quando il device soddisfa una policy minima di contributo verificabile, definita e calibrata con dati reali. I segnali possono includere, senza richiedere tutti contemporaneamente:
+Segnali possibili:
 
-- disponibilità relay durante finestre temporali bounded;
+- disponibilità relay durante finestre bounded;
 - circuiti accettati;
 - traffico effettivamente inoltrato con soglie minime/massime;
 - uptime utile;
 - attestazioni/receipt opache di forwarding;
 - rispetto dei limiti e assenza di comportamento abusivo.
 
-Non premiare volume illimitato: il sistema non deve incentivare traffico artificiale, relay farming o spreco di banda.
+Non premiare volume illimitato: il sistema non deve incentivare traffico artificiale o relay farming.
 
-### 11.2 Privacy del reward
+### 12.2 Privacy del reward
 
 La prova di contributo non deve pubblicare:
 
 - contatti dell'utente;
 - peer serviti;
 - contenuto inoltrato;
-- mapping leggibile `DeviceID -> circuiti`;
+- RootIdentity/device commitment associati ai singoli circuiti;
 - cronologia dettagliata del traffico.
 
-Se serve enforcement resistente a client modificati, usare receipt/commitment opachi e finestre aggregate invece di un log pubblico dei circuiti.
+Usare receipt/commitment opachi e finestre aggregate quando serve enforcement resistente a client modificati.
 
-### 11.3 Perdita del bonus
+### 12.3 Perdita del bonus
 
 Se l'utente disabilita il relay o non soddisfa più la policy minima, il bonus può scadere dopo una grace period bounded.
 
-Se in quel momento l'utente ha più di 10 contatti attivi:
+Se ha più di 10 contatti attivi:
 
 - nessun contatto viene cancellato automaticamente;
-- le sessioni esistenti non vengono distrutte come punizione commerciale;
-- non può aggiungere nuovi contatti finché non torna entro il limite base o riattiva/riqualifica il contributo relay;
+- le sessioni esistenti non vengono distrutte;
+- non può aggiungere nuovi contatti finché non torna entro il limite base o si riqualifica;
 - il client mostra chiaramente lo stato degli slot.
 
-Questo evita perdita dati/social state improvvisa e rende il reward reversibile senza dark pattern.
-
----
-
-## 12. Economia relay
+## 13. Economia relay
 
 ```text
 DIRECT
@@ -343,12 +323,10 @@ MULTI-HOP / MAXIMUM RESILIENCE
   più banda e più nodi, tipicamente premium
 ```
 
-Ulteriori incentivi economici ai relay community/device sono possibili in futuro, ma richiedono un design separato contro Sybil, farming e abuso.
+Ulteriori incentivi economici richiedono design separato contro Sybil, farming e abuso.
 
----
-
-## 13. Principio architetturale
+## 14. Principio architetturale
 
 > **Qualsiasi macchina compatibile può inoltrare Freedom; nessuna macchina deve diventare Freedom.**
 
-Un VPS, un server dedicato o un telefono possono essere relay. La sicurezza della conversazione resta negli endpoint e il percorso deve poter cambiare senza cambiare identità o protocollo applicativo.
+Un VPS, un server dedicato o un telefono possono essere relay. La sicurezza della conversazione resta negli endpoint e il percorso deve poter cambiare senza cambiare ownership/contact identity o protocollo applicativo.
