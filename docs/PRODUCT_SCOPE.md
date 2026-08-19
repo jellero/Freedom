@@ -31,6 +31,9 @@ Funzioni essenziali:
 - Live/ephemeral mode;
 - stato peer/sessione comprensibile;
 - route selection/privacy policy;
+- relay forward-only;
+- possibilità opt-in per un dispositivo Freedom di contribuire come relay;
+- **Relay Contributor: +10 contatti attivi** per utenti Free qualificati;
 - Adaptive Defense base;
 - Freedom Network Indicator;
 - Emergency Shield Free con quota da dimensionare con dati reali;
@@ -54,9 +57,9 @@ La chain fa rispettare `max_devices`; il restore non deve permettere di usare un
 
 Dettagli: [`ACCOUNT_RECOVERY_LICENSES.md`](ACCOUNT_RECOVERY_LICENSES.md).
 
-## 4. Contatti Free
+## 4. Contatti Free e Relay Contributor
 
-Il limite Free è **10 contatti attivi**.
+Il limite Free base è **10 contatti attivi**.
 
 - non è un limite lifetime;
 - eliminare/disattivare un contatto libera uno slot;
@@ -64,7 +67,30 @@ Il limite Free è **10 contatti attivi**.
 - non pubblicare social graph in chiaro;
 - eventuale enforcement anti-tampering deve usare commitment/slot opachi.
 
-## 5. Pagamenti e Pro
+Un utente Free che abilita e mantiene un contributo `DEVICE_RELAY` utile alla rete ottiene **10 slot aggiuntivi**:
+
+```text
+Free                     10 active contacts
+Free + Relay Contributor 20 active contacts
+```
+
+Il bonus non è permanente solo perché il toggle relay è stato acceso una volta. Deve essere collegato a una policy minima di contributo verificabile e privacy-preserving.
+
+Se il benefit scade, Freedom non cancella automaticamente i contatti sopra quota; blocca soltanto l'aggiunta di nuovi contatti finché l'utente non torna entro il limite o riqualifica il relay.
+
+Dettagli: [`RELAYS.md`](RELAYS.md).
+
+## 5. Device Relay
+
+Un telefono/tablet/desktop Freedom può agire anche come nodo di forwarding per altri peer.
+
+La funzione è opt-in nei client ufficiali e deve rispettare limiti configurabili di batteria, rete, CPU, RAM, banda e numero di circuiti.
+
+Un device relay non deve necessariamente avere un IP pubblico: può essere utile tramite NAT mapping, transport alternativi o connessioni outbound già stabilite verso il fabric Freedom.
+
+Essere relay non concede accesso a plaintext, session keys o identità delle conversazioni inoltrate oltre ai metadata strettamente necessari al forwarding.
+
+## 6. Pagamenti e Pro
 
 Freedom supporta payment adapter multipli:
 
@@ -80,7 +106,7 @@ Il callback client non è prova autoritativa di pagamento e nessun merchant secr
 
 Dettagli: [`PAYMENTS.md`](PAYMENTS.md).
 
-## 6. Adaptive Defense e Network Indicator
+## 7. Adaptive Defense e Network Indicator
 
 Il client deve mostrare uno stato rete sempre accessibile:
 
@@ -107,7 +133,7 @@ Core Free:
 
 Pro/Shield può aggiungere Always-Shielded, multi-hop, relay gestiti multipli, candidate pre-warmed, parallel failover, transport rotation aggressiva e Maximum Resilience.
 
-## 7. Emergency bulletin e secure updates
+## 8. Emergency bulletin e secure updates
 
 Freedom deve poter ricevere bulletin firmati globali o geolocalizzati. Il matching geografico avviene localmente senza pubblicare la posizione dell'utente on-chain.
 
@@ -117,7 +143,7 @@ Una `SecurityPolicy` critica può disabilitare selettivamente funzioni/versioni 
 
 Dettagli: [`EMERGENCY_UPDATES.md`](EMERGENCY_UPDATES.md).
 
-## 8. Cosa NON blocca il primo lancio
+## 9. Cosa NON blocca il primo lancio
 
 Non sono prerequisiti della prima release pubblica:
 
@@ -130,9 +156,10 @@ Non sono prerequisiti della prima release pubblica:
 - Maximum Resilience completa;
 - bridge/non-public pool avanzato;
 - padding avanzato;
-- update swarm completo se esiste già un canale sicuro di distribuzione V1.
+- update swarm completo se esiste già un canale sicuro di distribuzione V1;
+- incentivi economici/tokenizzati ai relay oltre al bonus contatti.
 
-## 9. Live Groups — V1.5
+## 10. Live Groups — V1.5
 
 I gruppi devono preservare la semantica sincrona:
 
@@ -153,7 +180,7 @@ Scope iniziale:
 - presenza minima;
 - modalità effimera.
 
-## 10. Freedom Live Rooms
+## 11. Freedom Live Rooms
 
 Una **Live Room** è una sessione privata multi-party che serve le persone presenti adesso, non una mailbox permanente.
 
@@ -167,7 +194,7 @@ no server-side mailbox
 no automatic offline delivery
 ```
 
-## 11. Multi-party voice/video — V2
+## 12. Multi-party voice/video — V2
 
 Non usare mesh P2P illimitata per gruppi grandi. Per media multi-party usare forwarding scalabile/SFU compatibile con il trust model:
 
@@ -177,7 +204,7 @@ Non usare mesh P2P illimitata per gruppi grandi. Per media multi-party usare for
 - nessun singolo SFU requisito permanente;
 - design E2EE multi-party reviewato separatamente.
 
-## 12. Registrazione ed economia Free
+## 13. Registrazione ed economia Free
 
 L'installazione non produce automaticamente una write on-chain.
 
@@ -196,7 +223,7 @@ Messaggi/chiamate non devono essere limitati per pagare il gas blockchain. Il co
 
 Dettagli: [`REGISTRATION_ECONOMICS.md`](REGISTRATION_ECONOMICS.md).
 
-## 13. Roadmap prodotto
+## 14. Roadmap prodotto
 
 ```text
 V1 — Launch
@@ -204,6 +231,8 @@ V1 — Launch
   sponsored registration
   1 active device Free
   10 active contacts Free
+  device/community relay
+  Relay Contributor +10 contact slots
   1:1 text/media/file
   voice messages
   audio/video call
@@ -236,7 +265,7 @@ Pro evolution — Freedom Shield
   Maximum Resilience
 ```
 
-## 14. Launch quality gate
+## 15. Launch quality gate
 
 Blocker prima del Creator Pilot:
 
@@ -247,6 +276,9 @@ Blocker prima del Creator Pilot:
 - perdita/corruzione RootIdentity/DeviceIdentity;
 - Recovery Kit non verificato end-to-end;
 - chiamate 1:1 instabili;
+- relay che persiste payload oltre i limiti previsti;
+- device relay che consuma risorse fuori policy;
+- Relay Contributor facilmente farmabile con toggle/non-contributo;
 - Network Indicator con falsi allarmi sistematici;
 - privacy claim non implementati;
 - dipendenza hardcoded da credenziali personali/singola infrastruttura;
