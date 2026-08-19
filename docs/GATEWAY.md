@@ -485,7 +485,7 @@ non come claim che nessuno abbia mai costruito singole parti equivalenti.
 
 ## 16. Roadmap
 
-Gateway non deve ritardare il core messenger V1.
+Gateway non deve ritardare Freedom Communication V1.
 
 Sequenza consigliata:
 
