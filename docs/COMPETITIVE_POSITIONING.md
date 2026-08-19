@@ -4,319 +4,281 @@ Status: **product/architecture positioning draft**
 
 Ultima verifica delle fonti concorrenti: 2026-08-19.
 
-Freedom non deve essere valutato con una singola classifica assoluta. Il progetto combina due superfici differenti:
+Freedom combina due superfici differenti:
 
 ```text
 Freedom Communication
-  private live communication
-  authenticated E2EE
+  authenticated E2EE live communication
   no offline mailbox
 
 Freedom Gateway
-  optional device/app network path
-  adaptive relay/bridge/transport fabric
+  optional app/device tunnel
+  adaptive relay / bridge / transport fabric
   censorship-oriented reachability
 ```
 
-Altri prodotti sono benchmark migliori per proprietà differenti.
+Non esiste un vincitore assoluto: prodotti diversi ottimizzano problemi diversi.
 
-## 1. Freedom Communication
+## 1. Claim di unicità: cosa possiamo e non possiamo dire
 
-Proprietà centrali target:
+Non è corretto dichiarare:
 
-1. comunicazione sincrona/live;
-2. autenticazione E2EE endpoint-to-endpoint;
-3. RootIdentity separata da DeviceKey/routing;
-4. nessun global DeviceID necessario nel network layer;
-5. alias pairwise e device commitment opachi;
-6. relay forward-only e sostituibili;
-7. no offline delivery queue nel protocollo base;
-8. Adaptive Defense / pairwise recovery control-plane.
+> "Nessun altro messenger integra VPN/circumvention."
 
-Formula:
+Esistono almeno prodotti che combinano messaggistica con funzioni VPN o anti-censura e messenger che includono propri proxy/circumvention.
+
+La differenziazione Freedom deve quindi essere la **combinazione architetturale specifica**:
+
+```text
+synchronous no-mailbox communication
++ RootIdentity / opaque device authorization
++ pairwise identity
++ forward-only replaceable relay fabric
++ device/community relay
++ Adaptive Defense
++ distributed recovery control-plane
++ optional censorship-resilient device Gateway
+```
+
+## 2. Freedom Communication
+
+Target:
+
+- comunicazione sincrona/live;
+- autenticazione E2EE endpoint-to-endpoint;
+- RootIdentity separata da DeviceKey/routing;
+- nessun global DeviceID necessario nel network layer;
+- alias pairwise e commitment opachi;
+- relay forward-only;
+- no offline delivery queue nel protocollo base;
+- recovery pairwise / Adaptive Defense.
 
 > **Synchronous. Ephemeral. Endpoint-to-endpoint.**
 
-## 2. Freedom Gateway
+## 3. Freedom Gateway
 
-Gateway è un'evoluzione post-V1:
+Post-V1:
 
 ```text
 browser / app / device
  -> encrypted tunnel
  -> Freedom path selector
  -> relay / bridge / Shield / pluggable transport
- -> explicit Internet egress
+ -> explicit egress
  -> Internet
 ```
 
-Il Gateway non ha automaticamente la stessa trust boundary del messenger: l'egress può vedere metadata di destinazione e il protocollo applicativo finale deve fornire la propria cifratura end-to-end, ad esempio HTTPS.
-
-Il valore target è la **reachability adattiva**, non una promessa di "VPN magicamente imbattibile".
+Il Gateway protegge il percorso fino all'egress; non trasforma automaticamente il protocollo finale in Freedom E2EE.
 
 Dettagli: [`GATEWAY.md`](GATEWAY.md).
 
-## 3. Signal — benchmark di E2EE production e UX
+## 4. Signal — E2EE production / UX
 
-Signal è un riferimento per esperienza utente, deployment E2EE su larga scala e security engineering operativa.
+Signal è benchmark per UX, deployment E2EE e security engineering operativa.
 
-Signal supporta username per iniziare conversazioni senza condividere il numero al peer, ma richiede ancora un numero per la registrazione. Il servizio facilita delivery asincrono; Sealed Sender riduce metadata visibili al servizio.
+Signal supporta username per iniziare conversazioni senza condividere il numero col peer, ma richiede ancora un numero per registrarsi. Il servizio supporta delivery asincrono; Sealed Sender riduce metadata visibili al servizio.
 
 Fonti ufficiali:
 
 - https://support.signal.org/hc/en-us/articles/6712070553754-Phone-Number-Privacy-and-Usernames
 - https://signal.org/blog/sealed-sender/
 
-Differenza:
+Differenza Freedom: live-only/no-mailbox base + route/relay sostituibili + identity/routing model differente.
 
-```text
-Signal
-endpoint -> service delivery -> endpoint
-           async support
+## 5. SimpleX — metadata discipline
 
-Freedom Communication
-endpoint <-> replaceable path <-> endpoint
-           authenticated live session
-           no mailbox base
-```
+SimpleX non assegna identificatori utente globali e usa queue pairwise anonime/unidirezionali, con relay che possono conservare temporaneamente ciphertext per delivery.
 
-Freedom non deve dichiarare "più sicuro di Signal" senza evidence production.
-
-## 4. SimpleX — benchmark metadata discipline
-
-SimpleX non assegna identificatori utente globali e usa queue pairwise unidirezionali/anonime. I relay possono conservare temporaneamente ciphertext per delivery.
-
-Fonti ufficiali:
+Fonti:
 
 - https://simplex.chat/docs/simplex.html
 - https://simplex.chat/messaging/
 
-Differenza:
+SimpleX resta benchmark principale per verificare che RootIdentity/control-plane di Freedom non introducano correlabilità non necessaria.
 
-```text
-SimpleX
-no global user identifier
-pairwise queues
-temporary store-and-forward
+## 6. Session — decentralized relay / onion routing
 
-Freedom
-RootIdentity ownership
-opaque device record
-pairwise aliases
-no offline delivery queue
-live authenticated session
-```
+Session usa Session Nodes, swarm e Onion Requests; supporta storage dei messaggi per delivery successiva.
 
-SimpleX resta il benchmark principale per verificare che RootIdentity/control-plane/recovery di Freedom non creino una superficie di correlazione peggiore del necessario.
-
-## 5. Session — benchmark decentralized relay network / onion routing
-
-Session usa Session Nodes, swarm e Onion Requests; il modello supporta storage dei messaggi nello swarm per delivery successiva.
-
-Fonte ufficiale:
+Fonte:
 
 - https://docs.getsession.org/session-network/session-protocol/onion-requests-and-message-routing
 
-Freedom differisce perché i relay del communication core sono forward-only e il protocollo base non crea offline delivery.
+Freedom differisce principalmente per semanticamente live-only e relay forward-only nel communication core.
 
-Session resta un benchmark utile per:
+## 7. Briar — transport resilience
 
-- distributed relay operation;
-- onion routing;
-- IP protection;
-- gestione reale di nodi indipendenti.
+Briar usa Tor e può comunicare/sincronizzare tramite Bluetooth/Wi-Fi in scenari appropriati.
 
-## 6. Briar — benchmark di transport resilience
-
-Briar usa Tor quando Internet è disponibile e può comunicare/sincronizzare tramite Bluetooth o Wi-Fi in scenari appropriati.
-
-Fonti ufficiali:
+Fonti:
 
 - https://briarproject.org/manual/
 - https://briarproject.org/quick-start/
 
-Briar supporta delivery/synchronization successiva quando i peer tornano disponibili. Freedom sceglie semanticamente l'opposto per il core: peer assente -> niente consegna futura automatica.
+Briar accetta sincronizzazione successiva; Freedom non consegna automaticamente ciò che è stato perso mentre il peer era offline.
 
-Briar resta benchmark importante per transport diversity reale fuori dal normale Internet path.
-
-## 7. Tor — benchmark anti-censura e anonimato
-
-Tor usa bridge e pluggable transports per rendere più difficile identificare/bloccare il traffico Tor.
-
-Transport attualmente documentati includono, tra gli altri:
-
-- obfs4;
-- WebTunnel;
-- Snowflake;
-- meek.
-
-Fonti ufficiali:
-
-- https://support.torproject.org/tor-browser/circumvention/unblocking-tor/
-- https://bridges.torproject.org/
-
-Freedom non deve ricreare Tor da zero.
+## 8. Tor — bridges / pluggable transports / anonymity
 
 Tor è benchmark per:
 
 - bridge distribution;
 - anti-enumeration;
+- pluggable transports;
 - active-probing resistance;
-- pluggable transport architecture;
 - traffic camouflage;
 - multi-hop anonymity research.
 
-Freedom Gateway può integrare o prendere come riferimento transport reviewati compatibili, mantenendo però il proprio identity/control-plane e communication core.
+Transport documentati includono obfs4, WebTunnel, Snowflake e meek.
 
-## 8. Psiphon — benchmark diretto per censorship circumvention
+Fonti:
 
-Psiphon è progettato specificamente per bypassare blocchi online. La documentazione ufficiale descrive protocol diversity, obfuscation e fallback tra metodi differenti quando un protocollo viene filtrato.
+- https://support.torproject.org/tor-browser/circumvention/unblocking-tor/
+- https://bridges.torproject.org/
 
-Fonti ufficiali:
+Freedom non deve ricreare Tor da zero e dovrebbe riusare tecniche/transport reviewati quando compatibili.
+
+## 9. Psiphon — censorship circumvention
+
+Psiphon è benchmark diretto per Gateway/Maximum Reachability: usa protocol diversity, obfuscation e fallback tra metodi differenti in reti filtrate.
+
+Fonti:
 
 - https://psiphon.ca/en/faq.html
 - https://www.psiphon.ca/el/user-guide.html
 - https://forge.psiphon.ca/
 
-Questa parte è particolarmente importante per Freedom Gateway: una VPN classica può essere facilmente identificabile e bloccabile se usa un numero ridotto di protocolli/fingerprint, mentre un sistema di circumvention deve aggiornare continuamente le proprie strategie.
-
 ### Psiphon Conduit
 
-Conduit permette a normali dispositivi volontari di agire come relay verso l'infrastruttura Psiphon. Il device volontario non è l'Internet exit: inoltra traffico cifrato verso Psiphon.
+Conduit permette a normali dispositivi volontari di diventare relay verso l'infrastruttura Psiphon senza diventare Internet exit.
 
-Fonte ufficiale:
+Fonte:
 
 - https://conduit.psiphon.ca/en/faq
 
-Questo è molto vicino a una proprietà Freedom già prevista:
+Quindi `DEVICE_RELAY` volontario non è di per sé una proprietà unica di Freedom.
 
-```text
-DEVICE_RELAY
-  volunteer device
-  encrypted forwarding
-  not Internet egress
-```
+## 10. Tailscale — device exit nodes
 
-La differenza Freedom non può quindi essere "nessuno usa device relay".
+Tailscale permette a un device autorizzato di instradare traffico Internet della tailnet come exit node.
 
-La differenziazione è la combinazione con:
-
-- Freedom Communication E2EE/live;
-- RootIdentity/pairwise identity;
-- control-plane verificabile;
-- Relay Contributor;
-- Shield/Adaptive Defense;
-- optional device Gateway.
-
-## 9. Tailscale — benchmark device exit node
-
-Tailscale permette a un device autorizzato della tailnet di diventare un **exit node** e instradare traffico non-Tailscale verso Internet.
-
-Fonte ufficiale:
+Fonte:
 
 - https://tailscale.com/docs/features/exit-nodes
 
-Questo dimostra che "usare un device come gateway/exit" non è di per sé unico.
-
-Freedom sceglie però una separazione più rigida:
+Freedom sceglie una separazione esplicita:
 
 ```text
 DEVICE_RELAY
-  never automatic Internet egress
+  no arbitrary Internet egress
 
 FREEDOM_EGRESS
   explicit managed/private/business role
 ```
 
-La ragione è evitare di trasformare telefoni volontari in open proxy Internet.
+## 11. Proton VPN Secure Core — managed multi-hop VPN
 
-## 10. Proton VPN Secure Core — benchmark multi-hop VPN
+Secure Core instrada traffico attraverso più server VPN per mitigare alcuni rischi di server/network compromise.
 
-Proton Secure Core instrada il traffico attraverso più server VPN per mitigare alcuni rischi di server/network compromise.
-
-Fonte ufficiale:
+Fonte:
 
 - https://protonvpn.com/support/secure-core-vpn
 
-Freedom Shield/Gateway non può quindi differenziarsi semplicemente dicendo "multi-hop".
+Quindi "multi-hop" da solo non differenzia Freedom.
 
-Il target distintivo è:
+## 12. Telegram MTProxy — messenger-specific censorship bypass
 
-```text
-multi-hop
-+ relay/device/community fabric
-+ transport diversity
-+ bridge discovery
-+ Adaptive Defense
-+ identity/recovery control-plane
-+ Freedom Communication
-```
+Telegram documenta MTProxy come meccanismo per aggirare blocchi di Telegram mascherando/rinstradando il traffico verso i server Telegram.
 
-## 11. Matrice concettuale
+Fonte:
 
-Le celle `target` indicano proprietà progettate ma non necessariamente production-ready.
+- https://core.telegram.org/proxy
 
-| Proprietà | Freedom | Signal | SimpleX | Session | Briar | Tor | Psiphon |
-|---|---|---|---|---|---|---|---|
-| E2EE messenger | target sì | sì | sì | sì | sì | non messenger | non focus |
-| Offline delivery base | **no** | sì | sì | sì | sì | n/a | n/a |
-| Global device ID nel network layer | **no target** | service/account model | no user ID | Account ID | app identity | no app identity | no app identity |
-| Relay forward-only messenger | **target sì** | non modello | relay queues | node storage | peer sync | relay circuits | proxy/circumvention |
-| Device/community relay | **target sì** | no | non core | node network | peer model | Snowflake proxies | Conduit |
-| Pluggable anti-censorship transport | **target post-V1** | non focus | Tor/config options | onion protocol | Tor/Bluetooth/Wi-Fi | **core** | **core** |
-| Adaptive route/transport switching | **target core/post-V1** | non focus | configurable network | network routing | multi-transport | connection assist/PT | protocol fallback |
-| Device-wide Internet Gateway | **target post-V1** | no | no | no | no | Tor VPN-style wrappers esterni | VPN/proxy modes |
-| Verifiable identity/recovery control-plane | **target sì** | Signal service model | no global registry | network/account model | Briar model | no | no |
+Freedom differisce perché il target Gateway è generalizzabile ad app/device traffic e il communication core non dipende da un central delivery server equivalente.
 
-## 12. È "molto più potente di una VPN classica"?
+## 13. RCQ — messenger con circumvention integrata
 
-Come target anti-censura, **può esserlo** rispetto a una VPN semplice con:
+RCQ si presenta come messenger E2EE con censorship circumvention integrata e transport VLESS/Reality e Hysteria2/Salamander.
+
+Fonte ufficiale di prodotto:
+
+- https://rcq.app/
+
+Questo impedisce il claim "Freedom è il primo messenger con circumvention built-in" senza una ricerca storica molto più ampia.
+
+La differenziazione Freedom resta la semantica sincrona/no-mailbox, identity/control-plane, relay fabric e Gateway adattivo più generale.
+
+## 14. ARX — messaging + built-in VPN
+
+ARX si presenta come app all-in-one con secure messaging/calls e built-in VPN.
+
+Fonte ufficiale di prodotto:
+
+- https://www.arx.pro/
+
+Anche questo rende scorretto vendere "messenger + VPN" come categoria unica di Freedom.
+
+## 15. È più potente di una VPN classica?
+
+Come target di **censorship reachability**, Freedom Gateway può diventare più resiliente di una VPN semplice che dipende da:
 
 ```text
 one protocol
 known server pool
-one-hop tunnel
 fixed fingerprint
+one-hop path
 ```
 
-Freedom Gateway mira invece a:
+Freedom mira invece a:
 
 ```text
-many transports
-many paths
+many transport families
 many providers
 bridges
-relay fabric
+replaceable relay fabric
 optional multi-hop
-active failure classification
+automatic failure classification
 automatic failover
 ```
 
-Ma non è corretto dire che sarà automaticamente:
+Questo non implica automaticamente:
 
-- più anonimo di Tor;
-- più maturo contro la censura di Psiphon;
-- più sicuro di ogni VPN;
-- capace di attraversare ogni firewall.
+- privacy superiore a Tor;
+- maturità anti-censura superiore a Psiphon;
+- sicurezza superiore a ogni VPN;
+- universal firewall bypass.
 
-Queste proprietà richiedono implementazione, misure e test reali.
+## 16. Matrice concettuale
 
-## 13. Posizionamento corretto
+| Proprietà | Freedom target | Signal | SimpleX | Session | Briar | Tor | Psiphon |
+|---|---|---|---|---|---|---|---|
+| E2EE messenger | sì | sì | sì | sì | sì | n/a | non focus |
+| Offline delivery base | **no** | sì | sì | sì | sì | n/a | n/a |
+| Global DeviceID nel network layer | **no** | service model | no user ID | Account ID | app model | n/a | n/a |
+| Forward-only messenger relay | **sì** | non modello | queue relay | node storage | peer sync | circuits | proxy network |
+| Device/community relay | **sì** | no | non core | node network | peer model | Snowflake | Conduit |
+| Pluggable anti-censorship transport | **post-V1** | limited bypass | optional Tor paths | non focus | Tor/transports | **core** | **core** |
+| Adaptive route/transport switching | **core/post-V1** | non focus | configurable | routing | multi-transport | PT selection | protocol fallback |
+| Device-wide Internet Gateway | **post-V1** | no | no | no | no | via separate wrappers | VPN/proxy modes |
+| Verifiable identity/recovery control-plane | **sì** | Signal service | no global registry | network model | Briar model | no | no |
 
-Claim Communication:
+## 17. Posizionamento consigliato
+
+Communication:
 
 > **Freedom è un protocollo di comunicazione privata sincrona progettato per non dipendere da una mailbox, da un server centrale di delivery o da un singolo percorso di rete.**
 
-Claim Gateway:
+Gateway:
 
-> **Freedom Gateway estende il fabric di routing di Freedom alle applicazioni del dispositivo, cercando automaticamente percorsi e transport alternativi quando la rete filtra o degrada quelli normali.**
+> **Freedom Gateway estende il fabric di routing alle applicazioni del dispositivo, cercando percorsi e transport alternativi quando la rete filtra o degrada quelli normali.**
 
-Claim complessivo:
+Complessivo:
 
 > **Freedom separa la sicurezza della comunicazione dalla resilienza del percorso: E2EE live per le conversazioni Freedom, transport adattivo e Gateway opzionale per ambienti di rete ostili.**
 
 Claim da evitare:
 
+- "nessun altro lo fa";
+- "primo messenger con VPN";
 - "passa tutti i firewall";
 - "impossibile da censurare";
 - "più anonimo di Tor/SimpleX";
@@ -324,18 +286,19 @@ Claim da evitare:
 - "non tracciabile";
 - "rileva la sorveglianza".
 
-## 14. Benchmark di sviluppo
+## 18. Benchmark di sviluppo
 
 ```text
-Signal   -> UX / production security engineering
-SimpleX  -> metadata minimization
-Session  -> decentralized relay network / onion routing
-Briar    -> transport resilience
-Tor      -> anonymity / bridges / pluggable transports
-Psiphon  -> censorship circumvention / adaptive protocol strategy
-Tailscale-> overlay / device exit nodes
-Proton   -> managed multi-hop VPN
-Freedom  -> integrazione coerente senza confondere le security boundary
+Signal    -> UX / production security engineering
+SimpleX   -> metadata minimization
+Session   -> decentralized relay / onion routing
+Briar     -> transport resilience
+Tor       -> anonymity / bridges / pluggable transports
+Psiphon   -> adaptive censorship circumvention
+Tailscale -> overlay / device exit nodes
+Proton    -> managed multi-hop VPN
+RCQ/ARX   -> adjacent messenger + circumvention/VPN product category
+Freedom   -> coherent integration without confusing security boundaries
 ```
 
-Il successo di Freedom non consiste nell'avere tutte le feature sulla carta, ma nel dimostrare che la combinazione funziona su device reali, reti ostili, DPI reali e implementazioni indipendenti.
+Il successo di Freedom deve essere dimostrato su device reali, reti ostili, DPI/firewall reali e review indipendente.
