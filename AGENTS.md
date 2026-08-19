@@ -19,8 +19,9 @@ These instructions apply to Codex/agentic development in this repository.
 13. `docs/ADVANCED_DEVELOPMENT.md`
 14. `core/README.md`
 15. `sim/README.md`
-16. `docs/REPOSITORY_GOVERNANCE.md`
-17. subsystem-specific docs.
+16. `near/README.md`
+17. `docs/REPOSITORY_GOVERNANCE.md`
+18. subsystem-specific docs.
 
 Normative MUST/MUST NOT rules override older implementation behavior.
 
@@ -102,13 +103,18 @@ For network/routing changes that affect L2 behavior also run on a disposable Doc
 python sim/l2/run_docker.py
 ```
 
-Do not report a task complete while a relevant gate is failing.
-
-`sim/l3/differential.py --oracle-only` validates only the canonical side. It MUST NOT be reported as real L3 ChainAdapter acceptance. Real L3 requires:
+For changes that affect ChainAdapter/control-plane behavior, real L3 is now executable and required:
 
 ```text
-python sim/l3/differential.py --adapter-cmd "<real NearChainAdapter test driver>"
+python sim/l3/differential.py \
+  --adapter-cmd "cargo run --quiet --manifest-path near/l3-adapter/Cargo.toml"
 ```
+
+`--oracle-only` validates only the canonical side and MUST NOT be reported as real L3 acceptance.
+
+Real L3 currently means NEAR Sandbox execution + transaction outcome + resulting-state read. It does not by itself prove production light-client/finality/state-proof verification against an untrusted RPC. Do not rename a trusted sandbox/RPC response to `VERIFIED_STATE`.
+
+Do not report a task complete while a relevant gate is failing.
 
 ## Test discipline
 
@@ -150,6 +156,8 @@ Host simulation does not replace Android validation for Keystore, lifecycle/back
 ## Governance boundaries
 
 Do not automatically change production/mainnet signer sets, release roots, contract governance anchors, migration anchors, user recovery-policy roots, pairwise recovery-anchor semantics or frozen encoding profiles/vectors.
+
+`near/` is security-sensitive execution infrastructure. Changing the sandbox contract/adaptor so that failing transactions or rollback states become accepted requires the same review discipline as changing the corresponding core/spec oracle.
 
 ## Evidence
 
