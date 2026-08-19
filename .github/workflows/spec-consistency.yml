@@ -29,6 +29,10 @@ on:
       - ".github/CODEOWNERS"
       - ".github/workflows/spec-consistency.yml"
 
+concurrency:
+  group: freedom-gates-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
@@ -92,7 +96,7 @@ jobs:
           rustup toolchain install 1.93.0 --profile minimal
           rustup default 1.93.0
           rustup target add wasm32-unknown-unknown --toolchain 1.93.0
-          cargo install --locked cargo-near --version 0.22.0
+          cargo install --locked --no-default-features cargo-near --version 0.22.0
           rustc --version
           cargo --version
           cargo near --version
