@@ -1,8 +1,12 @@
 # Freedom Protocol schema
 
-Status: **canonical schema draft**.
+Status: **canonical schema draft with frozen V1 byte-encoding profile**.
 
 `spec/freedom.cddl` is the single source of truth for field names/object shapes that are frozen enough to be referenced normatively.
+
+`spec/ENCODING_PROFILE.md` freezes the byte-level `Freedom-DCBOR-1` representation and standalone signature-preimage envelope used by V1 implementations.
+
+`spec/vectors/dcbor-v1.json` contains executable positive/negative byte vectors.
 
 `spec/crypto-domains.txt` is the single source of truth for fixed cryptographic domain constants used by signatures, transcript/session authentication, AEAD associated-data contexts, hashes and KDF purposes.
 
@@ -14,31 +18,54 @@ If Markdown and CDDL disagree on a frozen field/object shape, CDDL wins and Mark
 
 ## 1. Canonical encoding
 
-Interoperability target: deterministic CBOR over CDDL.
+V1 uses the frozen profile:
 
-Before public interoperability the exact deterministic-CBOR profile, numeric/string constraints and positive/negative vectors MUST be frozen.
+```text
+Freedom-DCBOR-1
+```
+
+Full rules: [`ENCODING_PROFILE.md`](ENCODING_PROFILE.md).
+
+The profile uses RFC 8949 Core Deterministic CBOR with additional Freedom restrictions:
+
+- preferred/minimal integer and length encodings;
+- definite lengths only;
+- bytewise deterministic map-key ordering;
+- text-string map keys only;
+- duplicate-key rejection;
+- no floats, tags, undefined or other simple values;
+- exact UTF-8 bytes with no hidden normalization;
+- strict canonical decode/re-encode equality for security objects.
 
 Do not sign ad-hoc JSON, language-specific dumps or unordered map serialization.
 
-## 2. Signature-domain separation
-
-Conceptual signing input:
+Executable vectors live in [`vectors/dcbor-v1.json`](vectors/dcbor-v1.json) and are checked with:
 
 ```text
-FreedomSigningInput =
-    "Freedom" || 0x00 ||
-    network_id || 0x00 ||
-    fixed_object_type || 0x00 ||
-    schema_version || 0x00 ||
-    canonical_object_bytes_without_signature_fields
+python tools/check_vectors.py
 ```
 
-The suite-approved cryptographic hash/signature algorithm operates on this domain-separated input.
+## 2. Signature-domain separation
+
+Standalone signature input is no longer only conceptual. `Freedom-DCBOR-1` freezes the envelope:
+
+```text
+body_bytes = FreedomDCBOR1(object_without_signature_fields)
+
+FreedomSigningInputV1 = FreedomDCBOR1([
+    "FreedomSigningInput",
+    1,
+    network_id,
+    fixed_domain,
+    schema_version,
+    body_bytes
+])
+```
 
 Rules:
 
 - `network_id` comes from the object when present or from the verifier's explicitly configured network context;
-- fixed object type is protocol-defined, never user display text;
+- fixed object type/domain is protocol-defined, never user display text;
 - schema/object version is bound;
 - a signature valid for one object type is invalid for another;
 - Testnet/Mainnet/future network replay fails because network context differs;
@@ -46,6 +73,8 @@ Rules:
 - domain-registry changes are normative schema/security changes.
 
 The exact enabled constants are **not repeated normatively in Markdown**. They are listed in `spec/crypto-domains.txt` and frozen with vectors.
+
+The cryptographic suite still defines the signature algorithm and whether it consumes this preimage directly or a suite-defined digest. That algorithm/suite choice is separate from deterministic byte canonicalization.
 
 ## 3. MAC / transcript-authentication domains
 
@@ -133,9 +162,13 @@ The rollback-detectable profile uses `pairwise-recovery-anchor` according to `do
 
 The anchor commits only to monotonic backup generation/hash/state commitment; it does not publish contacts or pairwise plaintext.
 
-## 9. Schema-change discipline
+## 9. Vector discipline
 
-A security-relevant schema/domain change requires:
+The first frozen vector set covers representative security objects and canonicalization failures. It is a baseline, not permission to freeze future objects without vectors.
+
+Every newly frozen security-critical object family MUST add the relevant positive/negative/domain fixtures before interoperability is claimed.
+
+A security-relevant schema/domain/encoding change requires:
 
 1. explicit human review;
 2. version bump when parse/sign/MAC/AEAD semantics change;
@@ -143,6 +176,7 @@ A security-relevant schema/domain change requires:
 4. downgrade/rollback analysis;
 5. persistent-state migration rule/proof when relevant;
 6. aligned normative documentation;
-7. update to `spec/crypto-domains.txt` when a cryptographic purpose changes.
+7. update to `spec/crypto-domains.txt` when a cryptographic purpose changes;
+8. a new encoding profile identifier if existing `Freedom-DCBOR-1` bytes would change.
 
-Codex/agents may propose changes but MUST NOT silently weaken/redefine canonical schema, cryptographic domains or security state machines merely to satisfy implementation/tests.
+Codex/agents may propose changes but MUST NOT silently weaken/redefine canonical schema, cryptographic domains, deterministic bytes or security state machines merely to satisfy implementation/tests.
