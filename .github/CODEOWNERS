@@ -1,0 +1,13 @@
+# Canonical Freedom security/specification ownership
+/spec/ @jellero
+/docs/SECURITY_INVARIANTS.md @jellero
+/docs/CONTROL_PLANE_SECURITY.md @jellero
+/docs/REVOCATION.md @jellero
+/docs/IDENTITY_MODEL.md @jellero
+/docs/PROTOCOL.md @jellero
+/docs/THREAT_MODEL.md @jellero
+/docs/SHIELD.md @jellero
+/docs/EMERGENCY_UPDATES.md @jellero
+/docs/APP_DISTRIBUTION.md @jellero
+/docs/REPOSITORY_GOVERNANCE.md @jellero
+/AGENTS.md @jellero
