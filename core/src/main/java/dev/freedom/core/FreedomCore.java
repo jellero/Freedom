@@ -53,6 +53,7 @@ public final class FreedomCore {
         public boolean routeBlocked() { return active && blocked.contains(route); }
 
         public boolean recoverRoute() {
+            if (!active) return false;
             List<String> candidates = new ArrayList<>();
             for (String relay : knownRelays) {
                 if (!blocked.contains(relay) && !relay.equals(route)) candidates.add(relay);
@@ -65,7 +66,7 @@ public final class FreedomCore {
         }
 
         public boolean peerIdentityUnchanged() {
-            return eq(from, originalFrom) && eq(to, originalTo);
+            return active && eq(from, originalFrom) && eq(to, originalTo);
         }
 
         public boolean recovered() { return recovered; }
@@ -171,7 +172,8 @@ public final class FreedomCore {
      * Submission/tx hash alone never transitions local state to success.
      */
     public static final class MutationVerificationState {
-        private boolean committed;
+        private boolean lastAccepted;
+        private boolean hasCommittedState;
         private String lastReason;
         private long committedVersion;
 
@@ -185,20 +187,24 @@ public final class FreedomCore {
             if (!executionSucceeded) return reject("CONTROL_PLANE_EXECUTION_FAILED");
             if (!resultingStateProofValid) return reject("CONTROL_PLANE_PROOF_INVALID");
             if (!exactTransitionMatched) return reject("CONTROL_PLANE_STATE_MISMATCH");
-            if (resultingVersion < committedVersion) return reject("CONTROL_PLANE_ROLLBACK");
-            committed = true;
+            if (hasCommittedState && resultingVersion < committedVersion) {
+                return reject("CONTROL_PLANE_ROLLBACK");
+            }
+            lastAccepted = true;
+            hasCommittedState = true;
             committedVersion = resultingVersion;
             lastReason = null;
             return true;
         }
 
         private boolean reject(String reason) {
-            committed = false;
+            lastAccepted = false;
             lastReason = reason;
             return false;
         }
 
-        public boolean committed() { return committed; }
+        public boolean lastAccepted() { return lastAccepted; }
+        public boolean hasCommittedState() { return hasCommittedState; }
         public String lastReason() { return lastReason; }
         public long committedVersion() { return committedVersion; }
     }
