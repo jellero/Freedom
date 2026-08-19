@@ -1,427 +1,270 @@
 # Freedom — Launch Plan
 
+Status: **canonical launch plan**
+
+Normative security rules: [`SECURITY_INVARIANTS.md`](SECURITY_INVARIANTS.md).
+
 ## 1. Obiettivo
 
-Il lancio di Freedom non deve ottimizzare subito per il numero assoluto di download. Il primo obiettivo è creare un nucleo di utenti che comprenda la proposta del protocollo, completi sessioni reali e produca feedback tecnico utile.
+Il lancio non ottimizza subito per download. Prima deve dimostrare che Freedom Communication è comprensibile, utilizzabile e tecnicamente credibile.
 
-> **dimostrare che Freedom è comprensibile, utilizzabile e tecnicamente credibile prima di amplificare la distribuzione.**
-
-Freedom non deve essere promosso come "un altro messenger privato" o come "un messenger blockchain".
-
-Posizionamento consigliato:
-
-> **Freedom Messenger — Powered by Freedom Protocol**
+> **Freedom Communication — Powered by Freedom Protocol**
 >
-> Comunicazione privata live, E2EE, sincrona, senza mailbox centrale e senza un singolo server o percorso necessario alla conversazione.
+> Comunicazione privata live, autenticata E2EE, sincrona, senza mailbox e senza dipendenza permanente da un singolo server/percorso.
 
-Claim come "impossibile da tracciare", "incensurabile", "anonimato garantito" o "rileva la sorveglianza" non devono essere usati.
+Claim vietati senza evidenza: “impossibile da tracciare”, “incensurabile”, “passa ogni firewall”, “anonimato garantito”, “rileva la sorveglianza”.
 
-## 2. Proprietà da spiegare prima della blockchain
-
-Ordine narrativo:
+## 2. Ordine narrativo
 
 ```text
 comunicazione live privata
- -> nessuna offline mailbox
- -> authenticated E2EE
- -> identità verificabile senza global DeviceID di rete
- -> percorsi/relay sostituibili
+ -> no offline mailbox
+ -> expected-contact authenticated E2EE
+ -> DeviceCertificate verificabile offline
+ -> forward secrecy + rekey
+ -> pairwise identity / no global DeviceID
+ -> path/relay sostituibili
  -> recovery pairwise
- -> control-plane verificabile
+ -> verifiable control-plane
+ -> threshold release/security governance
  -> NEAR come prima implementazione ChainAdapter
 ```
 
-Il modello identità pubblico deve essere coerente con [`IDENTITY_MODEL.md`](IDENTITY_MODEL.md):
+## 3. Prerequisiti security prima dei creator pubblici
 
-```text
-RootIdentity             ownership / recovery
-DeviceKey                device authorization
-DeviceRecordCommitment   control-plane opaco
-PairwiseContactAlias     relazione specifica
-TransportToken           route/circuito temporaneo
-```
+Blocker:
 
-Un contatto è una persona/RootIdentity, non un singolo telefono.
+- RootIdentity/Recovery Kit non verificati end-to-end;
+- DeviceCertificate assente/non verificato;
+- handshake che accetta una chiave non legata al contatto atteso;
+- revocation/freshness policy indefinita;
+- forward secrecy non dimostrata;
+- sessioni lunghe senza bounded key lifetime/rekey;
+- replay/downgrade failure non testati;
+- global DeviceID reintrodotto nel network layer;
+- pairwise alias correlabili per errore;
+- mailbox/offline queue reintrodotta;
+- transaction `Failure` trattata come successo;
+- state mismatch dopo finality non rilevato;
+- single production super-admin key;
+- update/release non threshold-verified;
+- first sideload senza BootstrapTrustAnchor pinned indipendente dalla source;
+- release downgrade/revocation non fail-closed;
+- relay che persiste payload oltre bounds;
+- claim UI non derivati da stato verificato;
+- merchant/infrastructure secret nel client.
 
-## 3. Principi del lancio
-
-1. **Credibilità prima della scala.** Prima tester tecnici e reviewer, poi creator, poi pubblico più ampio.
-2. **Demo reale, non slideshow.** Due dispositivi devono completare una comunicazione reale.
-3. **Editorial independence.** Accesso Pro o benefit non comprano una recensione positiva.
-4. **Trasparenza.** Sponsorship/gift devono essere dichiarati quando applicabile.
-5. **Privacy coerente.** Nessun analytics invasivo, social graph o identificatore globale introdotto per il marketing.
-6. **Nessun lock-in commerciale.** Il protocollo base resta utilizzabile senza servizi ufficiali obbligatori.
-7. **Niente overclaim.** Un claim pubblico deve corrispondere a una proprietà effettivamente implementata e testata.
-
-## 4. Prerequisiti prima della promozione pubblica
-
-Il tester deve poter:
-
-```text
-installare Freedom
- -> inizializzare RootIdentity + DeviceKey
- -> aggiungere un contatto tramite capability/QR
- -> derivare la relazione pairwise
- -> stabilire una sessione autenticata
- -> inviare/ricevere un messaggio live
- -> verificare che un peer offline NON riceva delivery futura automatica
- -> interrompere e ristabilire una nuova sessione
-```
-
-Blocker prima dei creator pubblici:
-
-- crash riproducibili nel percorso principale;
-- onboarding che richiede configurazione tecnica manuale non prevista nel prodotto;
-- perdita/corruzione RootIdentity o DeviceKey;
-- global DeviceID reintrodotto in routing/frame/telemetria senza necessità reviewata;
-- alias pairwise correlabili tra contatti per errore;
-- errori di autenticazione non spiegabili;
-- latenza sistematica anomala dei messaggi;
-- retry/offline queue implicita che contraddice la semantica sincrona;
-- dipendenze hardcoded da credenziali personali o singola infrastruttura;
-- claim privacy non implementati;
-- update/distribuzione non autenticati.
-
-## 5. Security readiness
-
-Prima della promozione ampia:
-
-- threat model aggiornato;
-- primitive crittografiche standard;
-- Root key, DeviceKey e session/media keys separate;
-- nessuna private key infrastrutturale incorporata nel client;
-- logging production senza plaintext/private/session/rendezvous secrets;
-- metadata review su commitment, alias pairwise e transport token;
-- procedura pubblica per responsible disclosure;
-- security review indipendente quando il protocollo esce dalla fase sperimentale.
-
-## 6. Pubblico iniziale
-
-Ordine consigliato:
-
-```text
-1. Founder Cohort
-2. Security / privacy reviewers
-3. Creator piccoli e medi pertinenti
-4. Creator privacy/tech più grandi
-5. Tech generalista
-6. Pubblico mainstream
-```
-
-Categorie prioritarie:
-
-- privacy digitale;
-- cybersecurity;
-- Android / open source;
-- digital rights;
-- decentralizzazione tecnica;
-- anti-censura / network resilience;
-- tecnologia consumer avanzata.
-
-Evitare inizialmente un posizionamento dominato da creator crypto: la blockchain è infrastruttura, non il beneficio principale.
-
-## 7. Founder Cohort
-
-Closed beta iniziale indicativa: **20–50 persone**.
-
-Profili utili:
-
-- sviluppatori;
-- utenti Android esperti;
-- persone attente alla privacy;
-- amministratori di rete;
-- tester abituati a descrivere bug;
-- piccoli creator disponibili a testare prima di pubblicare.
-
-Obiettivi:
-
-- failure onboarding;
-- tempo alla prima sessione autenticata;
-- comprensione della semantica sincrona;
-- reti/NAT/device differenti;
-- verifica pairwise identity e recovery;
-- relay/device relay in condizioni reali;
-- Share Freedom / Install QR quando pronto;
-- claim confusi o troppo forti.
-
-## 8. Security & Privacy Reviewers
-
-Percorso separato dagli influencer.
-
-Materiale minimo:
-
-- repository;
-- `IDENTITY_MODEL.md`;
-- `ARCHITECTURE.md`;
-- `PROTOCOL.md`;
-- `THREAT_MODEL.md`;
-- build/instructions riproducibili quando disponibili;
-- scope delle parti sperimentali;
-- responsible disclosure.
-
-Obiettivo:
-
-> trovare problemi prima che il marketing trasformi un'ipotesi tecnica in una promessa pubblica.
-
-I reviewer devono essere liberi di pubblicare critiche.
-
-## 9. Creator Pilot
-
-Target iniziale indicativo: **20–30 creator piccoli/medi** altamente pertinenti.
-
-Programma possibile:
-
-**Freedom Founding Creator — Pro Lifetime**
-
-Benefit:
-
-- feature Pro del client ufficiale;
-- accesso anticipato;
-- badge Founder opzionale;
-- feedback channel;
-- capacità relay gestita con fair-use;
-- privacy routes/multi-hop quando realmente implementati;
-- trial/inviti Pro limitati per community.
-
-"Lifetime" riguarda il tier/funzionalità, non banda infrastrutturale infinita.
-
-L'entitlement Pro segue la RootIdentity e non deve diventare un trust anchor E2EE.
-
-## 10. Demo consigliata
-
-La demo deve mostrare proprietà osservabili:
+## 4. Demo minima reale
 
 ```text
 Alice                         Bob
   |                            |
-  | contact capability / QR    |
+  | Contact QR / capability    |
   |---------- bootstrap ------>|
   |                            |
-  | pairwise authenticated     |
+  | expected-contact auth      |
+  | DeviceCertificate verify   |
   |<======== E2EE live =======>|
   |                            |
   X session ends               X
 ```
 
-Possibili momenti:
+La demo mostra:
 
-1. scambio contatto;
-2. session establishment;
-3. invio live;
-4. peer offline -> messaggio non accodato;
-5. nessun messaggio come transazione blockchain;
-6. route/relay switch quando implementato;
-7. Network Indicator quando implementato;
-8. Share Freedom verificato quando implementato.
+1. contact bootstrap;
+2. device authorization verificata;
+3. session establishment;
+4. live send/ACK;
+5. peer offline -> nessuna delivery futura;
+6. nuova sessione con nuove ephemeral keys;
+7. route switch se implementato;
+8. Share Freedom verificato se pronto.
 
-Il Live local-storage mode può essere mostrato come feature client, non come definizione centrale del protocollo.
+## 5. Founder Cohort
 
-## 11. Referral e attribuzione privacy-preserving
+Indicativamente 20–50 persone:
 
-Misurare solo eventi minimali, preferibilmente aggregati/opt-in:
+- sviluppatori;
+- Android power users;
+- privacy/security users;
+- amministratori rete;
+- piccoli creator tecnici.
+
+Obiettivi:
+
+- onboarding;
+- expected-contact authentication;
+- recovery;
+- reti/NAT/device differenti;
+- latency/reliability;
+- relay/device relay;
+- Network Indicator false-positive;
+- Share Freedom/bootstrap trust;
+- claim confusi o troppo forti.
+
+## 6. Security & Privacy Reviewers
+
+Materiale minimo:
+
+- repository;
+- `SECURITY_INVARIANTS.md`;
+- `IDENTITY_MODEL.md`;
+- `ARCHITECTURE.md`;
+- `PROTOCOL.md`;
+- `CHAIN.md`;
+- `THREAT_MODEL.md`;
+- `APP_DISTRIBUTION.md`;
+- build/test vector quando disponibili;
+- responsible disclosure.
+
+I reviewer devono essere liberi di pubblicare critiche.
+
+## 7. Creator Pilot
+
+Target iniziale: 20–30 creator piccoli/medi pertinenti.
+
+Possibile programma:
+
+```text
+Freedom Founding Creator — Pro Lifetime
+```
+
+Benefit commerciali non comprano recensione positiva e non danno privilegi crittografici/trust.
+
+“Lifetime” non significa banda managed infinita.
+
+## 8. Privacy del funnel
+
+Misurare solo eventi minimali/aggregati/opt-in:
 
 ```text
 install / first open
 RootIdentity initialized
 contact added
-first authenticated session completed
-first live message sent successfully
-reconnect completed
-Pro trial activated
+first authenticated session
+first live message
+reconnect/recovery success
 ```
 
 Non raccogliere per marketing:
 
 - plaintext;
-- lista contatti/social graph;
-- RootIdentity o root commitment persistente associato al funnel quando non necessario;
-- DeviceRecordCommitment dei peer;
+- social graph;
+- RootIdentity/account commitment persistente quando evitabile;
+- DeviceRecordCommitment peer;
 - PairwiseContactAlias;
-- contenuto dei rendezvous;
-- cronologia messaggi;
+- rendezvous content;
+- conversation history;
 - transport/circuit token;
-- IP associato alla relazione tra utenti quando evitabile.
+- IP associato alla relazione quando evitabile.
 
-Un referral code può attribuire l'acquisizione senza diventare parte dell'identità Freedom.
-
-## 12. Metriche di lancio
-
-### Activation
+## 9. Reliability / security metriche
 
 - onboarding completion;
-- contact-added rate;
 - first authenticated session success;
-- first live send success;
-- tempo medio/mediano alla prima sessione riuscita.
+- expected-contact mismatch reject rate/test coverage;
+- live send success;
+- reconnect success;
+- crash-free sessions;
+- latency distribution;
+- DeviceCertificate expiry/revocation behavior;
+- rekey success/failure;
+- control-plane Failure/state-mismatch detection;
+- release/bootstrap verification success;
+- relay fallback/recovery success;
+- Network Indicator false positives.
 
-### Reliability
+## 10. Go / No-Go
 
-- session establishment success rate;
-- send success rate durante sessione attiva;
-- reconnect success rate;
-- crash-free session rate;
-- distribuzione latenza;
-- failure per classe rete/NAT/transport con raccolta privacy-preserving.
-
-### Network resilience
-
-Quando implementata:
-
-- direct success rate;
-- relay fallback success;
-- recovery success;
-- time-to-recover;
-- false-positive rate del Network Indicator;
-- failure di singolo provider/relay senza perdita globale del servizio.
-
-## 13. Go / No-Go
-
-Target iniziali da validare con dati reali, non proprietà del protocollo:
+Target iniziali da validare:
 
 - onboarding completion >= 80%;
-- first authenticated session success >= 85% tra tester con prerequisiti soddisfatti;
+- first authenticated session success >= 85% in test prerequisites;
 - crash-free sessions >= 99%;
-- nessun bug critico aperto su key/identity handling;
-- nessuna latenza sistematica di più secondi per un semplice messaggio su sessione stabile;
+- nessun bug critico aperto su identity/key/session/release handling;
+- nessuna systematic multi-second latency su sessione stabile;
 - nessuna offline queue implicita;
-- nessun claim pubblico dipendente da feature non implementata.
+- nessun claim pubblico su feature non implementate.
 
-## 14. Public Launch
+## 11. Public Launch
 
-Il lancio pubblico può includere:
+Può includere:
 
-- release stabile;
-- sito con spiegazione semplice;
-- video demo breve;
+- stable release;
+- sito/documentazione;
+- demo breve;
 - repository/spec pubblici;
-- security/responsible disclosure page;
+- responsible disclosure;
 - comparison page basata su proprietà tecniche;
-- Founder/Early Supporter program limitato;
-- community privacy/open-source;
-- distribuzione `Share Freedom` solo quando la verifica anti-fake è pronta.
+- Founder/Early Supporter program;
+- Share Freedom solo quando verifier/bootstrap trust sono pronti.
 
-La homepage deve spiegare Freedom prima di spiegare NEAR.
+La homepage spiega Freedom Communication prima di NEAR.
 
-## 15. Monetizzazione durante il lancio
-
-Seguire `MONETIZATION.md`.
+## 12. Monetizzazione nel lancio
 
 ### Free
 
-- RootIdentity/recovery;
 - 1 device;
-- 10 contatti-persona;
-- E2EE/live;
-- direct/fallback base;
-- community/device relay quando disponibile;
+- 10 contacts;
+- Communication E2EE/live;
+- community/device relay;
 - Network Indicator;
-- Emergency Shield bounded.
+- Emergency Shield bounded;
+- Gateway target 100 MB/day quando disponibile.
 
 ### Relay Contributor
 
-Free qualificato come relay utile:
-
 ```text
-10 base contacts + 10 bonus = 20
+10 base + 10 bonus = 20 contacts
 ```
 
-### Pro / Shield
+### Plus / Shield
 
-- contatti/device superiori;
-- managed relay capacity;
-- Always-Shielded;
-- multi-hop;
-- Maximum Resilience;
-- limiti media/file superiori.
+Più contatti/device/capacity, Always-Shielded, multi-hop, Maximum Resilience/Reachability.
 
 ### Business
 
-- SDK;
-- deployment;
-- relay/egress privati quando previsti;
-- supporto/SLA;
-- integrazioni.
+Private deployment, relay/egress pool, SDK/integrations, support/SLA.
 
-La sicurezza crittografica base non dipende dal piano pagato.
+Pagare non rende la E2EE base più forte.
 
-## 16. Gateway / browser nel lancio
+## 13. Gateway nel lancio
 
-Un browser web integrato **non è un obiettivo V1**.
+Browser integrato non è V1.
 
-Un futuro `Freedom Gateway` a livello dispositivo può essere molto più coerente perché estende il path selector Freedom ad app esistenti. È però un sottosistema separato dal messenger relay e richiede threat model, egress policy, DNS/leak prevention, Android VPN integration e review store dedicati.
+Freedom Gateway è post-V1 e richiede threat model/egress/DNS-leak/VpnService/store review separati.
 
-Non trasformare `DEVICE_RELAY`/Relay Contributor in Internet exit node.
+`DEVICE_RELAY` non diventa Internet exit.
 
-## 17. Founder Program
+## 14. Governance readiness
 
-Categorie possibili:
+Prima di una release production distribuita come “ufficiale”:
 
 ```text
-Founding Tester
-Founding Reviewer
-Founding Creator
-Early Supporter
+ReleaseAuthorization   >= 3-of-5
+ReleaseRevocation      >= 3-of-5
+CriticalSecurityPolicy >= 3-of-5
+RootRotation           >= 3-of-5 + recovery
 ```
 
-Benefit possibili:
+Signer-set rotation/recovery deve essere testata, non solo documentata.
 
-- Pro Lifetime con fair-use;
-- badge opzionale;
-- accesso anticipato;
-- canale feedback;
-- riconoscimento pubblico solo su consenso.
-
-La qualifica Founder non dà privilegi crittografici o di trust.
-
-## 18. Feedback loop
-
-```text
-release
- -> utenti reali
- -> bug / misunderstanding
- -> fix
- -> documentation
- -> new release
- -> next cohort
-```
-
-Priorità:
-
-```text
-security/privacy
-reliability
-onboarding
-network resilience
-UX/performance
-positioning
-feature requests
-```
-
-## 19. Cosa non fare
-
-- non comprare subito grandi quantità di traffico paid;
-- non mandare APK non verificati a creator;
-- non promettere anonimato assoluto/incensurabilità;
-- non presentare NEAR come motivo principale per usare Freedom;
-- non pagare per recensioni positive;
-- non creare analytics invasivi;
-- non regalare banda infinita senza fair-use;
-- non scalare mentre il percorso principale ha bug di latency/reliability;
-- non trasformare Pro in requisito per l'interoperabilità base;
-- non introdurre browser/gateway prima che il core network/session sia stabile.
-
-## 20. North-star metric
+## 15. North-star metric
 
 > **numero di nuovi utenti che completano con successo almeno una sessione autenticata Freedom con un altro contatto.**
 
 Misura comunicazione reale, non installazioni.
 
-## 21. Risultato atteso
+## 16. Sequenza di lancio
 
-Il lancio deve creare contemporaneamente:
+```text
+Founder Cohort
+ -> Security/Privacy reviewers
+ -> Creator Pilot
+ -> larger privacy/tech creators
+ -> public launch
+ -> scale only after reliability/security gates
+```
 
-1. **utenti reali** che comunicano tramite Freedom;
-2. **credibilità tecnica** tramite reviewer e documentazione;
-3. **distribuzione** tramite creator che comprendono il prodotto.
-
-> **prima rendere Freedom dimostrabile, poi renderlo raccontabile, infine renderlo grande.**
+> **prima rendere Freedom dimostrabile, poi raccontabile, infine grande.**
