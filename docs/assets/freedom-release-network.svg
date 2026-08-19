@@ -1,110 +1,52 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1060" viewBox="0 0 1600 1060" role="img" aria-labelledby="title desc">
   <title id="title">Freedom Release Network</title>
-  <desc id="desc">Decentralized Freedom app distribution where offline release signers authorize manifests, the verifiable control plane publishes release status, untrusted peers relays and mirrors distribute content-addressed APK bytes, and a new device verifies signatures hash Android signer lineage and security policy before installation.</desc>
+  <desc id="desc">Decentralized Freedom app distribution where threshold release signers authorize canonical manifests, verified control-plane state provides release status policy and freshness floors, untrusted sources distribute bytes, and a new device verifies all security state before installation.</desc>
   <defs>
     <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z" fill="#475569"/></marker>
     <marker id="arrowCyan" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z" fill="#0891b2"/></marker>
-    <style>
-      .bg{fill:#fff}.title{font:700 42px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#0f172a}.subtitle{font:400 20px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#475569}.section{font:700 23px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#0f172a}.label{font:600 18px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#0f172a}.small{font:400 16px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#334155}.tiny{font:400 14px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#475569}.box{fill:#f8fafc;stroke:#cbd5e1;stroke-width:2}.authority{fill:#f5f3ff;stroke:#8b5cf6;stroke-width:3}.chain{fill:#eef2ff;stroke:#6366f1;stroke-width:3}.source{fill:#fff7ed;stroke:#fb923c;stroke-width:3}.verify{fill:#ecfeff;stroke:#06b6d4;stroke-width:3}.ok{fill:#f0fdf4;stroke:#22c55e;stroke-width:3}.warn{fill:#fff1f2;stroke:#fb7185;stroke-width:2}.line{stroke:#475569;stroke-width:3;fill:none;marker-end:url(#arrow)}.secure{stroke:#0891b2;stroke-width:5;fill:none;marker-end:url(#arrowCyan)}.dash{stroke:#64748b;stroke-width:2.5;stroke-dasharray:9 8;fill:none;marker-end:url(#arrow)}
-    </style>
+    <style>.bg{fill:#fff}.title{font:700 42px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#0f172a}.subtitle{font:400 20px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#475569}.section{font:700 23px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#0f172a}.label{font:600 18px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#0f172a}.small{font:400 16px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#334155}.tiny{font:400 14px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#475569}.box{fill:#f8fafc;stroke:#cbd5e1;stroke-width:2}.authority{fill:#f5f3ff;stroke:#8b5cf6;stroke-width:3}.chain{fill:#eef2ff;stroke:#6366f1;stroke-width:3}.source{fill:#fff7ed;stroke:#fb923c;stroke-width:3}.verify{fill:#ecfeff;stroke:#06b6d4;stroke-width:3}.ok{fill:#f0fdf4;stroke:#22c55e;stroke-width:3}.warn{fill:#fff1f2;stroke:#fb7185;stroke-width:2}.line{stroke:#475569;stroke-width:3;fill:none;marker-end:url(#arrow)}.secure{stroke:#0891b2;stroke-width:5;fill:none;marker-end:url(#arrowCyan)}.dash{stroke:#64748b;stroke-width:2.5;stroke-dasharray:9 8;fill:none;marker-end:url(#arrow)}</style>
   </defs>
   <rect class="bg" x="0" y="0" width="1600" height="1060"/>
   <text class="title" x="800" y="56" text-anchor="middle">Freedom Release Network</text>
-  <text class="subtitle" x="800" y="92" text-anchor="middle">Anyone may distribute the bytes · only authorized cryptographic state defines a valid Freedom release</text>
+  <text class="subtitle" x="800" y="92" text-anchor="middle">Anyone may distribute bytes · validity and freshness come from independently verified cryptographic state</text>
 
   <rect class="authority" x="80" y="145" width="420" height="245" rx="28"/>
-  <text class="section" x="290" y="184" text-anchor="middle">Release authority</text>
+  <text class="section" x="290" y="184" text-anchor="middle">Release governance</text>
   <text class="tiny" x="290" y="212" text-anchor="middle">private signing keys never shipped in the app</text>
-  <rect class="box" x="115" y="238" width="350" height="62" rx="16"/>
-  <text class="label" x="290" y="266" text-anchor="middle">Threshold / offline signers</text>
-  <text class="tiny" x="290" y="290" text-anchor="middle">2-of-3 / 3-of-5 production governance</text>
-  <rect class="box" x="115" y="318" width="350" height="48" rx="14"/>
-  <text class="small" x="290" y="348" text-anchor="middle">sign FreedomRelease + locator policy</text>
+  <rect class="box" x="115" y="238" width="350" height="62" rx="16"/><text class="label" x="290" y="266" text-anchor="middle">Threshold / offline signers</text><text class="tiny" x="290" y="290" text-anchor="middle">production ≥3-of-5 · separated custody domains</text>
+  <rect class="box" x="115" y="318" width="350" height="48" rx="14"/><text class="small" x="290" y="348" text-anchor="middle">sign canonical release / policy transitions</text>
 
   <rect class="chain" x="590" y="145" width="930" height="245" rx="28"/>
   <text class="section" x="1055" y="184" text-anchor="middle">Verifiable control plane</text>
-  <text class="tiny" x="1055" y="212" text-anchor="middle">small signed state only · APK bytes remain off-chain</text>
-  <rect class="box" x="625" y="238" width="255" height="112" rx="16"/>
-  <text class="label" x="753" y="267" text-anchor="middle">FreedomRelease</text>
-  <text class="tiny" x="753" y="294" text-anchor="middle">artifact SHA-256</text>
-  <text class="tiny" x="753" y="317" text-anchor="middle">package · version · signer</text>
-  <text class="tiny" x="753" y="340" text-anchor="middle">threshold signatures</text>
-  <rect class="box" x="905" y="238" width="270" height="112" rx="16"/>
-  <text class="label" x="1040" y="267" text-anchor="middle">ReleaseStatus</text>
-  <text class="tiny" x="1040" y="297" text-anchor="middle">ACTIVE</text>
-  <text class="tiny" x="1040" y="319" text-anchor="middle">DEPRECATED</text>
-  <text class="tiny" x="1040" y="341" text-anchor="middle">REVOKED</text>
-  <rect class="box" x="1200" y="238" width="285" height="112" rx="16"/>
-  <text class="label" x="1342" y="267" text-anchor="middle">SecurityPolicy</text>
-  <text class="tiny" x="1342" y="294" text-anchor="middle">min secure version</text>
-  <text class="tiny" x="1342" y="317" text-anchor="middle">vulnerable releases</text>
-  <text class="tiny" x="1342" y="340" text-anchor="middle">authorized signer lineage</text>
+  <text class="tiny" x="1055" y="212" text-anchor="middle">checkpoint/state proofs · APK bytes remain off-chain</text>
+  <rect class="box" x="625" y="238" width="255" height="112" rx="16"/><text class="label" x="753" y="267" text-anchor="middle">FreedomRelease</text><text class="tiny" x="753" y="294" text-anchor="middle">artifact SHA-256</text><text class="tiny" x="753" y="317" text-anchor="middle">package · version · signer epoch</text><text class="tiny" x="753" y="340" text-anchor="middle">threshold signatures</text>
+  <rect class="box" x="905" y="238" width="270" height="112" rx="16"/><text class="label" x="1040" y="267" text-anchor="middle">ReleaseStatus</text><text class="tiny" x="1040" y="297" text-anchor="middle">ACTIVE / DEPRECATED / REVOKED</text><text class="tiny" x="1040" y="321" text-anchor="middle">status epoch · anti-rollback</text><text class="tiny" x="1040" y="343" text-anchor="middle">verified state proof</text>
+  <rect class="box" x="1200" y="238" width="285" height="112" rx="16"/><text class="label" x="1342" y="267" text-anchor="middle">Policy / freshness</text><text class="tiny" x="1342" y="294" text-anchor="middle">min secure version</text><text class="tiny" x="1342" y="317" text-anchor="middle">BootstrapFreshnessFloor</text><text class="tiny" x="1342" y="340" text-anchor="middle">signer/policy checkpoint floors</text>
 
-  <path class="secure" d="M500 268 L590 268"/>
-  <text class="tiny" x="545" y="248" text-anchor="middle">signed</text>
+  <path class="secure" d="M500 268 L590 268"/><text class="tiny" x="545" y="248" text-anchor="middle">threshold authorized</text>
 
   <text class="section" x="800" y="445" text-anchor="middle">Untrusted decentralized artifact distribution</text>
   <text class="tiny" x="800" y="472" text-anchor="middle">sources can disappear, lie, be blocked or be compromised without becoming release authorities</text>
 
-  <rect class="source" x="85" y="515" width="270" height="170" rx="22"/>
-  <text class="label" x="220" y="552" text-anchor="middle">Existing Freedom peer</text>
-  <text class="tiny" x="220" y="580" text-anchor="middle">LAN · hotspot · peer network</text>
-  <text class="tiny" x="220" y="607" text-anchor="middle">temporary one-shot capability</text>
-  <text class="tiny" x="220" y="634" text-anchor="middle">verified APK cache optional</text>
-  <text class="tiny" x="220" y="661" text-anchor="middle">never holds release private keys</text>
-
-  <rect class="source" x="390" y="515" width="250" height="170" rx="22"/>
-  <text class="label" x="515" y="552" text-anchor="middle">Relay / update node</text>
-  <text class="tiny" x="515" y="580" text-anchor="middle">replaceable provider</text>
-  <text class="tiny" x="515" y="607" text-anchor="middle">content-addressed cache</text>
-  <text class="tiny" x="515" y="634" text-anchor="middle">rate / bandwidth bounded</text>
-  <text class="tiny" x="515" y="661" text-anchor="middle">not trusted for authenticity</text>
-
-  <rect class="source" x="675" y="515" width="250" height="170" rx="22"/>
-  <text class="label" x="800" y="552" text-anchor="middle">Mirror</text>
-  <text class="tiny" x="800" y="580" text-anchor="middle">HTTPS / temporary host</text>
-  <text class="tiny" x="800" y="607" text-anchor="middle">geographic/provider diversity</text>
-  <text class="tiny" x="800" y="634" text-anchor="middle">may serve malicious bytes</text>
-  <text class="tiny" x="800" y="661" text-anchor="middle">verification must reject them</text>
-
-  <rect class="source" x="960" y="515" width="250" height="170" rx="22"/>
-  <text class="label" x="1085" y="552" text-anchor="middle">Store</text>
-  <text class="tiny" x="1085" y="580" text-anchor="middle">Play / compatible store</text>
-  <text class="tiny" x="1085" y="607" text-anchor="middle">optional distribution source</text>
-  <text class="tiny" x="1085" y="634" text-anchor="middle">not protocol dependency</text>
-  <text class="tiny" x="1085" y="661" text-anchor="middle">platform policy applies</text>
-
-  <rect class="warn" x="1245" y="515" width="270" height="170" rx="22"/>
-  <text class="label" x="1380" y="552" text-anchor="middle">Opaque locator</text>
-  <text class="tiny" x="1380" y="580" text-anchor="middle">freedom-r42-454fjk...apk</text>
-  <text class="tiny" x="1380" y="607" text-anchor="middle">useful for discovery / anti-enumeration</text>
-  <text class="tiny" x="1380" y="634" text-anchor="middle">NOT an authenticity proof</text>
-  <text class="tiny" x="1380" y="661" text-anchor="middle">any attacker can rename a file</text>
+  <rect class="source" x="85" y="515" width="270" height="170" rx="22"/><text class="label" x="220" y="552" text-anchor="middle">Existing Freedom peer</text><text class="tiny" x="220" y="580" text-anchor="middle">LAN · hotspot · peer network</text><text class="tiny" x="220" y="607" text-anchor="middle">temporary transfer capability</text><text class="tiny" x="220" y="634" text-anchor="middle">verified APK cache optional</text><text class="tiny" x="220" y="661" text-anchor="middle">never holds release private keys</text>
+  <rect class="source" x="390" y="515" width="250" height="170" rx="22"/><text class="label" x="515" y="552" text-anchor="middle">Relay / update node</text><text class="tiny" x="515" y="580" text-anchor="middle">replaceable provider</text><text class="tiny" x="515" y="607" text-anchor="middle">content-addressed cache</text><text class="tiny" x="515" y="634" text-anchor="middle">rate / bandwidth bounded</text><text class="tiny" x="515" y="661" text-anchor="middle">not trusted for authenticity</text>
+  <rect class="source" x="675" y="515" width="250" height="170" rx="22"/><text class="label" x="800" y="552" text-anchor="middle">Mirror</text><text class="tiny" x="800" y="580" text-anchor="middle">HTTPS / temporary host</text><text class="tiny" x="800" y="607" text-anchor="middle">provider diversity</text><text class="tiny" x="800" y="634" text-anchor="middle">may serve malicious bytes</text><text class="tiny" x="800" y="661" text-anchor="middle">verification must reject them</text>
+  <rect class="source" x="960" y="515" width="250" height="170" rx="22"/><text class="label" x="1085" y="552" text-anchor="middle">Store / independent channel</text><text class="tiny" x="1085" y="580" text-anchor="middle">Play / compatible store</text><text class="tiny" x="1085" y="607" text-anchor="middle">can help bootstrap verifier freshness</text><text class="tiny" x="1085" y="634" text-anchor="middle">not protocol dependency</text><text class="tiny" x="1085" y="661" text-anchor="middle">platform policy applies</text>
+  <rect class="warn" x="1245" y="515" width="270" height="170" rx="22"/><text class="label" x="1380" y="552" text-anchor="middle">Opaque locator</text><text class="tiny" x="1380" y="580" text-anchor="middle">freedom-r42-...apk</text><text class="tiny" x="1380" y="607" text-anchor="middle">discovery / anti-enumeration hint</text><text class="tiny" x="1380" y="634" text-anchor="middle">NOT authenticity or freshness proof</text><text class="tiny" x="1380" y="661" text-anchor="middle">any attacker can rename a file</text>
 
   <rect class="verify" x="290" y="760" width="740" height="225" rx="28"/>
   <text class="section" x="660" y="800" text-anchor="middle">New device — fail-closed verifier</text>
-  <text class="small" x="335" y="840">1. trusted release root / signer set</text>
-  <text class="small" x="335" y="870">2. FreedomRelease threshold signatures</text>
-  <text class="small" x="335" y="900">3. exact APK SHA-256 + size + package/version</text>
-  <text class="small" x="685" y="840">4. Android signing certificate / authorized lineage</text>
-  <text class="small" x="685" y="870">5. ReleaseStatus is installable</text>
-  <text class="small" x="685" y="900">6. SecurityPolicy permits this build</text>
-  <text class="tiny" x="660" y="946" text-anchor="middle">any mismatch -> reject before installation</text>
+  <text class="small" x="335" y="840">1. pinned BootstrapTrustAnchor</text>
+  <text class="small" x="335" y="870">2. BootstrapFreshnessFloor satisfied</text>
+  <text class="small" x="335" y="900">3. threshold FreedomRelease + exact hash</text>
+  <text class="small" x="685" y="840">4. verified ReleaseStatus / SecurityPolicy</text>
+  <text class="small" x="685" y="870">5. Android signing certificate / lineage</text>
+  <text class="small" x="685" y="900">6. package / version / anti-rollback</text>
+  <text class="tiny" x="660" y="946" text-anchor="middle">any mismatch or state below the verifier's floor -> reject before installation</text>
 
-  <rect class="ok" x="1110" y="760" width="405" height="225" rx="28"/>
-  <text class="section" x="1312" y="800" text-anchor="middle">Install / update</text>
-  <text class="small" x="1312" y="842" text-anchor="middle">VERIFIED artifact</text>
-  <text class="small" x="1312" y="875" text-anchor="middle">Android system installer</text>
-  <text class="small" x="1312" y="908" text-anchor="middle">user-confirmed install</text>
-  <text class="tiny" x="1312" y="950" text-anchor="middle">no per-install blockchain write</text>
+  <rect class="ok" x="1110" y="760" width="405" height="225" rx="28"/><text class="section" x="1312" y="800" text-anchor="middle">Install / update</text><text class="small" x="1312" y="842" text-anchor="middle">VERIFIED artifact + current-enough state</text><text class="small" x="1312" y="875" text-anchor="middle">Android system installer</text><text class="small" x="1312" y="908" text-anchor="middle">user-confirmed install</text><text class="tiny" x="1312" y="950" text-anchor="middle">no per-install blockchain write</text>
 
-  <path class="line" d="M220 685 C250 720 330 730 410 760"/>
-  <path class="line" d="M515 685 C520 720 540 730 565 760"/>
-  <path class="line" d="M800 685 C790 720 760 730 735 760"/>
-  <path class="line" d="M1085 685 C1030 720 980 730 930 760"/>
-  <path class="dash" d="M1055 390 C1050 560 900 680 850 760"/>
-  <text class="tiny" x="1000" y="712" text-anchor="middle">verify state</text>
-  <path class="secure" d="M1030 875 L1110 875"/>
+  <path class="line" d="M220 685 C250 720 330 730 410 760"/><path class="line" d="M515 685 C520 720 540 730 565 760"/><path class="line" d="M800 685 C790 720 760 730 735 760"/><path class="line" d="M1085 685 C1030 720 980 730 930 760"/><path class="dash" d="M1055 390 C1050 560 900 680 850 760"/><text class="tiny" x="1000" y="712" text-anchor="middle">verified current state</text><path class="secure" d="M1030 875 L1110 875"/>
 
-  <text class="tiny" x="800" y="1026" text-anchor="middle">Download capability may expire after one transfer; release validity does not. Only signed governance deprecates or revokes a release.</text>
+  <text class="tiny" x="800" y="1026" text-anchor="middle">A recent verifier can reject stale network state below its floor; an authentic but itself-obsolete verifier still needs an independent freshness channel.</text>
 </svg>
