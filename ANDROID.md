@@ -1,250 +1,141 @@
 # Freedom Android
 
-Status: **implementation roadmap for the canonical specification**
+Status: **implementation roadmap for the canonical specification**.
 
-Normative security rules: [`docs/SECURITY_INVARIANTS.md`](docs/SECURITY_INVARIANTS.md).
-Control-plane security: [`docs/CONTROL_PLANE_SECURITY.md`](docs/CONTROL_PLANE_SECURITY.md).
-Advanced development method: [`docs/ADVANCED_DEVELOPMENT.md`](docs/ADVANCED_DEVELOPMENT.md).
+Normative security: [`docs/SECURITY_INVARIANTS.md`](docs/SECURITY_INVARIANTS.md).
+Control-plane: [`docs/CONTROL_PLANE_SECURITY.md`](docs/CONTROL_PLANE_SECURITY.md).
+Revocation: [`docs/REVOCATION.md`](docs/REVOCATION.md).
+Canonical schema: [`spec/freedom.cddl`](spec/freedom.cddl).
+Advanced development: [`docs/ADVANCED_DEVELOPMENT.md`](docs/ADVANCED_DEVELOPMENT.md).
 
-Android è la prima piattaforma di prodotto, ma **non è il loop principale di sviluppo del protocollo**. Protocol, routing, control-plane verifier, release verifier e relay logic devono essere host-side/simulator-first; APK/emulator/device sono gate di integrazione piattaforma.
+Android è la prima piattaforma client, ma il loop principale di protocol/control-plane/routing è simulator-first.
 
 ## 1. Identity stack
 
 ```text
 RootRecoveryKey
-RootIdentity
-DeviceAuthorizationKey / delegation
+UserRecoveryPolicy
+DeviceAuthorizationKey / Delegation
 DeviceCertificate
 DeviceKey
 DeviceRecordCommitment
+DeviceControlKey
 PairwiseContactAlias
 TransportToken
 ```
 
-No global DeviceID.
+No global DeviceID network-facing.
 
-## 2. Prima installazione
+## 2. Installazione
 
 ```text
-Install Freedom
- -> generate RootRecoveryKey / RootIdentity
- -> generate DeviceAuthorizationKey + delegation
- -> generate DeviceKey
- -> opaque DeviceRecordCommitment
- -> RecoveryStateKey
+install
+ -> local root/authorization/device/control keys
  -> Recovery Kit
  -> 0 mandatory chain writes
 ```
 
-## 3. Control-plane state
-
-Quando serve stato verificabile:
+Quando serve un opaque device record:
 
 ```text
-anti-abuse/device proof
+anti-abuse/sponsorship
  -> submit
- -> verify finality checkpoint
- -> verify execution
- -> verify resulting state proof
- -> DeviceCertificate / READY
+ -> finality proof
+ -> resulting-state proof
+ -> record available
 ```
 
-`tx hash` o singola risposta RPC non significano `READY`.
+Peer authorization continua a dipendere dal DeviceCertificate, non dal fatto che il record esista.
 
-## 4. DeviceCertificate
+## 3. Canonical encoding / signing
+
+Android deve usare `spec/freedom.cddl` + deterministic canonical encoding e signing domains. Niente JSON serialization ad-hoc per oggetti firmati.
+
+## 4. DeviceCertificate / revocation
+
+Validation:
 
 ```text
-DeviceCertificate {
-    version
-    network_id
-    root_identity_commitment_or_proof
-    authorization_epoch
-    device_public_key
-    key_epoch
-    protocol_version
-    capabilities?
-    issued_at
-    expires_at
-    certificate_id
-    authorization_signature
-}
+expected contact
+ -> delegation scope/expiry
+ -> certificate binding
+ -> DeviceKey possession
+ -> highest-seen epochs
+ -> current-enough revocation proof
+ -> authenticated
 ```
 
-Verifica offline; revocation/freshness da cache/control-plane proof verificati.
+`RPC not found` non è non-revocation proof.
 
-## 5. Device authorization privacy
+## 5. Root compromise
 
-Production target: `DeviceAuthorizationProof`/slot nullifier senza mapping pubblico RootIdentity→device.
+Normal restore e root compromise sono UX/state machine separate.
 
-Se una build Testnet usa proof linkabile, debug/telemetry/documentazione devono dichiararlo esplicitamente.
+Compromise recovery è disponibile soltanto se esiste `UserRecoveryPolicy` indipendente precommitted.
 
-## 6. Recovery
+## 6. Contact / pairwise state
 
-Recovery Kit usa >=128-bit recovery entropy, memory-hard KDF e AEAD.
+UI distingue `BOOTSTRAP_UNVERIFIED` / `CONTACT_VERIFIED`.
 
-Root compromise usa `UserRootRotation`; non è equivalente a device restore.
+Pairwise rendezvous usa derived one-time write keys e signed generation-monotonic records.
 
-Pairwise state:
+## 7. Pairwise backup
+
+Android può esportare/importare encrypted `PairwiseRecoveryBundle` tramite user-chosen storage. Dopo restore re-authenticate peer e rotate/re-derive future rendezvous/session state.
+
+## 8. Session
 
 ```text
-surviving device transfer
-or
-encrypted PairwiseRecoveryBundle
+both-offer anti-downgrade
+ -> fresh ephemeral exchange
+ -> E2EE
+ -> bounded key lifetime
+ -> RekeyInit / RekeyCommit / RekeyAck
 ```
 
-Se manca pairwise backup, ownership torna ma i contatti richiedono re-bootstrap.
+Simultaneous/lost/duplicate rekey cases devono essere gestiti dalla state machine canonica.
 
-## 7. Contact bootstrap
+## 9. Messaging semantics
 
 ```text
-FreedomContact
- -> BOOTSTRAP_UNVERIFIED
- -> handshake
- -> optional safety code/fingerprint/out-of-band verification
- -> CONTACT_VERIFIED
+active authenticated session -> send now
+no active session -> fail/discard
 ```
 
-Descriptor substitution prima del primo bootstrap è una minaccia distinta da QR copy/replay.
+No offline delivery queue.
 
-## 8. Secure session
+## 10. Route / relay / Shield
+
+Adapters dichiarano stream/datagram semantics. Device relay è opt-in/resource-bounded e non Internet egress.
+
+`SHIELDED` può apparire solo dopo vero circuit setup/per-hop keys/layered forwarding.
+
+## 11. Adaptive Defense
+
+`SUSPECTED` deriva da osservazioni/inferenze e non significa surveillance/censorship attribution.
+
+## 12. Share Freedom
+
+Verification:
 
 ```text
-verify expected contact
- -> verify delegation + DeviceCertificate
- -> verify DeviceKey possession
- -> verified revocation/freshness
- -> bind both handshake offer sets
- -> strongest-allowed version/suite selection
- -> fresh ephemeral E2EE
+exact artifact hash
+threshold release
+verified ReleaseStatus/SecurityPolicy
+Android signer lineage
+BootstrapTrustAnchor
+BootstrapFreshnessFloor
 ```
 
-## 9. Forward secrecy / rekey
+## 13. Gateway — post-V1
 
-- FS per sessione;
-- traffic-key lifetime bounded per tempo/frame/byte;
-- authenticated rekey;
-- control/messaging keys separate da media keys;
-- failure esplicita se rekey required fallisce.
+Android `VpnService` è platform integration per selected-app/whole-device Gateway. Richiede DNS/leak/strict-mode/device tests separati.
 
-## 10. Transport semantics
+## 14. Simulator-first modules
 
-Ogni adapter dichiara:
+Target:
 
 ```text
-RELIABLE_ORDERED_STREAM
-UNRELIABLE_DATAGRAM
-```
-
-Text/control/rekey usano reliable semantics o reliability layer esplicito. Media può usare datagram separati senza bloccare chat/control.
-
-## 11. Messaging sincrono
-
-```text
-active authenticated session? yes -> transmit
-active authenticated session? no  -> FAIL / DISCARD
-```
-
-No offline retry queue.
-
-## 12. Rendezvous / storage
-
-Pairwise slots, read-before-write, bounded size/TTL.
-
-TTL non basta: il contract/runtime deve implementare overwrite/ring/prune/lease/reclaim e active-state bound.
-
-## 13. Relay mode
-
-`DEVICE_RELAY` opt-in/resource-bounded. RelayDescriptor firmato, provenance-aware selection, no assumption `N relay IDs = N operators`, no Internet egress.
-
-## 14. Shield
-
-Production `SHIELDED` richiede [`docs/SHIELD.md`](docs/SHIELD.md): real circuit setup, per-hop keys, layered forwarding, Sybil/provenance tests.
-
-## 15. Network Indicator / Adaptive Defense
-
-```text
-NORMAL
-SHIELDED
-DEGRADED
-SUSPECTED
-UNAVAILABLE
-```
-
-`SUSPECTED` è inferenza, non sorveglianza/censura provata.
-
-## 16. Share Freedom
-
-```text
-Install QR
- -> untrusted bytes
- -> exact hash
- -> verified signer-set epoch/transition
- -> threshold FreedomRelease
- -> Android signer lineage
- -> ReleaseStatus/SecurityPolicy proof
- -> installer
-```
-
-First sideload usa BootstrapTrustAnchor pinned.
-
-## 17. Governance client state
-
-Android conserva anti-rollback state:
-
-```text
-highest_verified_checkpoint
-highest_signer_set_epoch
-highest_policy_epoch
-highest_release_status_epoch
-accepted_contract_lineage
-```
-
-Wall clock locale non può riattivare policy/certificati vecchi; usare VerifiedTimeAnchor/height/epoch.
-
-## 18. Gateway — post-V1
-
-```text
-apps -> VpnService -> Freedom Gateway -> path/Shield -> explicit Egress -> Internet
-```
-
-DNS/leak controls, visible split tunnel, strict/kill-switch, no silent direct fallback.
-
-Target Free managed Gateway iniziale: `100 MB/day`, separato da Communication/Emergency Shield.
-
-## 19. Simulator-first development
-
-Loop primario:
-
-```text
-core source
- -> host-side compile/test
- -> multi-process/container simulation
- -> NAT/firewall/RPC/clock/storage chaos
- -> regression matrix
-```
-
-Non produrre/installare APK per ogni iterazione protocol/control-plane.
-
-Docker/Codex lab dettagliato in [`docs/ADVANCED_DEVELOPMENT.md`](docs/ADVANCED_DEVELOPMENT.md).
-
-## 20. Quando Android è obbligatorio
-
-APK/emulator/physical device gate per:
-
-- Android Keystore;
-- process death/restart;
-- lifecycle/background/Doze;
-- permissions/notifications;
-- package signing/update;
-- camera/QR;
-- real network handover;
-- `VpnService`;
-- vendor-specific socket/background behavior.
-
-## 21. Module target
-
-```text
-app/
 core/
   identity/
   protocol/
@@ -252,87 +143,93 @@ core/
   routing/
   controlplane/
   release/
-transport/
-  direct/
-  nat/
-  relay/
-  bridge/
-  shield/
+
 sim/
   node/
   chain/
+  relay/
   nat/
   censor/
   clock/
   scenario/
-  oracle/
-gateway/
-  android-vpn/
-  tunnel/
-  egress/
+
 platform-android/
+  keystore/
+  lifecycle/
+  vpn/
 ```
 
-## 22. Test gates
+La business logic non deve vivere esclusivamente in Activity/UI code se deve essere riusabile dal simulator.
 
-Host/sim first:
+## 15. Test levels
 
 ```text
-canonical vectors
-DeviceCertificate/delegation tests
-privacy authorization proof tests
-first-contact substitution
-handshake offer-stripping/downgrade
-FS/rekey/replay
-stream/datagram reorder/loss
-checkpoint/state proof
-malicious/stale/forked RPC
-storage reclaim convergence
-RootRotation/pairwise recovery
-relay Sybil/eclipse
-Shield circuits
-release/signer/contract rollback
-payment voucher/nullifier
+L0 canonical/unit vectors
+L1 deterministic virtual-time multi-node
+L2 Docker/network chaos
+L3 real NearChainAdapter integration
+L4 Android emulator
+L5 physical Android + real networks
+L6 external review
 ```
 
-Android gates:
+## 16. Android-specific gates
+
+Emulator/device obbligatorio per:
+
+- Keystore;
+- process death/restart;
+- lifecycle/background/Doze;
+- permissions;
+- package signing/update;
+- actual Wi-Fi/mobile handover;
+- camera/QR;
+- `VpnService`;
+- vendor-specific behavior.
+
+## 17. Core security tests
+
+- deterministic encoding/signing domains;
+- delegation/certificate scope/expiry;
+- revocation proof/freshness;
+- fresh-install bootstrap floor;
+- rendezvous overwrite/front-run;
+- expected-contact/offer-strip handshake;
+- rekey simultaneous/loss/duplicate/route-switch;
+- stream/datagram separation;
+- storage bound;
+- root compromise recovery;
+- release/governance rollback;
+- StateMigrationProof.
+
+## 18. Roadmap
 
 ```text
-Keystore instrumentation
-process/background tests
-network handover
-package signing/update
-camera/QR
-VpnService DNS/IPv4/IPv6 leaks
-```
+A1  extract host-side core + canonical schema codec
+A2  RootRecoveryKey / authorization / DeviceKey / DeviceControlKey
+A3  Recovery Kit + optional UserRecoveryPolicy
+A4  opaque device record + verified NearChainAdapter
+A5  DeviceCertificate + revocation/freshness
+A6  contact bootstrap / assurance states
+A7  pairwise rendezvous write authorization
+A8  pairwise backup/restore
+A9  expected-contact both-offer handshake
+A10 forward secrecy + complete rekey state machine
+A11 synchronous text/ACK
+A12 transport semantic abstraction + NAT/route switch
+A13 relay / Device Relay
+A14 attachments/media
+A15 Share Freedom bootstrap trust/freshness
+A16 Adaptive Defense / Network Status
+A17 bridge/pluggable transport
+A18 release/store/direct polish
 
-## 23. Roadmap
-
-```text
-A1  core identity hierarchy + Recovery Kit
-A2  DeviceAuthorizationProof / DeviceCertificate
-A3  control-plane checkpoint/state verifier
-A4  pairwise contact + first-contact verification UX
-A5  pairwise recovery / multi-device
-A6  anti-downgrade authenticated session
-A7  FS/rekey + transport semantic split
-A8  synchronous text/ACK
-A9  route/NAT simulator
-A10 RelayDescriptor / DEVICE_RELAY
-A11 attachments/media
-A12 Shield circuit prototype + simulator
-A13 Share Freedom + governance rollback protection
-A14 Adaptive Defense / Network Indicator
-A15 Android integration gates
-
-POST-V1 GATEWAY
-G1 explicit egress
+POST-V1
+S1 true Shield circuit protocol
+G1 explicit Gateway egress
 G2 selected-app VpnService
 G3 whole-device + DNS/leak controls
-G4 managed quota
-G5 egress/transport diversity
-G6 Shielded Gateway
-G7 anti-censorship transports/bridges
-G8 DPI/firewall lab
-G9 Maximum Reachability
+G4 managed capacity accounting
+G5 transport/egress diversity
+G6 Maximum Reachability
 ```
