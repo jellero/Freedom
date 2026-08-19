@@ -14,9 +14,11 @@ Un avversario può:
 - tentare traffic analysis e correlazione temporale;
 - tentare impersonation;
 - tentare replay;
-- creare molti nodi;
+- creare molti nodi/identità;
 - controllare uno o più endpoint RPC;
 - tentare di saturare relay, chain writes o risorse locali;
+- tentare di ottenere reward Relay Contributor senza fornire capacità utile;
+- tentare di usare un relay come proxy generico verso Internet;
 - distribuire client modificati se compromette la supply chain o il sistema di aggiornamento.
 
 Freedom non assume che relay, NAT observer, bootstrap node, fee relayer o RPC siano fidati per autenticare un DeviceID.
@@ -25,12 +27,13 @@ Freedom non assume che relay, NAT observer, bootstrap node, fee relayer o RPC si
 
 Le radici di fiducia sono limitate a:
 
+- RootIdentity/private identity material locale secondo ruolo;
 - private identity key locale del device;
-- stato verificato del registro distribuito relativo al `DeviceID`;
+- stato verificato del registro distribuito;
 - primitive crittografiche standard;
 - stato locale autenticato derivato da sessioni precedenti.
 
-Un IP, un relay, un RPC, un fee relayer, un risultato di discovery o un provider commerciale non è un trust anchor.
+Un IP, un relay, un RPC, un fee relayer, un risultato di discovery, un payment provider o un provider commerciale non è un trust anchor.
 
 La funzione di registro verificabile è fondamentale per il trust model attuale; una blockchain specifica come NEAR non deve esserlo.
 
@@ -113,7 +116,7 @@ Queste misure non eliminano completamente traffic analysis o correlazioni tempor
 
 ## 8. Network identity leakage
 
-Un indirizzo IP non è un'identità Freedom, ma un direct path può esporre l'endpoint di rete del peer.
+Un indirizzo IP non è un'identità Freedom, ma un direct path o la partecipazione come relay può esporre l'endpoint di rete a peer/hop adiacenti.
 
 Requisiti:
 
@@ -121,9 +124,10 @@ Requisiti:
 - il client deve poter usare relay o percorsi shielded/multi-hop quando la privacy di rete è prioritaria;
 - `DeviceID` non deve essere usato come identificatore di routing pubblico quando non necessario;
 - identificatori di trasporto e capability devono essere minimizzati, limitati nel tempo o nel contesto quando possibile;
-- i log non devono creare mapping DeviceID/IP persistenti senza necessità tecnica.
+- i log non devono creare mapping DeviceID/IP persistenti senza necessità tecnica;
+- la modalità `DEVICE_RELAY` deve informare l'utente che aumenterà la propria esposizione come nodo di rete rispetto al solo ruolo endpoint.
 
-Freedom non promette che un peer remoto non possa conoscere l'IP quando viene scelta una connessione diretta.
+Freedom non promette che un peer remoto non possa conoscere l'IP quando viene scelta una connessione diretta, né che un device relay sia invisibile ai nodi adiacenti.
 
 ## 9. Global traffic analysis
 
@@ -155,6 +159,7 @@ Mitigazioni architetturali:
 
 - provider RPC multipli;
 - relay multipli e sostituibili;
+- device/community relay temporanei;
 - bootstrap multipli;
 - path diversity;
 - transport alternativi;
@@ -183,24 +188,9 @@ data path corrente                 FAIL
 
 Questo pattern può giustificare lo stato `INTERFERENCE_OR_ROUTE_FAILURE_SUSPECTED` e attivare failover automatico.
 
-Non prova però:
+Non prova però chi causi il blocco, che sia intenzionale o che esista sorveglianza passiva.
 
-- chi stia causando il blocco;
-- che il blocco sia intenzionale;
-- che il peer sia sotto sorveglianza;
-- che un osservatore passivo esista.
-
-Un global passive adversary può monitorare senza produrre un segnale rilevabile.
-
-Rischi aggiuntivi introdotti dai beacon:
-
-- pattern temporali osservabili on-chain/provider;
-- chain write spam;
-- battery/network cost;
-- false positive se il data path è semplicemente instabile;
-- stale beacon interpretati male.
-
-Mitigazioni:
+Mitigazioni dei beacon:
 
 - beacon solo dopo failure o policy esplicita;
 - TTL breve;
@@ -208,7 +198,7 @@ Mitigazioni:
 - payload cifrato;
 - read-before-write;
 - rate limit/backoff;
-- soglie su più segnali, non un singolo timeout;
+- soglie su più segnali;
 - stop delle write appena una sessione viene ristabilita.
 
 Dettagli: [`ADAPTIVE_DEFENSE.md`](ADAPTIVE_DEFENSE.md).
@@ -229,39 +219,30 @@ L'RPC non sostituisce mai la firma dell'endpoint.
 
 ## 12. Malicious fee relayer
 
-Un fee relayer può:
+Un fee relayer può rifiutare, ritardare, censurare richieste o osservare operazioni on-chain.
 
-- rifiutare una richiesta;
-- ritardarla;
-- censurare alcuni utenti;
-- osservare che una determinata richiesta on-chain viene inoltrata.
-
-Non deve poter:
-
-- ottenere la private identity key;
-- firmare come DeviceID;
-- modificare silenziosamente un'operazione firmata senza invalidarne l'autorizzazione;
-- diventare requisito unico del protocollo.
+Non deve poter ottenere la private identity key, firmare come DeviceID, modificare silenziosamente operazioni firmate o diventare requisito unico.
 
 Difese:
 
 - più fee relayer indipendenti;
 - formato di richiesta autenticato;
 - rate limiting senza autorità sull'identità;
-- possibilità di usare meccanismi di pagamento alternativi compatibili.
+- possibilità di usare meccanismi alternativi compatibili.
 
 La private key del fee relayer non deve essere incorporata nel client distribuito.
 
 ## 13. Malicious relay
 
-Un relay può:
+Un relay — incluso un normale device Freedom che opera come `DEVICE_RELAY` — può:
 
 - droppare;
 - ritardare;
 - correlare timing e volume;
 - rifiutare connessioni;
 - tentare replay;
-- modificare ciphertext.
+- modificare ciphertext;
+- mentire sulla propria capacità/disponibilità.
 
 Non deve poter:
 
@@ -275,11 +256,40 @@ Difese:
 - E2EE endpoint-to-endpoint;
 - AEAD;
 - sequence;
+- capability/token di circuito;
 - possibilità di cambiare relay;
 - relay/path diversity;
 - limiti di fiducia espliciti.
 
-## 14. Relay resource exhaustion
+Essere un dispositivo Freedom non rende il relay più fidato di un VPS anonimo.
+
+## 14. Relay come open proxy
+
+Un relay Freedom **non deve essere un proxy Internet generico**.
+
+Deve inoltrare esclusivamente frame/circuiti Freedom validi e bounded secondo il protocollo.
+
+Non deve consentire arbitrariamente:
+
+```text
+client -> relay -> qualsiasi IP:porta Internet
+```
+
+senza un livello Freedom autorizzato.
+
+Difese:
+
+- packet format obbligatorio;
+- capability di circuito;
+- next-hop controllato dal fabric/protocollo;
+- allowlist di transport/protocol semantics dove necessario;
+- hop limit e TTL;
+- nessun arbitrary TCP CONNECT generico nel protocollo base;
+- rate limit e circuit quotas.
+
+Questo è particolarmente importante per `DEVICE_RELAY`, perché il proprietario non deve trasformare inconsapevolmente il proprio telefono/connessione in un exit proxy aperto.
+
+## 15. Relay resource exhaustion
 
 Freedom non offre storage persistente sui relay.
 
@@ -287,16 +297,64 @@ Ogni relay deve imporre:
 
 - maximum frame size;
 - maximum buffer per circuit;
+- maximum total buffer;
 - maximum concurrent circuits;
 - rate limit;
 - TTL;
 - hop limit;
 - timeout inattività;
+- bandwidth quota;
 - eventuali capability/quota.
 
-Questo riduce l'utilità della rete come storage abuse target.
+Per `DEVICE_RELAY` si aggiungono policy locali di:
 
-## 15. Chain write spam
+- batteria minima;
+- charging-only opzionale;
+- Wi-Fi only opzionale;
+- rete metered;
+- CPU/RAM;
+- temperatura;
+- background execution.
+
+## 16. Relay Contributor farming
+
+Attacco:
+
+```text
+utente abilita relay
+non inoltra traffico utile
+ottiene +10 contatti
+```
+
+oppure crea molti device/account che si scambiano traffico artificiale per simulare contributo.
+
+Il semplice `relay_enabled=true` non è quindi sufficiente come prova.
+
+Mitigazioni:
+
+- finestre di qualificazione bounded;
+- combinazione di disponibilità e forwarding utile;
+- soglie minime ma anche massime per evitare incentivo al volume artificiale;
+- receipt/commitment opachi aggregati;
+- attestazioni da più contesti quando necessario;
+- rate limit per RootIdentity/device/epoch;
+- rilevamento di pattern auto-referenziali/farming senza costruire un social graph pubblico;
+- scadenza periodica del benefit.
+
+La prova non deve pubblicare peer serviti, contenuto o cronologia dettagliata dei circuiti.
+
+Il benefit iniziale è:
+
+```text
+Free base contacts          10
+Relay Contributor bonus    +10
+```
+
+Se scade, i contatti sopra quota non vengono cancellati automaticamente; vengono bloccate solo nuove aggiunte finché la quota effettiva non torna sufficiente.
+
+Dettagli: [`RELAYS.md`](RELAYS.md).
+
+## 17. Chain write spam
 
 Il rendezvous non deve diventare una primitive di scrittura illimitata.
 
@@ -312,7 +370,7 @@ Difese:
 
 Recovery beacon e policy di resilienza devono rispettare gli stessi limiti e non trasformarsi in heartbeat continui.
 
-## 16. Contact spam
+## 18. Contact spam
 
 Conoscere un DeviceID non deve necessariamente fornire capability illimitata di contatto.
 
@@ -322,29 +380,28 @@ Il client può inoltre applicare contacts-only, request approval, local block li
 
 Non esiste una blacklist globale necessaria al protocollo.
 
-## 17. QR theft/copy
+## 19. QR theft/copy
 
-Copiare un QR non permette impersonation perché il QR non contiene la private key.
+Copiare un contact QR non permette impersonation perché il QR non contiene la private key.
 
-Può tuttavia dare accesso alla capability di primo rendezvous finché valida.
+Un Recovery QR è invece materiale sensibile cifrato e richiede la policy separata del Recovery Kit.
 
-Per questo le capability sensibili devono poter scadere, essere ruotate, essere one-shot o essere ignorate/revocate secondo la policy prevista.
+Le capability di contatto sensibili devono poter scadere, essere ruotate, essere one-shot o essere ignorate/revocate secondo policy.
 
-## 18. Device theft
+## 20. Device theft
 
 Se un attacker ottiene accesso alla private identity key può impersonare il device finché la chiave non viene revocata/ruotata.
 
 Mitigazioni platform:
 
 - Android Keystore;
-- Secure Enclave/Keychain su Apple quando applicabile;
+- Secure Enclave/Keychain quando applicabile;
 - protezione schermo/biometria opzionale;
 - key rotation;
-- revocation.
+- revocation;
+- Recovery Kit/RootIdentity per autorizzare un nuovo device senza clonare la vecchia DeviceKey.
 
-La recovery completa dell'identità è un sottoprogetto separato.
-
-## 19. Client/supply-chain compromise
+## 21. Client/supply-chain compromise
 
 E2EE non protegge contro un client legittimamente firmato ma malevolo che legge plaintext o private key prima/dopo la cifratura.
 
@@ -355,11 +412,12 @@ Mitigazioni richieste/progressive:
 - build riproducibili dove praticabile;
 - distribuzione verificabile;
 - aggiornamenti firmati;
+- release manifest verificabile;
 - minimizzazione delle dipendenze privilegiate.
 
-Il controllo di un relay o RPC non equivale al controllo del client; il compromesso della supply chain è invece un livello di minaccia separato e più grave.
+Il controllo di un relay o RPC non equivale al controllo del client; il compromesso della supply chain è un livello di minaccia separato e più grave.
 
-## 20. Key compromise
+## 22. Key compromise
 
 Le identity key e le session key devono essere separate.
 
@@ -367,13 +425,13 @@ Ogni sessione usa nuovo materiale effimero. Le media key devono essere separate 
 
 Una futura ratchet construction può migliorare forward secrecy/post-compromise properties; la scelta definitiva deve essere standard e sottoposta a review crittografica.
 
-## 21. Downgrade
+## 23. Downgrade
 
 Versione e suite sono parte del transcript autenticato.
 
 Un attacker non deve poter forzare una suite o versione inferiore senza causare authentication failure.
 
-## 22. Eclipse / peer isolation
+## 24. Eclipse / peer isolation
 
 Un attacker che controlla molte fonti di bootstrap/routing può tentare di isolare un device.
 
@@ -382,22 +440,23 @@ Mitigazioni:
 - fonti bootstrap multiple;
 - peer diversity;
 - relay diversity;
+- device/community relay diversity;
 - cache di peer indipendenti;
 - confronto di informazioni;
 - verifica del registro separata dal routing;
 - nessun provider unico richiesto.
 
-## 23. Network reachability failures
+## 25. Network reachability failures
 
 Freedom deve poter degradare attraverso più classi di percorso consentite dalla policy:
 
 ```text
-direct / NAT traversal / relay / shielded path -> rendezvous recovery
+direct / NAT traversal / dedicated relay / device relay / shielded path -> rendezvous recovery
 ```
 
 Nessuna tecnica garantisce comunicazione se il dispositivo non dispone di connettività sufficiente.
 
-## 24. Offline recipient e synchronous delivery
+## 26. Offline recipient e synchronous delivery
 
 Freedom è sincrono by design.
 
@@ -407,13 +466,13 @@ Questo limita storage exhaustion, retention non desiderata, proliferazione di ci
 
 Il trade-off è intenzionale: la consegna richiede presenza contemporanea degli endpoint.
 
-## 25. Live / ephemeral mode
+## 27. Live / ephemeral mode
 
 In modalità Live il client può evitare la persistenza locale della cronologia e distruggere lo stato effimero previsto quando l'utente esce dalla chat o termina la sessione.
 
 Questa proprietà riguarda il client locale e non impedisce a un peer remoto, sistema operativo compromesso, screenshot o registrazione di conservare il contenuto ricevuto.
 
-## 26. Logging
+## 28. Logging
 
 Production client e relay non devono loggare di default:
 
@@ -424,14 +483,16 @@ Production client e relay non devono loggare di default:
 - attachment key;
 - intero contact graph;
 - correlazioni DeviceID/IP non necessarie;
+- elenco dettagliato dei peer/circuiti serviti da un Relay Contributor;
 - contenuti Live destinati a non essere persistiti.
 
-## 27. Non-goals di sicurezza
+## 29. Non-goals di sicurezza
 
 Freedom non pretende di:
 
 - nascondere ogni metadato a un avversario globale capace di osservare l'intera rete;
 - rendere un direct connection invisibile ai due peer;
+- rendere un device relay invisibile ai suoi hop adiacenti;
 - garantire disponibilità in assenza completa di connettività;
 - impedire a un destinatario legittimo di copiare ciò che riceve;
 - essere impossibile da censurare in senso assoluto;
