@@ -1,97 +1,69 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1120" viewBox="0 0 1600 1120" role="img" aria-labelledby="title desc">
   <title id="title">Freedom Communication architecture</title>
-  <desc id="desc">Freedom Communication uses RootIdentity-backed device authorization, pairwise contact identity, a replaceable route and transport fabric, and an authenticated end-to-end encrypted live session between Freedom endpoints. Relays and bridges forward ciphertext and do not become trust anchors or offline mailboxes.</desc>
+  <desc id="desc">Freedom Communication uses delegated device authorization, verified revocation state, pairwise contact identity, replaceable transports and an authenticated forward-secret live E2EE session between endpoints.</desc>
   <defs>
     <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z" fill="#475569"/></marker>
-    <style>
-      .bg{fill:#fff}.title{font:700 42px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#0f172a}.subtitle{font:400 20px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#475569}.section{font:700 23px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#0f172a}.label{font:600 18px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#0f172a}.small{font:400 16px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#334155}.tiny{font:400 14px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#475569}.endpoint{fill:#eff6ff;stroke:#60a5fa;stroke-width:3}.control{fill:#f5f3ff;stroke:#8b5cf6;stroke-width:3}.pair{fill:#ecfeff;stroke:#06b6d4;stroke-width:3}.route{fill:#f0fdf4;stroke:#22c55e;stroke-width:3}.pathbox{fill:#f8fafc;stroke:#cbd5e1;stroke-width:2}.relay{fill:#fff7ed;stroke:#fb923c;stroke-width:2}.session{fill:#ecfeff;stroke:#0891b2;stroke-width:4}.payload{fill:#f8fafc;stroke:#94a3b8;stroke-width:2}.warn{fill:#fff7ed;stroke:#f59e0b;stroke-width:2}.line{stroke:#475569;stroke-width:3;fill:none;marker-end:url(#arrow)}.dash{stroke:#64748b;stroke-width:2.5;stroke-dasharray:9 8;fill:none;marker-end:url(#arrow)}
-    </style>
+    <style>.bg{fill:#fff}.title{font:700 42px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#0f172a}.subtitle{font:400 20px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#475569}.section{font:700 23px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#0f172a}.label{font:600 18px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#0f172a}.small{font:400 16px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#334155}.tiny{font:400 14px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#475569}.endpoint{fill:#eff6ff;stroke:#60a5fa;stroke-width:3}.control{fill:#f5f3ff;stroke:#8b5cf6;stroke-width:3}.pair{fill:#ecfeff;stroke:#06b6d4;stroke-width:3}.route{fill:#f0fdf4;stroke:#22c55e;stroke-width:3}.pathbox{fill:#f8fafc;stroke:#cbd5e1;stroke-width:2}.relay{fill:#fff7ed;stroke:#fb923c;stroke-width:2}.session{fill:#ecfeff;stroke:#0891b2;stroke-width:4}.payload{fill:#f8fafc;stroke:#94a3b8;stroke-width:2}.warn{fill:#fff7ed;stroke:#f59e0b;stroke-width:2}.line{stroke:#475569;stroke-width:3;fill:none;marker-end:url(#arrow)}.dash{stroke:#64748b;stroke-width:2.5;stroke-dasharray:9 8;fill:none;marker-end:url(#arrow)}</style>
   </defs>
-
   <rect class="bg" width="1600" height="1120"/>
   <text class="title" x="800" y="58" text-anchor="middle">Freedom Communication</text>
-  <text class="subtitle" x="800" y="94" text-anchor="middle">Authenticated live communication · no mailbox · replaceable paths · endpoint-held keys</text>
+  <text class="subtitle" x="800" y="94" text-anchor="middle">Expected-contact E2EE · verified revocation · no mailbox · replaceable paths</text>
 
   <rect class="control" x="430" y="135" width="740" height="145" rx="26"/>
   <text class="section" x="800" y="174" text-anchor="middle">Distributed / verifiable control plane</text>
-  <text class="small" x="800" y="209" text-anchor="middle">device authorization · key rotation/revocation · pairwise rendezvous/recovery</text>
+  <text class="small" x="800" y="209" text-anchor="middle">opaque device state · revocation/freshness proofs · pairwise rendezvous/recovery</text>
   <text class="tiny" x="800" y="242" text-anchor="middle">consulted when needed — never the message packet hot path</text>
 
   <rect class="endpoint" x="80" y="330" width="370" height="245" rx="28"/>
   <text class="section" x="265" y="370" text-anchor="middle">Alice — Freedom endpoint</text>
-  <text class="small" x="125" y="416">RootIdentity</text>
-  <text class="small" x="125" y="452">DeviceKey</text>
-  <text class="small" x="125" y="488">DeviceRecordCommitment</text>
-  <text class="small" x="125" y="524">PairwiseContactAlias_AB</text>
-  <text class="tiny" x="265" y="556" text-anchor="middle">session keys stay on endpoint</text>
+  <text class="small" x="125" y="410">RootIdentity</text>
+  <text class="small" x="125" y="444">DeviceAuthorizationDelegation</text>
+  <text class="small" x="125" y="478">DeviceCertificate · DeviceKey</text>
+  <text class="small" x="125" y="512">PairwiseContactAlias_AB</text>
+  <text class="tiny" x="265" y="548" text-anchor="middle">session keys stay on endpoint</text>
 
   <rect class="endpoint" x="1150" y="330" width="370" height="245" rx="28"/>
   <text class="section" x="1335" y="370" text-anchor="middle">Bob — Freedom endpoint</text>
-  <text class="small" x="1195" y="416">RootIdentity</text>
-  <text class="small" x="1195" y="452">DeviceKey</text>
-  <text class="small" x="1195" y="488">DeviceRecordCommitment</text>
-  <text class="small" x="1195" y="524">PairwiseContactAlias_BA</text>
-  <text class="tiny" x="1335" y="556" text-anchor="middle">session keys stay on endpoint</text>
+  <text class="small" x="1195" y="410">RootIdentity</text>
+  <text class="small" x="1195" y="444">DeviceAuthorizationDelegation</text>
+  <text class="small" x="1195" y="478">DeviceCertificate · DeviceKey</text>
+  <text class="small" x="1195" y="512">PairwiseContactAlias_BA</text>
+  <text class="tiny" x="1335" y="548" text-anchor="middle">session keys stay on endpoint</text>
 
-  <path class="dash" d="M325 330 C420 275 505 270 600 270"/>
-  <path class="dash" d="M1275 330 C1180 275 1095 270 1000 270"/>
-  <text class="tiny" x="470" y="300" text-anchor="middle">verify / recover only when needed</text>
-  <text class="tiny" x="1130" y="300" text-anchor="middle">verify / recover only when needed</text>
+  <path class="dash" d="M325 330 C420 275 505 270 600 270"/><path class="dash" d="M1275 330 C1180 275 1095 270 1000 270"/>
+  <text class="tiny" x="470" y="300" text-anchor="middle">verified revocation / recovery when needed</text><text class="tiny" x="1130" y="300" text-anchor="middle">verified revocation / recovery when needed</text>
 
   <rect class="pair" x="555" y="330" width="490" height="115" rx="24"/>
   <text class="section" x="800" y="368" text-anchor="middle">Pairwise authenticated relationship</text>
-  <text class="small" x="800" y="402" text-anchor="middle">PairSecret · PairwiseContactAlias · PairRendezvousSecret</text>
-  <text class="tiny" x="800" y="428" text-anchor="middle">different relationship → different aliases; no global network DeviceID</text>
+  <text class="small" x="800" y="402" text-anchor="middle">expected contact · PairSecret · PairwiseContactAlias · PairRendezvousSecret</text>
+  <text class="tiny" x="800" y="428" text-anchor="middle">different relationships → different aliases; no global network DeviceID</text>
 
-  <path class="line" d="M450 445 L555 397"/>
-  <path class="line" d="M1150 445 L1045 397"/>
+  <path class="line" d="M450 445 L555 397"/><path class="line" d="M1150 445 L1045 397"/>
 
   <rect class="route" x="485" y="500" width="630" height="130" rx="26"/>
   <text class="section" x="800" y="540" text-anchor="middle">Adaptive route / transport selector</text>
-  <text class="small" x="800" y="575" text-anchor="middle">choose how to reach the authenticated peer now</text>
-  <text class="tiny" x="800" y="605" text-anchor="middle">route identity is temporary and separate from contact identity</text>
+  <text class="small" x="800" y="575" text-anchor="middle">choose how to reach the already authenticated peer now</text>
+  <text class="tiny" x="800" y="605" text-anchor="middle">route identity is temporary; transport semantics are declared</text>
   <path class="line" d="M800 445 L800 500"/>
 
-  <rect class="pathbox" x="115" y="690" width="250" height="92" rx="20"/>
-  <text class="label" x="240" y="725" text-anchor="middle">Direct / NAT</text>
-  <text class="tiny" x="240" y="753" text-anchor="middle">fast when policy permits</text>
+  <rect class="pathbox" x="115" y="690" width="250" height="92" rx="20"/><text class="label" x="240" y="725" text-anchor="middle">Direct / NAT</text><text class="tiny" x="240" y="753" text-anchor="middle">fast when policy permits</text>
+  <rect class="relay" x="405" y="690" width="250" height="92" rx="20"/><text class="label" x="530" y="725" text-anchor="middle">Relay / device relay</text><text class="tiny" x="530" y="753" text-anchor="middle">ciphertext forwarding only</text>
+  <rect class="pathbox" x="695" y="690" width="250" height="92" rx="20"/><text class="label" x="820" y="725" text-anchor="middle">Bridge / transport</text><text class="tiny" x="820" y="753" text-anchor="middle">replaceable · pluggable</text>
+  <rect class="pathbox" x="985" y="690" width="250" height="92" rx="20"/><text class="label" x="1110" y="725" text-anchor="middle">Freedom Shield</text><text class="tiny" x="1110" y="753" text-anchor="middle">true circuit only after Shield gate</text>
+  <rect class="warn" x="1275" y="690" width="210" height="92" rx="20"/><text class="label" x="1380" y="725" text-anchor="middle">No mailbox</text><text class="tiny" x="1380" y="753" text-anchor="middle">offline peer → fail/discard</text>
 
-  <rect class="relay" x="405" y="690" width="250" height="92" rx="20"/>
-  <text class="label" x="530" y="725" text-anchor="middle">Relay / device relay</text>
-  <text class="tiny" x="530" y="753" text-anchor="middle">ciphertext forwarding only</text>
-
-  <rect class="pathbox" x="695" y="690" width="250" height="92" rx="20"/>
-  <text class="label" x="820" y="725" text-anchor="middle">Bridge / transport</text>
-  <text class="tiny" x="820" y="753" text-anchor="middle">replaceable · pluggable</text>
-
-  <rect class="pathbox" x="985" y="690" width="250" height="92" rx="20"/>
-  <text class="label" x="1110" y="725" text-anchor="middle">Shield / multi-hop</text>
-  <text class="tiny" x="1110" y="753" text-anchor="middle">privacy / resilience path</text>
-
-  <rect class="warn" x="1275" y="690" width="210" height="92" rx="20"/>
-  <text class="label" x="1380" y="725" text-anchor="middle">No mailbox</text>
-  <text class="tiny" x="1380" y="753" text-anchor="middle">offline peer → fail/discard</text>
-
-  <path class="line" d="M630 630 C555 660 410 666 290 690"/>
-  <path class="line" d="M720 630 C680 660 605 670 550 690"/>
-  <path class="line" d="M810 630 L820 690"/>
-  <path class="line" d="M900 630 C955 660 1040 670 1090 690"/>
+  <path class="line" d="M630 630 C555 660 410 666 290 690"/><path class="line" d="M720 630 C680 660 605 670 550 690"/><path class="line" d="M810 630 L820 690"/><path class="line" d="M900 630 C955 660 1040 670 1090 690"/>
 
   <rect class="session" x="350" y="845" width="900" height="130" rx="28"/>
   <text class="section" x="800" y="883" text-anchor="middle">Authenticated E2EE live session</text>
-  <text class="small" x="800" y="918" text-anchor="middle">relay / bridge / provider transport ciphertext — they do not authenticate the peer or hold conversation keys</text>
-  <text class="tiny" x="800" y="948" text-anchor="middle">the selected route may change without changing who Alice and Bob are to each other</text>
+  <text class="small" x="800" y="918" text-anchor="middle">fresh ephemeral exchange · forward secrecy · bounded traffic-key lifetime · authenticated rekey</text>
+  <text class="tiny" x="800" y="948" text-anchor="middle">route may change without changing peer identity or resetting the session key epoch</text>
 
-  <rect class="payload" x="255" y="1010" width="210" height="64" rx="18"/>
-  <text class="label" x="360" y="1049" text-anchor="middle">Text / ACK</text>
-  <rect class="payload" x="485" y="1010" width="210" height="64" rx="18"/>
-  <text class="label" x="590" y="1049" text-anchor="middle">Files / media</text>
-  <rect class="payload" x="715" y="1010" width="210" height="64" rx="18"/>
-  <text class="label" x="820" y="1049" text-anchor="middle">Voice</text>
-  <rect class="payload" x="945" y="1010" width="210" height="64" rx="18"/>
-  <text class="label" x="1050" y="1049" text-anchor="middle">Video</text>
-  <rect class="payload" x="1175" y="1010" width="210" height="64" rx="18"/>
-  <text class="label" x="1280" y="1049" text-anchor="middle">Session control</text>
+  <rect class="payload" x="255" y="1010" width="210" height="64" rx="18"/><text class="label" x="360" y="1049" text-anchor="middle">Text / ACK</text>
+  <rect class="payload" x="485" y="1010" width="210" height="64" rx="18"/><text class="label" x="590" y="1049" text-anchor="middle">Files / media</text>
+  <rect class="payload" x="715" y="1010" width="210" height="64" rx="18"/><text class="label" x="820" y="1049" text-anchor="middle">Voice</text>
+  <rect class="payload" x="945" y="1010" width="210" height="64" rx="18"/><text class="label" x="1050" y="1049" text-anchor="middle">Video</text>
+  <rect class="payload" x="1175" y="1010" width="210" height="64" rx="18"/><text class="label" x="1280" y="1049" text-anchor="middle">Session control</text>
 
-  <text class="tiny" x="800" y="1102" text-anchor="middle">Freedom Communication: trust the authenticated endpoints and protocol invariants, not a permanent delivery server.</text>
+  <text class="tiny" x="800" y="1102" text-anchor="middle">Freedom Communication trusts authenticated endpoints and protocol invariants, not a permanent delivery server.</text>
 </svg>
