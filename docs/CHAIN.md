@@ -3,45 +3,31 @@
 Status: **canonical design draft**
 
 Normative security rules: [`SECURITY_INVARIANTS.md`](SECURITY_INVARIANTS.md).
+Control-plane proof/governance details: [`CONTROL_PLANE_SECURITY.md`](CONTROL_PLANE_SECURITY.md).
 
 ## 1. Ruolo
 
 La prima implementazione usa **NEAR Testnet** tramite `ChainAdapter`.
 
-NEAR non è parte del wire protocol e deve poter essere sostituito senza cambiare semantica della comunicazione, RootIdentity, DeviceCertificate o session format.
+NEAR non è parte del wire protocol e deve poter essere sostituito senza cambiare semantica della comunicazione, identity model o session format.
 
 La chain è un **control-plane distribuito e verificabile**. Non trasporta messaggi, file, audio, video, Gateway payload o APK.
 
-Funzioni previste:
-
-- RootIdentity / ownership commitment;
-- device authorization e record opachi;
-- key rotation/revocation;
-- rendezvous/recovery pairwise bounded;
-- entitlement e limiti device;
-- sponsorship/anti-abuse bounded;
-- PurchaseIntent/PaymentAttestation minimali;
-- emergency/security policy;
-- release manifest/status e signer-set state.
-
 ## 2. Identity separation
 
-Freedom non richiede un `DeviceID` globale.
-
 ```text
-RootIdentity                    -> ownership / recovery
-DeviceCertificate               -> autorizzazione offline DeviceKey
-DeviceKey                       -> autenticazione operativa
-DeviceRecordCommitment          -> handle opaco control-plane
-PairwiseContactAlias            -> relazione specifica
-TransportToken                  -> route/circuito temporaneo
+RootRecoveryKey              -> cold user recovery
+DeviceAuthorizationKey       -> delegated device authorization
+DeviceCertificate            -> offline authorization proof
+DeviceKey                    -> operational device authentication
+DeviceRecordCommitment       -> opaque control-plane handle
+PairwiseContactAlias         -> relationship-specific identity
+TransportToken               -> temporary route/circuit identity
 ```
 
-Il control-plane non deve trasformare un commitment tecnico in username/contact/network endpoint.
+Nessun global `DeviceID` è richiesto dal network layer.
 
-## 3. Commitment domain-separated
-
-Il control-plane **MUST NOT** usare un singolo commitment account-global per ogni funzione quando evitabile.
+## 3. Commitment separation
 
 ```text
 DeviceAuthorizationCommitment
@@ -50,115 +36,147 @@ PaymentBindingCommitment
 SponsorshipCommitment
 ```
 
-I commitment devono essere derivati con domain separation esplicita.
+sono domain-separated. Rendezvous/recovery deriva da `PairRendezvousSecret`.
 
-Rendezvous e RecoveryBeacon derivano da `PairRendezvousSecret`, non da commitment account-global.
+Domain separation riduce riuso/linkage diretto ma non equivale automaticamente a unlinkability transazionale.
 
 ## 4. Installazione locale
 
 ```text
 install
- -> generate RootIdentity locally
+ -> generate RootRecoveryKey / RootIdentity locally
+ -> generate DeviceAuthorizationKey delegation as needed
  -> generate DeviceKey locally
  -> generate DeviceRecordCommitment locally
  -> generate Recovery Kit
  -> 0 mandatory chain writes
 ```
 
-La prima registrazione avviene quando serve stato verificabile del control-plane e può essere sponsorizzata secondo policy anti-abuso.
-
 ## 5. ChainAdapter
 
 ```text
 interface ChainAdapter {
-    registerRoot(...)
+    networkAnchor(...)
+    verifyCheckpoint(...)
+    verifyStateProof(...)
+    verifyNonInclusionProof(...)
+    verifyFinalOutcome(...)
+
+    registerOwnership(...)
     registerDeviceRecord(...)
-    resolveDeviceRecord(...)
     rotateDeviceKey(...)
     revokeDeviceRecord(...)
+    resolveDeviceRecordProof(...)
     activateDeviceSlot(...)
     revokeDeviceSlot(...)
-    resolveEntitlement(...)
 
-    readRendezvous(...)
+    resolveEntitlementProof(...)
+    readRendezvousProof(...)
     writeRendezvous(...)
-    readRecoveryBeacon(...)
+    pruneExpired(...)
+    readRecoveryBeaconProof(...)
     writeRecoveryBeacon(...)
 
-    readPurchaseIntent(...)
-    readPaymentAttestation(...)
+    readPurchaseIntentProof(...)
+    readPaymentAttestationProof(...)
+    redeemEntitlementVoucher(...)
 
-    readEmergencyBulletins(...)
-    readSecurityPolicy(...)
-    readReleaseManifest(...)
-    readReleaseStatus(...)
-    readSignerSet(...)
-
-    verifyState(...)
-    verifyFinalOutcome(...)
+    readEmergencyBulletinsProof(...)
+    readSecurityPolicyProof(...)
+    readReleaseManifestProof(...)
+    readReleaseStatusProof(...)
+    readSignerSetProof(...)
+    readContractLineageProof(...)
 }
 ```
 
 La logica core non importa SDK NEAR direttamente.
 
-## 6. Verified finality — tx hash != success
+## 6. RPC non è trust anchor
 
-Un transaction hash dimostra soltanto che una richiesta è stata sottoposta.
+Un RPC può mentire, omettere o servire stato stale.
 
-Per ogni write security-sensitive:
+Stato security-sensitive è accettato solo tramite:
+
+```text
+NetworkAnchor
+ -> VerifiedControlPlaneCheckpoint
+ -> state root
+ -> inclusion/non-inclusion proof
+ -> canonical object
+```
+
+`proof/light-client verification` non è più una ottimizzazione opzionale per revocation, signer set, policy, release status, device authorization ed entitlement: è il target normativo production.
+
+Implementazioni testnet che non verificano ancora prove end-to-end devono essere marcate come tali e non sostenere il claim production.
+
+## 7. Verified finality — tx hash != success
 
 ```text
 submit signed operation
  -> wait acceptable finality
- -> inspect execution outcome
+ -> verify execution outcome
  -> reject Failure / partial failure
- -> read resulting state
- -> verify exact expected transition
- -> only then persist/display local success
+ -> verify resulting state proof
+ -> verify expected transition
+ -> persist/display success
 ```
 
-Obbligatorio almeno per:
+Un transaction hash dimostra submission, non successo.
 
-- root/device activation;
-- rotation/revocation;
-- device-slot changes;
-- entitlement state;
-- sponsorship consumption;
-- payment effects;
-- SecurityPolicy;
-- release manifest/status/signer-set update;
-- rendezvous/recovery write quando influenza la state machine.
+## 8. Verified time / anti-rollback
 
-Il client **MUST NOT** mostrare `ACTIVE`, `REVOKED`, `PAID`, `VERIFIED` o equivalente basandosi solo sull'hash della transazione.
-
-## 7. Device registry
+Il client conserva:
 
 ```text
-device_records[DeviceRecordCommitment] = DeviceRecord
+highest_verified_height
+highest_signer_set_epoch
+highest_policy_epoch
+highest_seen_security_state
+```
 
-DeviceRecord {
-    version
-    device_public_key
-    key_epoch
-    status
-    protocol_version
-    authorization_proof
+Expiry/freshness usa `VerifiedTimeAnchor`, height/epoch e monotonic local time; wall clock locale non può riattivare stato vecchio.
+
+Una risposta valida ma più vecchia del highest-seen state viene rifiutata come rollback.
+
+## 9. Device authorization privacy
+
+Pubblicare una RootIdentity/root signature accanto a una DeviceKey renderebbe leggibile `RootIdentity -> device`.
+
+Production target:
+
+```text
+DeviceAuthorizationProof
+public outputs:
+  device_record_commitment
+  device_public_key
+  key_epoch
+  slot_nullifier
+  authorization_policy_epoch
+```
+
+Il proof dimostra ownership/authorization + slot valido senza rivelare la RootIdentity pubblica. La costruzione concreta deve usare anonymous credential/ZK membership/authorization proof reviewata.
+
+Se Testnet usa una prova linkabile, la documentazione/UI tecnica deve dichiararlo esplicitamente.
+
+## 10. DeviceCertificate
+
+```text
+DeviceAuthorizationDelegation {
+    root_epoch
+    authorization_public_key
+    authorization_epoch
+    capabilities
+    valid_from
+    expires_at
+    root_recovery_signature
 }
-```
 
-Il commitment è opaco e non viene usato come identificatore di rete.
-
-## 8. DeviceCertificate e handshake offline
-
-Il control-plane mantiene stato di autorizzazione/revoca, ma il peer non deve interrogare obbligatoriamente la chain durante ogni handshake.
-
-La RootIdentity autorizza la DeviceKey tramite:
-
-```text
 DeviceCertificate {
     version
     network_id
     root_identity_commitment_or_proof
+    authorization_epoch
     device_public_key
     key_epoch
     protocol_version
@@ -166,141 +184,106 @@ DeviceCertificate {
     issued_at
     expires_at
     certificate_id
-    root_authorization_signature
+    authorization_signature
 }
 ```
 
-Il peer verifica il certificato offline e usa chain/cache verificata per revocation/freshness secondo policy.
+Il peer verifica offline delegation/certificate/DeviceKey possession e usa proof/cache control-plane per revocation/freshness.
 
-## 9. Sponsored registration / anti-Sybil
+## 11. Rotation / revocation / UserRootRotation
 
-```text
-new RootIdentity
- -> valid signature
- -> adaptive anti-abuse proof
- -> sponsorship commitment unused
- -> relayer rate limit
- -> global sponsorship budget
- -> verified finalized registration
-```
+Device rotation incrementa `key_epoch`.
 
-Policy:
-
-- install locale gratuita;
-- sponsorship bounded;
-- adaptive PoW o primitive equivalente;
-- più fee relayer;
-- nessun SMS/PayPal/telefono obbligatorio per identità Free.
-
-Un attacco alle nuove registrazioni non interrompe gli utenti già registrati.
-
-## 10. Rotation e revocation
+Compromissione RootIdentity richiede una transizione distinta:
 
 ```text
-DeviceRecordCommitment X
-  epoch 1 -> PK1
-  epoch 2 -> PK2
-```
-
-Una rotazione valida incrementa `key_epoch`; una revoca rende il record non valido per nuovi handshake dopo freshness verification.
-
-Dopo rotation/revocation il client accetta il nuovo stato solo dopo finalità + state verification.
-
-## 11. Entitlement e limiti device
-
-```text
-FreedomEntitlement {
-    entitlement_commitment
-    tier
-    entitlement_epoch
-    max_devices
-    base_contact_slots
-    expires_at?
-    status
+UserRootRotation {
+    old_root_epoch
+    new_root_public_key
+    new_root_commitment
+    continuity_proof
+    recovery_policy_proof
+    issued_at
 }
 ```
 
-`EntitlementCommitment` è domain-separated dalla identity/network state.
+Perdita di device e root compromise non sono lo stesso evento.
 
-Il control-plane fa rispettare:
+## 12. Multi-device enforcement
 
 ```text
 active_devices <= max_devices
 ```
 
-senza elenco pubblico leggibile `RootIdentity -> devices[]`.
+Production target usa `DeviceSlotProof`/nullifier privacy-preserving. Non pubblicare una device list leggibile.
 
-## 12. Contatti e privacy
+## 13. Contact slots
 
-La rubrica resta locale/cifrata. Il piano Free può limitare slot attivi, ma il social graph non viene pubblicato.
+`base_contact_slots` è **product policy del client ufficiale**, non requisito di interoperabilità/security del protocollo V1.
 
-Se serve enforcement resistente a client modificati, usare commitment/slot/nullifier opachi e bounded. Non pubblicare identità dei contatti.
+Il control-plane non pubblica social graph per far rispettare 10 contatti. Un futuro enforcement anti-tampering richiede una costruzione privacy-preserving separata prima di diventare normativo.
 
-## 13. Rendezvous pairwise
+## 14. Rendezvous pairwise
 
 ```text
 known route -> try
-NAT candidate -> try
-relay/shielded candidate -> try
-all fail -> pairwise rendezvous/recovery
+relay/bridge/Shield -> try
+pairwise rendezvous -> fallback/recovery
 ```
 
-Il primo contatto usa una `contact_capability`; dopo handshake si deriva `PairRendezvousSecret`.
+`RendezvousRecord` e `RecoveryBeacon` sono pairwise, cifrati, opachi, size-bounded e read-before-write.
+
+## 15. TTL non basta: active storage bounded
+
+Ogni record temporaneo deve avere reclaim concreto:
+
+- overwrite dello stesso slot;
+- ring/bucket bounded;
+- `prune_expired` permissionless;
+- lease/storage rent;
+- refund/bounty bounded.
+
+È vietata una mappa che aggiunge una nuova chiave per ogni epoch/rinnovo senza cancellazione.
+
+Acceptance invariant:
 
 ```text
-RendezvousRecord {
-    version
-    expires_at
-    ciphertext
-}
+repeated create/expire/prune
+ -> active state converges to configured upper bound
 ```
 
-Il record pubblico non espone RootIdentity, DeviceRecordCommitment, IP o social edge leggibili.
+La storia archiviale della chain resta osservabile; il claim riguarda lo stato attivo.
 
-## 14. Read-before-write
+## 16. Sponsorship
 
 ```text
-remote = READ(remote_slot)
-if remote usable -> CONNECT, DO_NOT_WRITE
-
-local = READ(local_slot)
-if local usable -> WAIT/POLL
-else -> WRITE(new independent bounded record)
+new ownership
+ -> valid proof
+ -> SponsorshipCommitment unused
+ -> adaptive anti-abuse proof
+ -> relayer/budget bounds
+ -> submit
+ -> finalized verified state
 ```
 
-TTL/backoff/size bounds riducono write e storage.
+Nessun SMS/PayPal/telefono obbligatorio per identità Free.
 
-## 15. RecoveryBeacon
+## 17. Payments
 
-RecoveryBeacon è pairwise, cifrato, opaco e TTL breve.
+`PaymentAttestation` non deve collegare direttamente payment provider e `EntitlementCommitment` quando evitabile.
 
-Serve a segnalare attività recente e route generation durante recovery; non è presence globale.
-
-## 16. Payment state
+Flow privacy-preferred:
 
 ```text
-PurchaseIntent {
-    purchase_ref_hash
-    payment_binding_commitment
-    product
-    amount
-    provider
-    expires_at
-}
-
-PaymentAttestation {
-    provider_transaction_commitment
-    purchase_ref_hash
-    amount
-    status
-    worker_id
-    signature
-}
+verified payment
+ -> one-time EntitlementVoucher / blind credential
+ -> redeem with nullifier
+ -> verified entitlement transition
 ```
 
-`PaymentBindingCommitment` è domain-separated. Merchant/provider reference non contiene RootIdentity, DeviceRecordCommitment o pairwise alias in plaintext.
+Timing correlation può restare possibile.
 
-## 17. Release / policy state
+## 18. Release / policy / signer state
 
 Il control-plane contiene piccoli oggetti verificabili:
 
@@ -311,96 +294,117 @@ FreedomRelease
 FreedomReleaseLocator
 ReleaseStatus
 SignerSet
+SignerSetTransition
+ContractUpgradeManifest
+ChainMigrationManifest
 ```
 
-L'APK resta off-chain.
+APK resta off-chain.
 
-Lo schema canonico `FreedomRelease` è definito in `SECURITY_INVARIANTS.md`, `PROTOCOL.md` e `EMERGENCY_UPDATES.md`; non devono esistere varianti incompatibili.
-
-## 18. Governance production
-
-“Nessun super-admin” è una proprietà crittografica.
-
-Production **MUST** usare threshold/multi-key per:
+## 19. Signer-set transitions
 
 ```text
-ReleaseAuthorization   >= 3-of-5
-ReleaseRevocation      >= 3-of-5
-CriticalSecurityPolicy >= 3-of-5
-RootRotation           >= 3-of-5 + recovery procedure
+next_epoch = previous_epoch + 1
+previous threshold set authorizes
+next threshold set accepts
+activation height monotonic
+highest-seen epoch persisted
 ```
 
-Emergency signer separati possono avere scope ridotto e TTL breve, ma non autorizzano da soli nuove release arbitrarie.
+Un vecchio signer set non può riattivarsi perché ancora crittograficamente valido.
 
-Payment attestor, entitlement authority, release signer e emergency signer sono ruoli separati.
+Quorum-loss recovery usa un recovery set/manifest pinned in anticipo, con threshold/timelock più forte.
 
-## 19. Metadata minimization
+## 20. Contract governance
+
+Production sceglie:
+
+```text
+immutable security core
+oppure
+threshold-governed upgrade path
+```
+
+Se upgradeabile:
+
+```text
+ContractUpgradeManifest {
+    governance_epoch
+    current_code_hash
+    new_code_hash
+    migration_hash
+    activation_height
+    rollback_floor
+    signatures[]
+}
+```
+
+Requisiti: `>= 3-of-5`, timelock non-emergency, code hash verificabile, accepted contract lineage client-side, no silent contract-address swap, rollback protection.
+
+Una Full Access key singola capace di sostituire il contratto production viola “nessun super-admin”.
+
+## 21. ChainAdapter migration
+
+```text
+ChainMigrationManifest {
+    from_adapter
+    to_adapter
+    from_final_checkpoint
+    imported_state_commitment
+    new_network_anchor
+    activation_epoch
+    governance_signatures[]
+}
+```
+
+Migrare da NEAR non significa accettare una nuova root of trust non autenticata.
+
+## 22. Metadata minimization
 
 On-chain non devono comparire in chiaro, salvo necessità non evitabile:
 
-- IP/porta associati a RootIdentity/device commitment;
-- mapping RootIdentity -> device list;
-- lista contatti/social graph;
-- alias pairwise globalmente correlabili;
+- IP/porta associati a identity/device;
+- RootIdentity -> device list;
+- social graph;
+- pairwise alias globalmente correlabili;
 - posizione precisa;
-- conversation/message ID;
-- presence globale continua;
+- conversation/message IDs;
+- continuous presence;
 - email/telefono;
-- dati payment identificativi;
-- payload applicativo;
+- plaintext payment identity;
+- application payload;
 - APK binary.
 
-Un commitment opaco non elimina correlazione temporale: activation/revocation/payment/rendezvous vanno analizzati anche come pattern osservabili.
+Timing/transaction correlation resta un rischio da misurare.
 
-## 20. RPC strategy
-
-`ChainAdapter` supporta provider multipli, fallback, timeout, finality awareness e proof/light-client verification progressiva quando appropriata.
-
-Nessun RPC è trust anchor.
-
-Una singola RPC indisponibile non deve impedire la verifica offline di un `DeviceCertificate` valido quando la revocation freshness policy consente l'uso della cache.
-
-## 21. Fee/gas/storage model
-
-```text
-message            -> 0 chain writes
-media/call frames  -> 0 chain writes
-active session     -> 0 heartbeat writes
-```
-
-Scritture possibili: eventi rari e bounded di identity/device, rendezvous/recovery, entitlement/payment, policy/release e sponsorship.
-
-Ogni record temporaneo ha size bound + TTL/epoch + rate limit + overwrite/reclaim strategy quando possibile.
-
-## 22. Contract scope vietato
+## 23. Contract scope vietato
 
 Il contratto **MUST NOT** implementare:
 
 - chat/inbox/mailbox;
 - message/media storage;
 - social graph pubblico;
-- presence continua;
+- continuous presence;
 - relay payload;
 - APK storage;
 - generic Internet proxy state;
-- una master key amministrativa/decryption.
+- master decryption/admin key.
 
-## 23. Testnet acceptance criteria
+## 24. Mainnet acceptance criteria
 
 Prima della mainnet:
 
-- RootIdentity / DeviceKey / DeviceCertificate / DeviceRecordCommitment separati;
-- nessun global DeviceID nel wire protocol;
-- install senza write automatica;
-- sponsored registration bounded;
-- rotation/revocation e freshness testate;
-- handshake possibile con certificato offline + cache verificata;
-- enforcement `max_devices` privacy-preserving;
-- rendezvous read-before-write;
-- RecoveryBeacon bounded;
-- nessuna mailbox/message storage;
-- transaction Failure rilevata correttamente;
-- state mismatch rilevato dopo finality;
-- release/policy threshold governance testata;
-- signer-set rotation/recovery testata;
-- storage exhaustion e write-spam testati.
+- checkpoint/finality/state-proof verifier testato contro RPC honest/stale/malicious/forked;
+- non-inclusion proof testata;
+- highest-seen rollback rejection testata;
+- device authorization privacy proof implementata o claim privacy ridimensionato;
+- multi-device slot nullifier testato;
+- active storage convergente a bound dopo stress;
+- `prune_expired`/refund/bounty testati;
+- DeviceAuthorizationDelegation + DeviceCertificate testati;
+- `UserRootRotation` testata;
+- contract upgrade threshold/timelock o immutability verificata;
+- signer-set transition/quorum-loss recovery testati;
+- ChainAdapter migration anti-rollback testata;
+- payment voucher/nullifier testato se abilitato;
+- nessuna mailbox/message storage.
