@@ -11,6 +11,7 @@ Questa specifica descrive gli oggetti logici e i flussi minimi del protocollo. G
 - le informazioni di routing non autenticano l'identità;
 - la blockchain/control-plane non trasporta contenuti applicativi o APK;
 - i relay inoltrano, non archiviano;
+- un relay può essere dedicated, community, private, managed o un normale dispositivo Freedom opt-in;
 - i contenuti applicativi vengono inviati soltanto dentro una sessione autenticata attiva;
 - nessuna consegna offline automatica nel protocollo base;
 - read-before-write è obbligatorio per rendezvous/recovery;
@@ -206,14 +207,30 @@ Candidate iniziali: `LOCAL`, `OBSERVED`, `DIRECT`, `RELAY`; future classi posson
 ```text
 RelayCandidate {
     relay_id
+    relay_class
     endpoint
     transport
     capability_token?
+    capacity_hint?
     expires_at
 }
 ```
 
-Un relay candidate non implica fiducia nel relay.
+Classi iniziali:
+
+```text
+DEDICATED
+COMMUNITY
+DEVICE
+PRIVATE
+MANAGED
+```
+
+La classe descrive la natura operativa del relay, **non il suo livello di fiducia**.
+
+Un `DEVICE` relay può essere un telefono/tablet/desktop Freedom opt-in. Non deve necessariamente avere un IP pubblico: può essere raggiungibile tramite NAT mapping, transport compatibile o connessioni outbound/circuiti già stabiliti.
+
+Dettagli: [`RELAYS.md`](RELAYS.md).
 
 ## 14. Route update in-session
 
@@ -247,6 +264,8 @@ SessionContext {
 ```
 
 Il transcript lega almeno network/protocol version, entrambi i DeviceID/epoch, ephemeral keys, nonce, suite e session_id. Entrambi verificano la current public key tramite `ChainAdapter`/cache verificata secondo freshness policy.
+
+Il relay non partecipa come authority all'autenticazione endpoint-to-endpoint.
 
 ## 16. Encrypted frame / replay
 
@@ -306,7 +325,7 @@ Nessun deposito su blockchain, relay persistente o mailbox locale futura.
 
 In Live mode il client può evitare cronologia persistente, backup/preview plaintext e distruggere session state/key al termine. Non può impedire al peer remoto o a un OS compromesso di copiare ciò che riceve.
 
-## 21. Relay packet
+## 21. Relay packet e circuiti
 
 ```text
 RelayPacket {
@@ -321,7 +340,64 @@ RelayPacket {
 
 Buffer/size/TTL/hop/quota bounded. Nessuna `StoreRequest` nel protocollo base.
 
-## 22. Attachment
+Il relay usa capability/token di circuito e non deve richiedere un mapping pubblico `DeviceID -> destinatario`.
+
+Un device che funge da relay mantiene separati:
+
+```text
+ENDPOINT_CONTEXT
+RELAY_CONTEXT
+```
+
+Le chiavi/sessioni dell'utente locale non vengono usate per decifrare traffico relayato.
+
+## 22. Relay contribution proof
+
+Il client può ottenere un benefit `Relay Contributor` solo se il device soddisfa una policy minima di contributo.
+
+Oggetto concettuale:
+
+```text
+RelayContributionProof {
+    version
+    relay_commitment
+    contribution_epoch
+    availability_commitment?
+    forwarding_commitment?
+    policy_version
+    expires_at
+    attestations[]
+}
+```
+
+Requisiti:
+
+- il semplice toggle `relay_enabled` non è sufficiente;
+- la prova non deve contenere plaintext o lista dei peer serviti;
+- evitare reward proporzionali senza limite al volume, per non incentivare traffico artificiale;
+- supportare aggregazione/commitment opachi;
+- TTL/epoch bounded, così il benefit scade se il contributo termina.
+
+Il proof può autorizzare:
+
+```text
+EntitlementBenefit {
+    benefit_type = RELAY_CONTRIBUTOR_CONTACTS
+    value = 10
+    expires_at
+    proof_commitment
+}
+```
+
+La policy iniziale Free diventa:
+
+```text
+base contacts               10
+Relay Contributor bonus    +10
+maximum while qualified     20
+```
+
+## 23. Attachment
 
 ```text
 AttachmentManifest {
@@ -336,7 +412,7 @@ AttachmentManifest {
 
 Trasferimento solo con sessione/route attiva; niente storage persistente automatico.
 
-## 23. Call signaling
+## 24. Call signaling
 
 ```text
 CallInvite
@@ -347,11 +423,11 @@ CallEnd
 
 Il signaling viaggia E2EE; media keys separate dalle messaging keys.
 
-## 24. Presence
+## 25. Presence
 
 Presence è off-chain e opportunistica. Non genera heartbeat blockchain continui.
 
-## 25. Entitlement
+## 26. Entitlement
 
 ```text
 FreedomEntitlement {
@@ -360,6 +436,7 @@ FreedomEntitlement {
     tier
     entitlement_epoch
     max_devices
+    base_contact_slots
     issued_at
     expires_at?
     policy_version
@@ -369,7 +446,9 @@ FreedomEntitlement {
 
 Policy iniziale Free: 1 active device, 10 active contacts. La contact list resta locale/cifrata; eventuali contact-slot commitment non devono rivelare il social graph.
 
-## 26. PurchaseIntent / PaymentAttestation
+Benefit temporanei, incluso `RELAY_CONTRIBUTOR_CONTACTS`, modificano la capacità effettiva senza cambiare il tier principale.
+
+## 27. PurchaseIntent / PaymentAttestation
 
 ```text
 PurchaseIntent {
@@ -399,7 +478,7 @@ Il callback di pagamento nel client non è prova autoritativa. PayPal può esser
 
 Dettagli: [`PAYMENTS.md`](PAYMENTS.md).
 
-## 27. EmergencyBulletin / SecurityPolicy / FreedomRelease
+## 28. EmergencyBulletin / SecurityPolicy / FreedomRelease
 
 ```text
 EmergencyBulletin {
@@ -439,7 +518,7 @@ L'APK resta off-chain. La posizione utente per bulletin geografici resta locale.
 
 Dettagli: [`EMERGENCY_UPDATES.md`](EMERGENCY_UPDATES.md).
 
-## 28. Sponsored registration proof
+## 29. Sponsored registration proof
 
 La registrazione iniziale può richiedere una prova anti-abuso/adaptive PoW firmata/contestualizzata e validata dal relayer/contratto secondo policy.
 
@@ -447,7 +526,7 @@ La sponsorship deve essere bounded per RootIdentity, relayer e budget globale.
 
 Dettagli: [`REGISTRATION_ECONOMICS.md`](REGISTRATION_ECONOMICS.md).
 
-## 29. Error classes
+## 30. Error classes
 
 ```text
 MALFORMED
@@ -463,16 +542,20 @@ RELAY_REFUSED
 PEER_OFFLINE
 SESSION_REKEY_REQUIRED
 DEVICE_LIMIT_REACHED
+CONTACT_LIMIT_REACHED
 ENTITLEMENT_INVALID
+RELAY_CONTRIBUTION_EXPIRED
 PAYMENT_PENDING
 SECURITY_UPDATE_REQUIRED
 ```
 
-## 30. Resource limits
+## 31. Resource limits
 
 Ogni implementazione deve limitare frame/handshake size, route candidates, relay buffer, connessioni, write frequency, rendezvous retry/backoff, recovery writes, sponsorship rate e temporary state.
 
-## 31. Chain abstraction
+Per `DEVICE_RELAY` sono obbligatori limiti di banda, CPU, RAM, batteria/temperatura e circuiti simultanei secondo policy locale.
+
+## 32. Chain abstraction
 
 ```text
 ChainAdapter {
@@ -495,9 +578,11 @@ ChainAdapter {
 }
 ```
 
+L'attestazione Relay Contributor può vivere nel control-plane o essere verificata tramite un adapter/benefit layer separato; non deve essere inserita nel packet hot path.
+
 La prima implementazione usa NEAR Testnet.
 
-## 32. Milestone eseguibili
+## 33. Milestone eseguibili
 
 ### M1 — identity/recovery
 
@@ -523,11 +608,13 @@ La prima implementazione usa NEAR Testnet.
 - no offline queue;
 - fresh session on reconnect.
 
-### M4 — network paths
+### M4 — network paths / relays
 
 - NAT traversal;
 - route update;
-- relay forward-only;
+- dedicated/community relay forward-only;
+- `DEVICE_RELAY` opt-in;
+- RelayCandidate discovery;
 - Adaptive Defense.
 
 ### M5 — account/commercial control plane
@@ -535,6 +622,8 @@ La prima implementazione usa NEAR Testnet.
 - entitlement;
 - max_devices;
 - Free contact policy;
+- Relay Contributor +10 contact benefit;
+- contribution proof/expiry;
 - PayPal/crypto payment adapters;
 - payment attestation idempotency.
 
