@@ -5,12 +5,14 @@ Status: **canonical design draft**.
 Normative baseline: [`SECURITY_INVARIANTS.md`](SECURITY_INVARIANTS.md).
 Control-plane: [`CONTROL_PLANE_SECURITY.md`](CONTROL_PLANE_SECURITY.md).
 Revocation: [`REVOCATION.md`](REVOCATION.md).
+Pairwise recovery: [`PAIRWISE_RECOVERY.md`](PAIRWISE_RECOVERY.md).
 Shield: [`SHIELD.md`](SHIELD.md).
 Schema: [`../spec/freedom.cddl`](../spec/freedom.cddl).
+Crypto domains: [`../spec/crypto-domains.txt`](../spec/crypto-domains.txt).
 
 ## 1. Assunzioni avversarie
 
-Freedom assume non fidati rete/path, relay/bridge/egress, RPC/provider, peer, source di download, wall clock locale, self-declared relay metadata e singoli signer/payment worker.
+Freedom assume non fidati rete/path, relay/bridge/egress, RPC/provider, peer, source di download/backup, wall clock locale, self-declared relay metadata e singoli signer/payment worker.
 
 Un avversario può:
 
@@ -21,7 +23,8 @@ Un avversario può:
 - tentare rollback/downgrade;
 - front-run/overwrite public control-plane slots;
 - sostituire Contact QR prima del bootstrap;
-- rubare device/root secrets;
+- rubare device/root/recovery backup material;
+- servire un vecchio ma valido pairwise backup;
 - saturare storage/resources;
 - distribuire artifact falsi;
 - compromettere un signer o, nel worst case, colludere con un quorum.
@@ -84,10 +87,12 @@ Una sola RootRecoveryKey rubata rende proprietario e attacker indistinguibili se
 Mitigazione per claim `ROOT_COMPROMISE` recovery:
 
 - `UserRecoveryPolicy` precommitted;
-- independent recovery keys/shares;
-- threshold;
+- distinct independent recovery keys/shares;
+- valid threshold bounded by the distinct key set;
 - recovery delay;
 - compromise-mode `UserRootRotation`.
+
+Un profilo production che dichiara independent compromise recovery dovrebbe evitare che un unico device/account/secret-manager custodisca da solo il quorum.
 
 Senza independent precommitment Freedom non promette compromise recovery.
 
@@ -106,17 +111,29 @@ PairRendezvousSecret
 
 Osservare public key/slot non concede private write authority.
 
-## 10. Pairwise backup rollback
+## 10. Pairwise backup rollback / freeze
 
-Un old `PairwiseRecoveryBundle` rubato/restored può contenere state superato.
+Rischio: dopo perdita totale dei device, un mirror/storage non fidato serve un **vecchio ma integro** `PairwiseRecoveryBundle` e il nuovo device non possiede highest-seen state locale per sapere che esisteva un backup più recente.
 
-Mitigazioni:
+Bundle integrity da sola non risolve questo problema.
 
-- state/recovery-key epochs;
-- highest-known rollback checks quando disponibili;
-- re-authentication del peer;
-- rotate/re-derive future rendezvous/session state dopo restore;
-- untrusted backup source.
+Mitigazione per profilo rollback-detectable:
+
+```text
+verified PairwiseRecoveryAnchor
+ -> latest backup generation
+ -> latest bundle hash
+ -> latest state commitment
+ -> recovery key epoch
+```
+
+Il candidate bundle deve corrispondere esattamente al latest verified anchor.
+
+L'anchor non pubblica social graph/plaintext ma rende osservabili update temporali associati alla opaque recovery lineage: questo trade-off privacy è esplicito.
+
+Se non sopravvive alcun device e non esiste independent anchor, Freedom può verificare l'integrità del bundle ma **non** può provare che sia il più recente; UI/diagnostica non deve mostrare `LATEST_VERIFIED_BACKUP`.
+
+Dopo restore: peer re-authentication + future rendezvous/recovery state rotation impediscono che uno storico backup resti future authority indefinita.
 
 ## 11. First-contact substitution
 
@@ -132,11 +149,16 @@ Pairwise alias riduce infrastructure correlation, non garantisce unlinkability c
 
 Transcript lega entrambi gli offer set; selection strongest-allowed/deterministic. Offer stripping sotto policy fallisce.
 
-## 14. Signature cross-domain substitution
+## 14. Cryptographic cross-domain substitution
 
-Rischio: una firma valida per un oggetto/rete viene riusata come un altro oggetto/rete.
+Rischio: una firma, MAC, ciphertext, protocol hash o KDF result valido per un oggetto/rete/purpose viene riusato in un contesto differente.
 
-Difesa: deterministic canonical encoding + signing domain che lega network, object type e schema version.
+Difesa:
+
+- deterministic canonical encoding;
+- fixed signature/MAC/AEAD/HASH/KDF purposes in `spec/crypto-domains.txt`;
+- network/object/schema/session context binding where applicable;
+- cross-purpose negative vectors.
 
 Child certificate scope/expiry non può superare la delegation parent.
 
@@ -230,6 +252,7 @@ Claim vietati senza evidenza:
 - colluding-contact unlinkability;
 - Shield anonymity against global observer;
 - root-compromise recovery senza independent recovery policy;
+- latest pairwise-backup freshness senza surviving-device state o independent anchor;
 - “nessun singolo attore” se un singolo operator controlla il governance quorum.
 
 Claim corretto:
