@@ -2,143 +2,126 @@
 
 Status: **canonical / normative design rules**.
 
-Questo documento definisce proprietà che una implementazione Freedom compatibile **MUST** rispettare. In caso di conflitto, queste invarianti prevalgono.
+Queste proprietà sono MUST/MUST NOT per una implementazione Freedom compatibile.
 
-Schema canonico: [`../spec/freedom.cddl`](../spec/freedom.cddl).
-Schema/signing rules: [`../spec/README.md`](../spec/README.md).
+Canonical schema: [`../spec/freedom.cddl`](../spec/freedom.cddl).
+Canonical encoding/signing: [`../spec/README.md`](../spec/README.md).
 Control-plane: [`CONTROL_PLANE_SECURITY.md`](CONTROL_PLANE_SECURITY.md).
 Revocation/freshness: [`REVOCATION.md`](REVOCATION.md).
 
-## 1. Trust model
-
-Freedom separa rigidamente:
+## 1. Trust separation
 
 ```text
-RootRecoveryKey                 -> cold recovery / user-root continuity
-UserRecoveryPolicy              -> independent precommitted compromise recovery
-DeviceAuthorizationKey          -> delegated device authorization epoch
-DeviceCertificate               -> offline authorization of DeviceKey
-DeviceKey                       -> operational device authentication
-DeviceRecordCommitment          -> opaque control-plane handle
-DeviceControlKey                -> scoped rotation/revocation of one opaque record
-PairwiseContactAlias            -> relationship-specific identity
-PairRendezvousSecret            -> pairwise rendezvous/recovery authority
-TransportToken                  -> temporary path/circuit identity
-Session keys                    -> ephemeral E2EE traffic
-EntitlementCommitment           -> product/service capacity
-PaymentBindingCommitment        -> separate economic binding
-SponsorshipCommitment           -> separate anti-abuse state
-VerifiedControlPlaneCheckpoint  -> cryptographically verified control-plane state root
+RootRecoveryKey                 -> cold user recovery
+UserRecoveryPolicy              -> independent compromise-recovery authority
+RootIdentity                    -> ownership/root epoch
+RootControlCommitment           -> opaque recovery-lineage control-plane handle
+DeviceAuthorizationKey          -> delegated device authorization
+DeviceCertificate               -> offline DeviceKey authorization
+DeviceKey                       -> operational endpoint authentication
+DeviceRecordCommitment          -> opaque device-state handle
+DeviceControlKey                -> scoped device-record rotation/revocation
+PairwiseContactAlias            -> relationship identity
+PairRendezvousSecret            -> pairwise rendezvous authority
+TransportToken                  -> temporary route/circuit identity
+Session keys                    -> ephemeral E2EE
+VerifiedControlPlaneCheckpoint  -> verified control-plane state root
 ```
 
 Nessun elemento viene automaticamente riutilizzato come un altro.
 
 ## 2. Primitive vietate
 
-Freedom Protocol **MUST NOT** introdurre:
+Freedom Protocol MUST NOT introdurre:
 
 - global user/device identifier richiesto dal network layer;
-- RootIdentity o DeviceRecordCommitment come routing/contact ID;
+- RootIdentity/RootControlCommitment/DeviceRecordCommitment come routing IDs;
 - messages/files/audio/video on-chain;
 - mailbox on-chain;
 - persistent relay inbox;
 - automatic offline delivery queue/store-and-forward nel protocollo base;
 - public readable social graph;
-- public readable `RootIdentity -> devices[]` mapping come requisito V1;
+- public RootIdentity→device mapping come requirement V1;
 - mandatory central delivery server;
 - mandatory single RPC/provider/relay/egress;
 - master decryption key;
-- single production credential con potere amministrativo totale;
-- single Full Access key capace di sostituire silenziosamente il security core production;
+- single production credential con unilateral security-core authority;
+- single Full Access key che può sostituire silenziosamente il production security core;
 - `transaction hash == success`;
+- `RPC not found == non-revoked`;
 - silent downgrade da strict/Shield policy;
-- temporary on-chain state che cresce senza reclaim/overwrite bounded;
-- unsigned/undomain-separated security objects;
-- `RPC not found == non-revoked` semantics.
+- temporary active state che cresce senza reclaim;
+- ad-hoc/undomain-separated signatures per security objects.
 
-## 3. Synchronous communication
+## 3. Synchronous Communication
 
 ```text
 active authenticated session -> transmit now
 no active authenticated session -> fail/discard now
 ```
 
-Il protocollo non crea automaticamente consegna futura.
+No automatic future delivery.
 
-## 4. Canonical schema / deterministic signing
+## 4. Canonical objects / signing domains
 
-I field name e shape degli oggetti sono definiti in `spec/freedom.cddl`.
+Object fields/shapes congelati vengono da `spec/freedom.cddl`.
 
-Ogni firma security-sensitive **MUST** essere domain-separated almeno per:
+Ogni signed security object lega almeno:
 
 ```text
 Freedom protocol domain
-network_id
-object_type
+network_id where applicable
+fixed object_type
 schema/object version
 canonical deterministic bytes
 ```
 
-Non firmare JSON ad-hoc, dump di oggetti language-specific o mappe non deterministiche.
+No JSON dump/language object serialization ad-hoc.
 
-Un child authority non può ampliare il parent:
+Child authority cannot exceed parent:
 
 ```text
-DeviceCertificate.capabilities subset-of DeviceAuthorizationDelegation.capabilities
-DeviceCertificate.expires_after_height <= delegation.expires_after_height
-certificate.root_epoch == delegation.root_epoch
-certificate.authorization_epoch == delegation.authorization_epoch
+certificate capabilities subset-of delegation capabilities
+certificate expiry <= delegation expiry
+same root_epoch
+authorization_epoch matches parent
 ```
 
-## 5. Device authorization without public account mapping
+## 5. Endpoint device authorization
 
-V1 non richiede una ZK construction per dimostrare `active_devices <= max_devices` on-chain.
-
-Il control-plane può conservare un record opaco indipendente dalla RootIdentity:
+V1 peer authentication:
 
 ```text
-DeviceRecordCommitment
-DeviceKey
-DeviceControlPublicKey
-status / key_epoch
-```
-
-La **legittimità per il peer** deriva da:
-
-```text
-RootRecoveryKey
+expected RootIdentity/contact
  -> DeviceAuthorizationDelegation
  -> DeviceCertificate
  -> DeviceKey possession
+ -> revocation/freshness proof
 ```
 
-Il contratto non deve conoscere necessariamente quale RootIdentity possiede il record per rendere autenticabile il peer.
+The control-plane need not publish which RootIdentity owns an opaque DeviceRecord.
 
-Creazione/spam dei record viene limitata tramite fee/sponsorship/anti-abuse; rotation/revocation usa `DeviceControlKey` scoped.
+Device-count commercial enforcement V1 is product/service policy, not security/interoperability invariant. Future hard enforcement may use privacy-preserving credentials/nullifiers/ZK after separate review.
 
-Hard enforcement privacy-preserving di `max_devices` può essere aggiunto successivamente con credential/nullifier/ZK reviewati. Finché non esiste, il device-count commerciale è policy del client/servizio ufficiale, non security/interoperability invariant.
+## 6. DeviceControlKey
 
-## 6. Revocation / freshness
+DeviceControlKey is scoped to one opaque device record. It cannot authenticate conversations or authorize unrelated devices.
 
-Revocation è definita in [`REVOCATION.md`](REVOCATION.md).
+Revocation may use the scoped control key or a canonical recovery/successor proof when that key is unavailable.
 
-Un nuovo handshake verifica almeno:
+## 7. Revocation
 
-```text
-certificate/delegation validity
-DeviceKey possession
-root / authorization / key epochs
-current-enough revocation state proof
-highest-seen anti-rollback
-```
+Revocation/non-revocation semantics are normative in `REVOCATION.md`.
 
-Una RPC che risponde `not found` non prova non-revoca.
+Rules:
 
-Stato stale produce `REVOCATION_STATE_STALE`; non viene mascherato da `VERIFIED`.
+- device-key revocation floors are monotonic;
+- authorization-epoch revocation floors are monotonic;
+- root epochs never roll back;
+- `RPC not found` is not proof;
+- stale revocation state is explicit, never silently `VERIFIED`.
 
-## 7. Control-plane authenticity
-
-Per security-sensitive state:
+## 8. Control-plane authenticity
 
 ```text
 NetworkAnchor
@@ -148,286 +131,241 @@ NetworkAnchor
  -> canonical object
 ```
 
-Una risposta RPC non provata non è `VERIFIED_STATE`.
+A raw RPC response is not authoritative security state.
 
-## 8. Bootstrap freshness
+## 9. Fresh-install freshness
 
-Un nuovo device non possiede highest-seen locale. First-install verifier e release recenti includono un `BootstrapFreshnessFloor` canonico:
+A fresh client uses `BootstrapFreshnessFloor` from its current verifier/release.
 
-```text
-minimum_checkpoint_height
-minimum_checkpoint_hash?
-minimum_signer_set_epoch
-minimum_policy_epoch
-issued_in_release_id
-```
+It MUST reject state below the embedded checkpoint/signer/policy floor.
 
-Il client rifiuta bootstrap state sotto il floor incorporato nel verifier/release che sta eseguendo.
+Limit: an authentic but itself-obsolete verifier obtained only from attacker-controlled channels cannot know that newer state exists. Freshness of the verifier itself requires an independent bootstrap/update channel.
 
-Limite esplicito: se anche il verifier autentico è una copia molto vecchia ottenuta esclusivamente da canali controllati dall'attaccante, Freedom non può dedurre dal nulla che esista uno stato più recente. La freshness del verifier stesso richiede un anchor/canale indipendente.
-
-## 9. Verified finality — tx hash != success
+## 10. Verified mutation
 
 ```text
-submit signed operation
- -> acceptable finality proof
+submit
+ -> finality proof
  -> execution success
- -> resulting state proof
+ -> resulting-state proof
  -> exact expected transition
  -> local success
 ```
 
-Vale per device/root state, revocation, entitlement, sponsorship, payment redemption, policy, release, signer-set, contract upgrade/migration e recovery state.
+Tx hash alone never produces `ACTIVE`, `PAID`, `REVOKED`, `CURRENT` or `VERIFIED`.
 
-## 10. Bounded active state
+## 11. Bounded active state
 
-TTL logico non basta.
+TTL alone is insufficient.
 
-Temporary state richiede:
+Temporary state requires concrete overwrite/ring/prune/lease/reclaim and a derivable active-state upper bound.
 
-- size bound;
-- rate limit;
-- authorization;
-- expiry/epoch;
-- concrete overwrite/ring/prune/lease/reclaim;
-- upper bound derivabile dello stato attivo.
+Chain archival history may remain observable; Freedom does not claim deletion of blockchain history.
 
-La blockchain history archiviale può restare osservabile; Freedom non la descrive come cancellata.
+## 12. Rendezvous write authorization
 
-## 11. Rendezvous write authorization
+For each pairwise direction/epoch, `PairRendezvousSecret` derives a fresh write keypair off-chain.
 
-Uno slot pubblico appena usato non può diventare liberamente sovrascrivibile.
-
-Per ogni direzione/epoch:
+Public slot:
 
 ```text
-PairRendezvousSecret
- -> deterministic one-time RendezvousWriteKeypair
- -> write_public_key
- -> slot_id = H(domain || write_public_key || epoch || direction)
+slot_id = H("Freedom/RendezvousSlot" || network_id || write_public_key)
 ```
 
-`RendezvousRecord`/`RecoveryBeacon` includono `write_public_key`, `generation`, expiry e `write_signature`.
+The control-plane verifies slot binding, write signature, monotonic generation and bounds. Observing a slot/public key does not grant overwrite authority.
 
-Il control-plane accetta create/update solo se:
+## 13. Verified time
+
+Certificate/policy/release/recovery freshness uses verified checkpoint time/height/epoch plus monotonic local time. Wall clock alone cannot reactivate old state or roll back highest-seen state.
+
+## 14. Root compromise requires independent precommitment
+
+A stolen sole RootRecoveryKey makes owner and attacker cryptographically indistinguishable.
+
+Freedom only claims `ROOT_COMPROMISE` recovery when a `UserRecoveryPolicy` with independent recovery authority was committed **before** the incident.
+
+Without that, Freedom can recover ordinary device loss/backup loss but cannot prove which holder of the stolen root secret is legitimate.
+
+## 15. Opaque root recovery lineage
+
+Users enabling control-plane compromise recovery use an opaque `root_control_commitment`.
+
+It is not a network/contact ID, but it can correlate recovery-lineage events on the public control-plane. This metadata trade-off is explicit.
+
+## 16. Sticky UserRecoveryPolicy
+
+V1 recovery policy is sticky:
 
 ```text
-slot derivation matches
-write signature valid
-generation monotonic
-record within size/expiry bounds
+NORMAL root rotation
+ -> same root_control_commitment
+ -> same recovery_policy_commitment
 ```
 
-Osservare slot/public key non consente overwrite senza la private write key.
+The current RootRecoveryKey alone MUST NOT remove or replace the recovery policy.
 
-## 12. Verified time
+V1 does not support arbitrary policy mutation. A future policy-transition protocol must be separately specified and require at least the current independent recovery authority.
 
-Expiry/freshness usa `VerifiedTimeAnchor`, height/epoch e monotonic local time. Wall clock locale non può riattivare stato vecchio o fare rollback di highest-seen state.
+## 17. Compromise-recovery race semantics
 
-## 13. Root compromise requires independent precommitment
+A valid `COMPROMISE_RECOVERY` request from the independent recovery quorum may recover the latest current root state of the same `root_control_commitment` lineage, including after an attacker has already made a normal rotation using a stolen root.
 
-`ROOT_COMPROMISE` non è risolvibile se proprietario e attaccante possiedono esattamente la stessa unica RootRecoveryKey e non esiste una seconda authority precommitted.
-
-Per rivendicare recovery da root compromessa Freedom richiede un `UserRecoveryPolicy` registrato/pinned **prima dell'incidente**, per esempio un threshold di recovery keys/shares indipendenti.
+Once accepted:
 
 ```text
-UserRecoveryPolicy
- -> recovery key commitments
- -> threshold
- -> recovery delay
- -> policy commitment
+RECOVERY_PENDING
 ```
 
-`UserRootRotation` distingue:
+until activation:
+
+- normal root rotations are blocked;
+- recovery-policy mutation is blocked;
+- high-risk new device authorization may be blocked/pending by policy;
+- current/compromised root cannot cancel the request alone;
+- cancellation/replacement requires the independent recovery authority.
+
+This prevents a compromised root from escaping its precommitted recovery policy by racing normal rotations.
+
+## 18. Pairwise recovery
+
+Pairwise state is not reconstructed from public control-plane data.
+
+Recovery paths:
 
 ```text
-NORMAL              -> old-root continuity proof
-COMPROMISE_RECOVERY -> independent recovery quorum proof + delay
+surviving-device authenticated transfer
+or
+encrypted PairwiseRecoveryBundle from user-chosen untrusted storage
 ```
 
-Se l'utente non ha configurato una recovery authority indipendente, il progetto deve dichiarare che può recuperare perdita del device/backup ma **non può distinguere proprietario e ladro dopo compromissione completa della root secret**.
+After backup restore, re-authenticate peers and rotate/re-derive future rendezvous/session state. An old backup must not remain indefinite future authority.
 
-## 14. Pairwise recovery lifecycle
+If no device/backup survives, ownership may recover but contacts require re-bootstrap.
 
-`PairSecret`/`PairRendezvousSecret` non sono on-chain.
+## 19. First-contact substitution
 
-Recovery path:
+Cryptography authenticates the descriptor received, not the human name “Bob”.
 
-```text
-A. authenticated surviving-device transfer
-B. encrypted PairwiseRecoveryBundle stored/exported on user-chosen backup media/source
-```
-
-Lo schema canonico è in `spec/freedom.cddl` e usa `contacts_metadata_ciphertext`, non una lista contatti plaintext.
-
-Il bundle deve avere version/state epoch, anti-rollback e discovery/backup semantics esplicite. Dopo restore da backup, i peer devono re-authenticate e ruotare/re-derive future rendezvous/session state prima di considerare pienamente corrente lo stato recuperato.
-
-Se non esiste surviving device né backup valido, ownership torna ma i contatti richiedono re-bootstrap.
-
-## 15. Pairwise privacy claim boundary
-
-Alias/rendezvous pairwise riducono infrastructure correlation. Non promettere unlinkability contro contatti colludenti se confrontano root/certificate material.
-
-## 16. First-contact substitution
-
-La E2EE autentica il descriptor ricevuto; non può sapere da sola che esso appartenga umanamente a “Bob”.
-
-Il client distingue almeno:
+UI distinguishes:
 
 ```text
 BOOTSTRAP_UNVERIFIED
 CONTACT_VERIFIED
 ```
 
-Safety code/fingerprint/out-of-band verification deve essere disponibile.
+Safety code/fingerprint/out-of-band verification supplies stronger human assurance.
 
-## 17. Handshake anti-downgrade
+## 20. Pairwise privacy claim
 
-Il transcript lega entrambi gli offer set, selected version/suite/transport semantics, certificate/delegation proofs, epochs, ephemeral keys, nonces e session ID.
+Pairwise aliases/rendezvous reduce infrastructure correlation. Freedom does not claim unlinkability against colluding contacts that compare shared root/certificate material unless dedicated anonymous/pairwise credentials are implemented.
 
-La scelta è deterministic/strongest-allowed secondo policy. Offer stripping sotto policy causa failure.
+## 21. Handshake anti-downgrade
 
-## 18. Forward secrecy / rekey state machine
+Transcript binds both peers' offer sets, expected relationship, certificate/delegation proof, epochs, selected version/suite/transport semantics, ephemeral keys, nonces and session ID.
 
-Freedom Communication richiede fresh ephemeral exchange, FS tra sessioni, separate control/media keys e bounded traffic-key lifetime.
+Offer stripping below local policy fails.
 
-Rekey usa gli oggetti canonici `RekeyInit`, `RekeyCommit`, `RekeyAck`.
+## 22. Forward secrecy / rekey
 
-State machine minima:
+Every session uses fresh ephemeral key exchange and forward secrecy between completed sessions.
 
-```text
-STABLE
- -> INIT_SENT or INIT_RECEIVED
- -> COMMIT_ESTABLISHED
- -> NEW_KEY_PENDING_ACK
- -> STABLE(next_epoch)
-```
+Long sessions use bounded traffic-key lifetime and canonical `RekeyInit / RekeyCommit / RekeyAck` with:
 
-Regole:
+- exact `N -> N+1` epochs;
+- deterministic simultaneous-init resolution;
+- new-key confirmation;
+- old-send-key erase after confirmed transition;
+- bounded old-receive grace for in-flight traffic only;
+- replay/duplicate handling;
+- route switch independent from key epoch;
+- termination on mismatch/timeout before lifetime exhaustion.
 
-- `next_epoch == current_epoch + 1`;
-- simultaneous init per lo stesso epoch viene risolta deterministicamente tramite session role/session_id ordering;
-- responder deriva la next key ma non cancella subito la old key;
-- `RekeyAck` contiene key confirmation sotto il nuovo key schedule;
-- dopo ACK nessun nuovo frame viene inviato con old key;
-- old receive key può restare solo per una bounded in-flight grace window;
-- duplicate/replayed Init/Commit/Ack sono idempotent reject/ignore secondo transcript hash;
-- timeout/mismatch -> session termination, mai split-brain silenzioso;
-- route switch non resetta il key epoch.
+No silent split-brain epochs.
 
-## 19. Transport semantic contract
+## 23. Transport semantics
 
-Ogni TransportAdapter dichiara `RELIABLE_ORDERED_STREAM` e/o `UNRELIABLE_DATAGRAM`.
+Adapters declare reliable ordered stream and/or unreliable datagram semantics.
 
-Handshake/control/text/rekey richiedono reliable ordered semantics o reliability layer esplicito. Media usa sequence/replay spaces separati.
+Handshake/control/text/rekey require reliable ordering or an explicit reliability layer. Media uses separate sequence/replay spaces so media loss does not block control/text.
 
-## 20. Production governance / trust assumption
-
-Production minima:
-
-```text
-ReleaseAuthorization    >= 3-of-5
-ReleaseRevocation       >= 3-of-5
-CriticalSecurityPolicy  >= 3-of-5
-ContractUpgrade         >= 3-of-5 + timelock
-GovernanceRootRotation  >= 3-of-5 + recovery
-Emergency advisory      scoped + TTL
-```
-
-Questa proprietà significa **nessuna singola chiave o credential tecnica unilaterale**.
-
-Non equivale magicamente a nessun rischio organizzativo: collusione/compromissione del quorum è una trust assumption esplicita.
-
-Production governance deve quindi usare custody/operator domains indipendenti per quanto praticabile, con audit/transparency delle transizioni. Se lo stesso soggetto controlla unilateralmente abbastanza signer per raggiungere il quorum, non può essere descritto come assenza di un singolo attore amministrativo.
-
-## 21. Signer-set / contract / migration anti-rollback
-
-Signer-set transition è cross-authorized e monotona. Contract upgrade è immutable-core oppure threshold/timelocked/code-hash pinned.
-
-Chain migration richiede non solo un manifest firmato ma anche un `StateMigrationProof`:
-
-```text
-source finalized checkpoint
-source export root
-migration program hash
-migration input commitment
-target imported state root
-verification artifact
-```
-
-Il target state deve essere verificabilmente derivato dalla source secondo la migration rule; il quorum non può semplicemente firmare uno state rewrite arbitrario e chiamarlo migrazione.
-
-## 22. Release / first-install trust
-
-Release installabile verifica exact hash + threshold FreedomRelease + Android signer lineage + verified ReleaseStatus + SecurityPolicy + anti-rollback.
-
-First sideload usa `BootstrapTrustAnchor` con `BootstrapFreshnessFloor` indipendente dalla source dei byte.
-
-## 23. Payment privacy
-
-Payment/provider identity non viene riutilizzata come Freedom identity. Dove serve ridurre linkage payment→entitlement usare one-time voucher/blind credential + redemption nullifier. Timing correlation può restare.
-
-## 24. Product quota boundaries
-
-`10/20 contact slots` e, in V1, `max_devices` commerciale sono **product/service policy**, non security/interoperability invariants del protocollo.
-
-Un client open-source modificato può aggirare una policy locale. Il modello commerciale non deve dipendere esclusivamente da tali limiti. Managed Gateway/Shield/egress/capacity sono superfici più enforceable senza pubblicare social/device graph.
-
-## 25. Relay provenance / Shield diversity
+## 24. Shield / relay provenance
 
 `N relay IDs != N independent operators`.
 
-Provenance attestations hanno issuer, claim type/value, expiry e signature canonici. Il selector distingue self-declared, observed e independently attested metadata.
+Self-declared metadata is not diversity proof. Provenance attestations are scoped/expiring signed claims; multiple attestations from one issuer/custody domain do not automatically imply independent observers.
 
-Una provenance attestation non dimostra da sola operator independence; diversity forte richiede più issuer/source domains e resta una probabilistic trust signal, non una prova matematica.
+`SHIELDED` requires real circuit setup, independent per-hop keys, layered forwarding, current policy satisfaction and no silent direct fallback.
 
-## 26. Security labels are derived state
+## 25. Governance — precise no-super-admin claim
 
-`VERIFIED`, `E2EE`, `ACTIVE`, `SHIELDED`, `SUSPECTED`, `REVOKED` derivano da verifiche/osservazioni implementate.
-
-`SUSPECTED` resta inferenza. `SHIELDED` richiede il circuit protocol di `SHIELD.md`.
-
-## 27. Fail closed / fail explicit
-
-Failure di authentication, proof verification, revocation, downgrade, release verification o governance transition non diventa successo silenzioso.
-
-## 28. Human review boundary for normative specification
-
-Codex/agent possono **proporre** modifiche a:
+Production minimum:
 
 ```text
-docs/SECURITY_INVARIANTS.md
-docs/CONTROL_PLANE_SECURITY.md
-docs/REVOCATION.md
-docs/IDENTITY_MODEL.md
-docs/PROTOCOL.md
-spec/freedom.cddl
+ReleaseAuthorization   >= 3-of-5
+ReleaseRevocation      >= 3-of-5
+CriticalSecurityPolicy >= 3-of-5
+ContractUpgrade        >= 3-of-5 + timelock
+GovernanceRootRotation >= 3-of-5 + recovery
 ```
 
-ma una modifica che indebolisce/rimuove un MUST/MUST NOT, cambia un trust assumption, un signing domain, una security state machine o uno schema firmato richiede human review esplicita prima di diventare canonical/main.
+This means **no single production credential** is unilateral.
 
-Un test failing non giustifica automaticamente la modifica della requirement.
+It does not eliminate quorum collusion. Custody/operator domains should be separated and auditable. If one actor controls enough signer credentials for quorum, Freedom must not claim absence of a single administrative actor merely because multiple key files exist.
 
-## 29. Review gates
+## 26. Signer / contract anti-rollback
 
-Prima dell'interoperabilità pubblica:
+Signer-set transitions are previous-threshold-authorized, next-set-accepted and monotonic. Highest-seen state prevents old signer/policy/status reactivation.
 
-- canonical deterministic encoding + signing-domain test vectors;
-- delegation/certificate scope/expiry negative vectors;
-- revocation inclusion/non-inclusion/freshness vectors;
-- bootstrap stale-checkpoint tests su fresh install;
+Contract security core is immutable or threshold/timelocked/code-hash-pinned. Single Full Access production upgrade authority is forbidden.
+
+## 27. Chain migration
+
+Migration requires `ChainMigrationManifest + StateMigrationProof`.
+
+The proof binds source finalized state/export root, migration program hash/input and target imported state root. Governance chooses the migration rule; it cannot simply sign arbitrary replacement state and call it migration.
+
+## 28. Release / first install
+
+Install verification requires exact artifact hash, threshold release authorization, Android signer lineage, verified ReleaseStatus/SecurityPolicy, anti-rollback, BootstrapTrustAnchor and BootstrapFreshnessFloor.
+
+Byte source is not trust.
+
+## 29. Payment / product quota boundary
+
+Payment→entitlement can use one-time voucher/blind credential + nullifier to reduce linkage; timing correlation may remain.
+
+Contact/device V1 quotas and Relay Contributor bonuses are product/service policy, not protocol security/interoperability invariants. Business viability must not depend exclusively on local quotas that a modified open-source client can bypass.
+
+## 30. Security labels
+
+`VERIFIED`, `E2EE`, `ACTIVE`, `REVOKED`, `SHIELDED` derive from implemented verification/state.
+
+`SUSPECTED` is a network inference, not proof of censorship/surveillance.
+
+## 31. Normative-spec human gate
+
+Agents may propose changes to security invariants, control-plane/revocation/identity/protocol docs and canonical schema, but they MUST NOT autonomously weaken MUST/MUST NOT rules, trust assumptions, signing domains, signed schemas or security state machines simply to make tests pass.
+
+Such changes require explicit human review before becoming canonical/main-ready.
+
+## 32. Public interoperability gates
+
+Before public interoperability:
+
+- deterministic encoding/signing-domain vectors;
+- delegation scope/expiry negative vectors;
+- revocation/non-revocation/freshness vectors;
+- fresh-install stale-checkpoint tests;
 - rendezvous overwrite/front-run tests;
-- handshake offer-stripping/downgrade tests;
-- rekey simultaneous/loss/duplicate/route-switch tests;
-- control/media transport semantic tests;
-- control-plane checkpoint/state-proof/finality tests;
-- stale/forked/malicious RPC tests;
-- storage reclaim convergence tests;
-- independent-recovery `UserRootRotation` race/timelock tests;
+- handshake offer-stripping tests;
+- complete rekey loss/race/duplicate/route-switch tests;
+- stream/datagram semantics tests;
+- control-plane finality/state-proof tests;
+- storage convergence tests;
+- sticky recovery-policy/race/timelock tests;
 - pairwise backup rollback/post-restore rotation tests;
-- first-contact substitution tests;
-- signer quorum/custody assumptions documentate;
-- signer-set/contract/migration proof rollback tests;
-- release/first-install freshness tests;
-- Relay provenance/Sybil/eclipse tests;
+- signer quorum/custody tests/documentation;
+- contract/migration rollback proof tests;
+- release/bootstrap freshness tests;
+- relay provenance/Sybil/Shield tests;
 - independent cryptographic/security review.
