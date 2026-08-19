@@ -22,6 +22,7 @@ from build_core import build  # noqa: E402
 from simctl import CoreBridge  # noqa: E402
 
 VECTORS = ROOT / "sim" / "l3" / "vectors.json"
+ADAPTER_PREFIX = "FREEDOM_L3\t"
 
 
 def nullable_int(value: str | None) -> int | None:
@@ -74,9 +75,18 @@ class CanonicalOracle:
 
 class ExternalAdapter:
     def __init__(self, command: str) -> None:
+        # stderr is inherited so cargo/sandbox diagnostics cannot fill a pipe and
+        # deadlock startup. stdout may contain tool logs; only FREEDOM_L3-prefixed
+        # lines are protocol responses.
         self.proc = subprocess.Popen(
-            shlex.split(command), cwd=ROOT, text=True, encoding="utf-8",
-            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=1,
+            shlex.split(command),
+            cwd=ROOT,
+            text=True,
+            encoding="utf-8",
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=None,
+            bufsize=1,
         )
         if self.proc.stdin is None or self.proc.stdout is None:
             raise RuntimeError("failed to start ChainAdapter command")
@@ -85,20 +95,26 @@ class ExternalAdapter:
         assert self.proc.stdin is not None and self.proc.stdout is not None
         self.proc.stdin.write(json.dumps(req, sort_keys=True) + "\n")
         self.proc.stdin.flush()
-        line = self.proc.stdout.readline()
-        if not line:
-            stderr = self.proc.stderr.read() if self.proc.stderr else ""
-            raise RuntimeError(f"ChainAdapter terminated: {stderr}")
-        value = json.loads(line)
-        if not isinstance(value, dict):
-            raise RuntimeError("ChainAdapter response must be a JSON object")
-        return value
+        while True:
+            line = self.proc.stdout.readline()
+            if not line:
+                raise RuntimeError(
+                    f"ChainAdapter terminated before response; exit={self.proc.poll()}"
+                )
+            line = line.rstrip("\n")
+            if not line.startswith(ADAPTER_PREFIX):
+                print(f"[l3-adapter] {line}", file=sys.stderr)
+                continue
+            value = json.loads(line[len(ADAPTER_PREFIX):])
+            if not isinstance(value, dict):
+                raise RuntimeError("ChainAdapter response must be a JSON object")
+            return value
 
     def close(self) -> None:
         if self.proc.stdin:
             self.proc.stdin.close()
         try:
-            self.proc.wait(timeout=2)
+            self.proc.wait(timeout=5)
         except subprocess.TimeoutExpired:
             self.proc.kill()
 
@@ -140,7 +156,6 @@ def main() -> int:
             if adapter:
                 external = adapter.request(request)
                 compare_expected(name, external, expected, "external adapter")
-                # Compare the fields that the canonical oracle actually returns too.
                 for key in set(canonical) & set(external):
                     if canonical[key] != external[key]:
                         raise RuntimeError(
