@@ -1,16 +1,14 @@
 # Freedom — Control-Plane Security & State Verification
 
-Status: **canonical / normative design rules**
-
-Questo documento chiude le proprietà di sicurezza del control-plane che non possono restare dipendenti dalla buona fede di RPC, operatori o chiavi amministrative.
+Status: **canonical / normative design rules**.
 
 Normative baseline: [`SECURITY_INVARIANTS.md`](SECURITY_INVARIANTS.md).
+Revocation/freshness: [`REVOCATION.md`](REVOCATION.md).
+Schema: [`../spec/freedom.cddl`](../spec/freedom.cddl).
 
 ## 1. RPC non è trust
 
 Un provider RPC può mentire, servire stato stale, omettere record o censurare richieste. Per stato security-sensitive il client **MUST NOT** trasformare una risposta RPC non provata in verità.
-
-La catena di verifica concettuale è:
 
 ```text
 NetworkAnchor
@@ -21,75 +19,66 @@ NetworkAnchor
  -> local state transition
 ```
 
-Oggetti come revocation state, signer set, `SecurityPolicy`, `ReleaseStatus`, device authorization ed entitlement richiedono stato verificabile riconducibile a un checkpoint finalizzato.
-
 ## 2. VerifiedControlPlaneCheckpoint
 
-```text
-VerifiedControlPlaneCheckpoint {
-    network_id
-    chain_adapter_id
-    finalized_height
-    finalized_block_hash
-    state_root
-    finalized_time
-    consensus_or_finality_proof
-    verifier_version
-}
-```
+Schema canonico: `verified-control-plane-checkpoint` in `spec/freedom.cddl`.
 
-Il `ChainAdapter` deve definire come verificare `consensus_or_finality_proof` per l'implementazione concreta.
-
-Per NEAR questo significa usare primitive/prove coerenti con il modello di finalità e stato della chain, non fidarsi del solo JSON restituito da un RPC.
+Il `ChainAdapter` definisce come verificare finality/consensus proof per la chain concreta. Per NEAR significa usare primitive coerenti col suo modello di finalità/stato, non fidarsi del solo JSON RPC.
 
 ## 3. VerifiedStateProof
 
-```text
-VerifiedStateProof<T> {
-    checkpoint
-    key
-    value_or_absence
-    inclusion_or_non_inclusion_proof
-    object_hash
-}
-```
-
-Il verifier controlla:
+Per ogni oggetto security-sensitive il verifier controlla:
 
 ```text
 checkpoint valid
-state root binding valid
-proof valid
-object canonical encoding valid
-object policy/epoch valid
+state-root binding valid
+inclusion/non-inclusion proof valid
+canonical deterministic encoding valid
+object signing domain valid
+object epoch/policy valid
 ```
 
-Solo dopo il risultato diventa `VERIFIED_STATE`.
+Solo allora il risultato è `VERIFIED_STATE`.
 
-## 4. Cache verificata
+## 4. Cache verificata / highest-seen
 
-La cache locale conserva:
+Persistire almeno:
 
 ```text
 object
 verified checkpoint
-highest_seen_epoch/height
+highest_seen_height
+highest_seen_object_epoch
 freshness class
 monotonic observation time
 ```
-
-Una cache può sostenere funzionamento offline/degradato, ma non può essere retrocessa da una risposta RPC più vecchia.
-
-Regola:
 
 ```text
 new_verified_height < highest_seen_height -> reject rollback
 new_object_epoch < highest_seen_epoch     -> reject rollback
 ```
 
-## 5. Verified time
+Il rollback check è per namespace/oggetto rilevante, non un singolo contatore ambiguo globale.
 
-Expiry e freshness non dipendono esclusivamente dall'orologio modificabile del device.
+## 5. Bootstrap freshness per fresh install
+
+Un client appena installato non ha highest-seen locale. Per questo il verifier/release incorpora `BootstrapFreshnessFloor`:
+
+```text
+minimum_checkpoint_height
+minimum_checkpoint_hash?
+minimum_signer_set_epoch
+minimum_policy_epoch
+issued_in_release_id
+```
+
+Un fresh install **MUST NOT** accettare stato inferiore al floor della propria release/verifier.
+
+Questo impedisce a un RPC/peer di congelare un verifier recente su uno stato precedente al floor.
+
+Limite inevitabile: un verifier autentico ma obsoleto, ottenuto esso stesso solo da canali controllati dall'attaccante, non può sapere magicamente che esiste una versione/floor più recente. L'assurance della freshness del verifier deriva da un canale/bootstrap anchor indipendente.
+
+## 6. Verified time
 
 ```text
 VerifiedTimeAnchor {
@@ -100,290 +89,254 @@ VerifiedTimeAnchor {
 }
 ```
 
-Preferire quando possibile vincoli espressi anche in height/epoch:
+Preferire validity in height/epoch. Wall clock locale è ausilio UX, non authority esclusiva.
+
+## 7. Device record privacy — V1 semplificato
+
+V1 **non richiede** che il contratto provi pubblicamente quale RootIdentity possiede un device record.
+
+Il record opaco contiene soltanto stato necessario al lookup/revocation:
 
 ```text
-valid_from_height
-expires_after_height
-policy_epoch
-```
-
-Il wall clock locale è un ausilio UX. Il tempo monotono locale impedisce rollback dell'orologio durante la stessa installazione; un nuovo checkpoint finalizzato rinnova l'anchor temporale.
-
-## 6. Device authorization privacy
-
-Una firma RootIdentity pubblicata direttamente accanto alla DeviceKey ricreerebbe un mapping leggibile `RootIdentity -> device`.
-
-Production privacy target:
-
-```text
-registered ownership set
-       |
-       | anonymous membership / authorization proof
-       v
-DeviceAuthorizationProof
-       |
-public outputs:
-  device_record_commitment
-  device_public_key
-  key_epoch
-  slot_nullifier
-  authorization_policy_epoch
-```
-
-Il proof dimostra che una ownership valida ha autorizzato il device e possiede uno slot disponibile senza pubblicare quale RootIdentity sia.
-
-La costruzione concreta può usare anonymous credentials / ZK membership + authorization proof standard e reviewato. Finché una implementazione testnet pubblica un root commitment o una firma linkabile insieme al device, **MUST dichiarare esplicitamente che il mapping è osservabile** e non può rivendicare la proprietà privacy production.
-
-`DeviceAuthorizationCommitment` e `slot_nullifier` non sono network/contact identifiers.
-
-## 7. Multi-device slot enforcement
-
-Obiettivo:
-
-```text
-active_devices <= max_devices
-```
-
-senza una lista pubblica dei device di una persona.
-
-Modello normativo target:
-
-```text
-DeviceSlotProof {
-    authorization_policy_epoch
-    slot_nullifier
+DeviceRecord {
     device_record_commitment
-    proof
+    device_public_key
+    device_control_public_key
+    key_epoch
+    status
+    protocol_version
 }
 ```
 
-Un nullifier impedisce il riuso dello stesso slot; il proof lega lo slot a una ownership/entitlement valido senza rivelarne l'identità pubblica.
+La legittimità del device per un peer deriva da `DeviceAuthorizationDelegation -> DeviceCertificate -> DeviceKey possession`, verificata endpoint-to-endpoint.
 
-## 8. Active state bounded — TTL non basta
+Il control-plane limita spam/creazione tramite fee/sponsorship/anti-abuse ma non deve introdurre per forza un mapping pubblico RootIdentity→device.
 
-TTL logico non equivale a rimozione fisica dello stato attivo.
+## 8. Device quota
 
-Ogni record temporaneo del contratto deve avere una strategia concreta di reclaim:
+`max_devices` V1 può essere product/service policy del client ufficiale. Non è security/interoperability invariant del protocollo.
 
-```text
-RendezvousRecord
-RecoveryBeacon
-PurchaseIntent
-temporary route/recovery state
-```
+Un futuro hard enforcement privacy-preserving può usare credential/nullifier/ZK reviewati, ma non è blocker del core V1 finché il progetto non sostiene che la quota sia anti-tamper.
 
-Sono consentiti:
+## 9. DeviceControlKey
 
-- overwrite dello stesso slot quando sicuro;
-- ring/bucket di epoch bounded;
-- `prune_expired` permissionless;
-- refund/storage-credit al proprietario o bounty bounded al pruner;
-- cancellazione esplicita dopo expiry;
-- storage rent/lease bounded.
+Ogni `DeviceRecord` possiede una control key scoped e non usata come network identity.
 
-Una struttura che crea una nuova map key per ogni epoch senza cancellazione è **vietata**.
+La private control key deve restare nell'authorization/recovery state, non essere confusa con la DeviceKey operativa.
 
-Il requisito riguarda lo **stato attivo** del protocollo; la storia archiviale della blockchain può restare osservabile e non viene descritta come cancellata.
-
-## 9. Storage invariant
-
-Per ogni tipo temporaneo deve esistere un upper bound derivabile:
+Azioni consentite:
 
 ```text
-max record size
-x max active slots per subject/domain
-x max retained epochs
+rotate record key epoch
+revoke record
+update narrowly scoped record state
 ```
 
-Acceptance test obbligatorio:
+La control key non firma sessioni/chat e non autorizza altri device.
+
+## 10. Revocation state
+
+La semantica canonica è in [`REVOCATION.md`](REVOCATION.md).
+
+RPC `not found` non equivale a non-revoca. Il `ChainAdapter` deve fornire inclusion/non-inclusion semantics univoche e test vector per device, authorization epoch e root transition state.
+
+## 11. Rendezvous write authorization
+
+TTL/slot secrecy non impediscono overwrite dopo che uno slot viene osservato.
+
+Per ogni pairwise direction/epoch:
+
+```text
+PairRendezvousSecret
+ -> deterministic RendezvousWriteKeypair
+ -> write_public_key
+ -> slot_id = H(domain || write_public_key || epoch || direction)
+```
+
+Il contratto accetta `RendezvousRecord`/`RecoveryBeacon` solo quando:
+
+```text
+slot derivation matches
+write_signature valid
+generation monotonic
+expiry/size bounds valid
+```
+
+Una osservazione pubblica dello slot non concede la private write key.
+
+## 12. Active state bounded — TTL non basta
+
+Temporary state deve implementare almeno uno tra:
+
+- overwrite dello stesso slot;
+- bounded epoch ring/bucket;
+- permissionless `prune_expired`;
+- storage rent/lease;
+- explicit delete/refund/bounded bounty.
+
+Una nuova map key infinita per epoch/rinnovo è vietata.
+
+Acceptance test:
 
 ```text
 simulate N renewals/expiries
  -> active state converges to configured bound
- -> expired keys are reclaimable/removed
- -> storage payer/refund behavior remains bounded
+ -> expired keys reclaimable/removed
+ -> payer/refund behavior bounded
 ```
 
-## 10. User RootIdentity key hierarchy
+La chain history archiviale resta osservabile.
 
-La chiave di recovery dell'utente non deve essere la chiave operativa quotidiana.
+## 13. User Root key hierarchy
 
 ```text
-RootRecoveryKey        -> cold recovery / root continuity
-DeviceAuthorizationKey -> delegated authorization epoch
-DeviceKey              -> per-device operational authentication
-Session keys           -> ephemeral traffic
+RootRecoveryKey
+ -> DeviceAuthorizationDelegation
+ -> DeviceCertificate
+ -> DeviceKey
 ```
 
-`RootRecoveryKey` dovrebbe restare offline/non-residente nell'uso normale quando la piattaforma e UX lo consentono.
+La RootRecoveryKey non è daily operational key.
 
-## 11. DeviceAuthorizationDelegation
+## 14. UserRecoveryPolicy / compromise recovery
+
+Per poter recuperare da **compromissione** della root, non soltanto da perdita, deve esistere una independent recovery authority precommitted prima dell'incidente.
+
+Schema canonico: `user-recovery-policy`.
+
+Esempio:
 
 ```text
-DeviceAuthorizationDelegation {
-    root_epoch
-    authorization_public_key
-    authorization_epoch
-    capabilities = DEVICE_AUTHORIZE | DEVICE_REVOKE
-    valid_from
-    expires_at
-    root_recovery_signature
-}
+recovery key/share commitments
+threshold
+recovery delay blocks
+policy commitment
 ```
 
-I `DeviceCertificate` possono essere firmati dalla chiave di autorizzazione delegata, con transcript che include il delegation proof.
+Se non esiste questa seconda authority, possedere la stessa RootRecoveryKey rende proprietario e ladro crittograficamente indistinguibili. In quel profilo Freedom non rivendica compromise recovery.
 
-Compromettere la chiave delegata non equivale automaticamente a compromettere la RootRecoveryKey.
+## 15. UserRootRotation
 
-## 12. UserRootRotation
+Schema canonico: `user-root-rotation`.
 
-Per compromissione della RootIdentity serve una transizione distinta dal semplice restore:
+Due modalità:
 
 ```text
-UserRootRotation {
-    old_root_epoch
-    new_root_public_key
-    new_root_commitment
-    continuity_proof
-    recovery_policy_proof
-    issued_at
-}
+NORMAL
+  old-root continuity proof
+
+COMPROMISE_RECOVERY
+  independent recovery quorum proof
+  + recovery delay
 ```
 
-La policy deve distinguere:
+Race resolution è definita dalla policy/activation height; una old root compromessa non può annullare unilateralmente una recovery quorum transition valida solo perché possiede ancora la vecchia key.
+
+## 16. Contract / adapter governance
+
+Production sceglie:
 
 ```text
-LOST_DEVICE          -> revoke device / issue new DeviceKey
-LOST_RECOVERY_COPY   -> regenerate backup if root still controlled
-ROOT_COMPROMISE      -> rotate RootIdentity epoch
-```
-
-Una root compromessa non viene “riparata” continuando a usare la stessa chiave.
-
-## 13. Contract / adapter governance
-
-“Nessun super-admin” comprende anche il codice del control-plane.
-
-Production **MUST** scegliere uno dei due modelli:
-
-```text
-A. immutable verification contract / immutable security core
+A. immutable verification/security core
 B. threshold-governed upgrade path
 ```
 
 Se upgradeabile:
 
 ```text
-ContractUpgradeManifest {
-    governance_epoch
-    current_code_hash
-    new_code_hash
-    migration_hash
-    activation_height
-    rollback_floor
-    signatures[]
-}
+ContractUpgradeManifest
+current_code_hash
+new_code_hash
+migration_hash
+activation_height
+rollback_floor
+threshold signatures
 ```
 
 Requisiti:
 
-- threshold governance almeno equivalente alla `CriticalSecurityPolicy`;
-- timelock pubblico per upgrade non-emergency;
+- threshold almeno equivalente a CriticalSecurityPolicy;
+- public timelock non-emergency;
 - code hash verificabile;
-- migrazione deterministica/versionata;
-- client con contract lineage/accepted anchor;
-- nessun cambio silenzioso di contract address;
-- rollback sotto `rollback_floor` rifiutato;
-- emergency authority non può installare codice arbitrario da sola.
+- deterministic/versioned migration;
+- accepted contract lineage client-side;
+- no silent contract-address swap;
+- rollback floor;
+- emergency authority non installa codice arbitrario da sola.
 
-Una Full Access key singola capace di sostituire il contratto production viola l'invariante “nessun super-admin”.
+## 17. Governance quorum trust assumption
 
-## 14. Governance signer-set transition
+`3-of-5` elimina una singola chiave unilaterale, ma non elimina collusione/compromissione del quorum.
 
-Un nuovo signer set non è valido solo perché auto-firmato.
+Production deve usare per quanto praticabile:
 
-```text
-SignerSetTransition {
-    role
-    previous_epoch
-    next_epoch
-    previous_set_commitment
-    next_set_commitment
-    activation_height
-    previous_set_threshold_signatures[]
-    next_set_acceptance_signatures[]
-}
-```
+- signer custoditi in operator/custody domains differenti;
+- hardware/offline custody separata;
+- nessun singolo secret manager/account capace di estrarre un quorum;
+- public signer-set transition/transparency records;
+- periodic custody audit.
 
-Regole:
+Se un singolo soggetto possiede unilateralmente abbastanza credenziali per raggiungere il quorum, il progetto non può tradurre `3-of-5` in “nessun singolo attore amministrativo”.
+
+## 18. Signer-set transition
 
 ```text
 next_epoch == previous_epoch + 1
-previous set authorizes transition
-next set accepts transition
+previous set threshold authorizes
+next set accepts
 activation height monotonic
-client stores highest accepted epoch
+highest accepted epoch persisted
 old set cannot reactivate itself
 ```
 
-## 15. Signer-set recovery
+Quorum-loss recovery usa recovery set/manifest pinned in anticipo con threshold/timelock più forte.
 
-Per perdita di quorum deve esistere un recovery path separato, pinned prima dell'incidente, per esempio:
+## 19. SecurityPolicy / ReleaseStatus anti-rollback
 
-```text
-GovernanceRecoverySet commitment
-+ longer timelock
-+ stronger threshold
-+ public recovery manifest
-```
-
-Il recovery path non può equivalere a una singola emergency key.
-
-## 16. SecurityPolicy / ReleaseStatus anti-rollback
-
-Client/verifier conserva:
+Persistire almeno:
 
 ```text
 highest_signer_set_epoch
 highest_policy_epoch
-highest_release_status_epoch/version
+highest_release_status_epoch
 highest_verified_checkpoint
+accepted_contract_lineage
 ```
 
-Una policy/revoca validamente firmata ma più vecchia non sovrascrive stato più recente già osservato.
+Un oggetto validamente firmato ma inferiore al floor/highest-seen rilevante non sovrascrive stato recente.
 
-Per un device appena installato, il bootstrap anchor + checkpoint verification impediscono l'accettazione arbitraria di una storia alternativa servita da un singolo peer/RPC.
+## 20. ChainAdapter migration
 
-## 17. Control-plane migration
+Un `ChainMigrationManifest` firmato da solo **non basta** a trasformare stato arbitrario in stato legittimo.
 
-Migrare da NEAR a un altro `ChainAdapter` non significa accettare un nuovo trust root senza prova.
+La migration richiede `StateMigrationProof`:
 
 ```text
-ChainMigrationManifest {
-    from_adapter
-    to_adapter
-    from_final_checkpoint
-    imported_state_commitment
-    new_network_anchor
-    activation_epoch
-    governance_signatures[]
-}
+source finalized checkpoint
+source export root
+migration program hash
+migration input commitment
+target imported state root
+verification artifact
 ```
 
-La migrazione è governance-sensitive, threshold, versionata e anti-rollback.
+Il verifier deve poter controllare che il target root derivi dalla source secondo la migration rule deterministicamente definita o tramite una prova verificabile appropriata.
 
-## 18. Acceptance gates
+Il quorum può autorizzare **quale migration rule/version usare**, non sostituire arbitrariamente lo stato senza verification artifact.
 
-Prima della mainnet:
+## 21. Acceptance gates
 
-- finality/checkpoint verifier testato con RPC onesto, stale, forked e malevolo;
-- inclusion/non-inclusion proof test vector;
-- rollback di checkpoint/policy/signer set rifiutato;
-- device authorization privacy proof o claim privacy ridimensionato esplicitamente;
-- active-state storage converge a bound dopo stress test;
-- RootRecoveryKey/DeviceAuthorizationKey separation testata;
-- `UserRootRotation` simulata dopo compromissione;
-- contract upgrade governance threshold/timelock testata oppure core dichiarato immutabile;
-- signer-set transition + quorum-loss recovery testati;
-- verified time con clock rollback/forward testato.
+Prima della mainnet/interoperabilità production:
+
+- fresh-install stale-checkpoint/bootstrap-floor tests;
+- finality/checkpoint/state-proof vectors con RPC honest/stale/forked/malicious;
+- revocation inclusion/non-inclusion/freshness vectors;
+- rendezvous overwrite/front-run/replay tests;
+- active-state storage convergence;
+- RootRecoveryKey/DeviceControlKey separation;
+- `UserRecoveryPolicy` + compromise recovery race/timelock tests;
+- contract upgrade threshold/timelock oppure immutable-core verification;
+- signer-set transition + quorum-loss recovery;
+- signer custody/operator assumptions documentate;
+- verified time rollback/forward tests;
+- deterministic `StateMigrationProof` verification.
