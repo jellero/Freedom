@@ -1,72 +1,68 @@
 # Freedom — Advanced Development Method
 
-Status: **development methodology / internal engineering documentation**
+Status: **development methodology / internal engineering documentation**.
 
-Questo documento definisce il loop di sviluppo avanzato di Freedom. Non descrive una garanzia del protocollo e non appartiene al README prodotto.
+Questo documento definisce il loop di sviluppo avanzato di Freedom. Non appartiene al README prodotto e non descrive una garanzia del protocollo.
 
 ## 1. Principio
 
-Il loop principale non deve dipendere dalla compilazione/installazione continua dell'APK Android.
-
-Separare:
+Il loop principale non dipende dalla compilazione/installazione continua dell'APK Android.
 
 ```text
-PROTOCOL / CONTROL-PLANE / ROUTING LOGIC
- -> host-side executable/testable components
- -> deterministic simulators
- -> Docker/network namespaces
+PROTOCOL / CONTROL-PLANE / ROUTING
+ -> host-side core
+ -> deterministic simulation
+ -> containers/processes
  -> scenario tests
 
 ANDROID PLATFORM INTEGRATION
- -> APK/emulator/device gates successivi
- -> Keystore / lifecycle / background / VpnService / permissions
+ -> emulator/device gates
+ -> Keystore/lifecycle/VpnService/platform behavior
 ```
 
-Per eseguire i sorgenti il core deve comunque essere compilato o interpretato dal relativo runtime, ma **non serve produrre/installare l'intera app Android a ogni iterazione**.
+Il core deve comunque essere compilato/eseguito nel proprio runtime; semplicemente non serve produrre/installare l'APK a ogni iterazione.
 
-## 2. Obiettivo del laboratorio
+## 2. Obiettivo laboratorio
 
-Riprodurre automaticamente più macchine e reti ostili:
+Simulare automaticamente:
 
 ```text
-Alice endpoint
-Bob endpoint
-Relay A
-Relay B
+Alice / Bob endpoints
+Relay A / Relay B
 Bridge
 Gateway Egress
 Honest RPC
 Stale RPC
 Malicious RPC
-Control-plane simulator
-Censor / firewall
-NAT A
-NAT B
-Clock-skew node
+Control-plane mock
+Censor/firewall
+NAT A / NAT B
+Clock-fault node
 Release mirror
 ```
 
-Ogni nodo deve essere isolabile e sostituibile.
+## 3. Codex come orchestratore
 
-## 3. Codex come orchestratore di engineering
+Codex può leggere specifiche, implementare, generare test, eseguire scenario matrix, analizzare failure, patchare e rieseguire regressioni.
 
-Codex viene usato per:
+Codex non è trust authority. Test generati dallo stesso agente richiedono oracle derivati dalla specifica, review separata e test vector indipendenti per primitive security-sensitive.
 
-- leggere specifiche normative;
-- creare/modificare implementazioni;
-- generare test vector e negative tests;
-- eseguire suite e scenario matrix;
-- analizzare failure log;
-- proporre patch;
-- rieseguire regressioni;
-- confrontare implementazione e threat model;
-- mantenere documentazione tecnica allineata.
+## 4. Normative-spec human gate
 
-Codex **non è un trust authority** del protocollo. Un test che passa perché Codex lo ha scritto non sostituisce oracle indipendenti, review crittografica o test vector verificati.
+Gli agenti possono proporre cambiamenti alla specifica ma non devono autonomamente indebolire:
 
-## 4. Lavoro parallelo
+- MUST/MUST NOT;
+- trust assumptions;
+- signing domains;
+- canonical signed schemas;
+- revocation/freshness semantics;
+- recovery/governance/rekey state machines.
 
-Usare worktree/branch isolate per domini indipendenti:
+Queste modifiche richiedono human review esplicita prima di essere considerate canonical/main-ready.
+
+## 5. Lavoro parallelo
+
+Usare worktree/branch isolate:
 
 ```text
 agent/protocol
@@ -79,24 +75,15 @@ agent/test-oracle
 agent/reviewer
 ```
 
-Ogni task deve avere scope e acceptance criteria specifici.
+Reviewer agent prima produce criticità/failure riproducibili; fixer agent separato applica la patch.
 
-Un reviewer agent non deve modificare automaticamente il codice che sta revisionando nello stesso passaggio: prima produce failure/criticità riproducibili, poi un agent separato applica la patch.
+## 6. Canonical schema
 
-## 5. AGENTS.md
+`spec/freedom.cddl` è la source of truth dei field name/object shape.
 
-La root del repository contiene `AGENTS.md` con:
+Test devono verificare deterministic encoding + signing domain. Evitare simulator-specific struct divergenti.
 
-- documenti normativi da leggere prima di modificare security-sensitive code;
-- invariant MUST/MUST NOT;
-- comandi di test ufficiali;
-- policy di scenario simulation;
-- divieto di indebolire test per farli passare;
-- obbligo di aggiungere regressioni per ogni bug corretto.
-
-## 6. Architettura simulator-first
-
-Target modulare:
+## 7. Target modulare
 
 ```text
 core/
@@ -119,15 +106,30 @@ sim/
 
 platform-android/
   keystore/
-  app-lifecycle/
+  lifecycle/
   vpn/
 ```
 
-Il simulatore usa le stesse state machine e serialization del core production dove possibile. Non mantenere una seconda implementazione semplificata che possa divergere silenziosamente.
+Il simulatore riusa le stesse state machine/serialization production dove possibile.
 
-## 7. Docker topology
+## 8. Docker/runner safety
 
-Il laboratorio locale target usa Docker Compose o equivalente:
+Non dare a Codex il Docker socket di una workstation sensibile.
+
+Preferire:
+
+```text
+disposable VM
+isolated CI runner
+rootless container runtime
+nested disposable lab host
+```
+
+`/var/run/docker.sock` equivale praticamente a un potere host molto elevato e non viene montato in agent containers salvo che l'host stesso sia disposable e privo di secret/dati importanti.
+
+Production/mainnet/release secrets non sono presenti nel laboratorio.
+
+## 9. Docker topology target
 
 ```text
 freedom-alice
@@ -142,427 +144,272 @@ rpc-malicious
 control-plane-mock
 chaos-proxy
 release-mirror
-metrics-test-only
 ```
 
-Il mock control-plane non sostituisce i test della chain reale; serve a rendere deterministiche failure, fork, stale state, storage e governance.
+## 10. Due livelli di tempo
 
-## 8. Network chaos
+### L1 deterministic virtual time
 
-Usare strumenti Linux/container per modificare dinamicamente la rete:
+State-machine/scenario tests usano event scheduler/virtual clock.
 
-- network namespace;
-- `tc netem` per latency/loss/reorder/duplication;
-- `nftables`/`iptables` per allow/deny/drop;
-- connection tracking/NAT rules per cambiare mapping;
-- proxy fault-injection tipo Toxiproxy o equivalente;
-- DNS test resolver per poisoning/failure;
-- reverse proxy/TLS endpoints per fingerprint/block simulation.
+Esempio DSL:
 
-Nessun singolo tool è parte del protocollo.
+```yaml
+- at: 10s
+  action: block
+  target: relay_a
+```
 
-## 9. NAT scenarios
+`10s` qui è **tempo virtuale**, non sleep reale.
 
-Simulare almeno:
+Questo rende deterministicamente testabili timeout, rekey, expiry, retry e race.
+
+### L2 real network time
+
+`tc netem`, namespace, nftables/proxy fault injection usano tempo reale e validano integrazione socket/kernel.
+
+Non usare timing reale come unico oracle dei test state-machine.
+
+## 11. Network chaos
+
+Strumenti possibili:
+
+- Linux network namespaces;
+- `tc netem`;
+- `nftables`/`iptables`;
+- conntrack/NAT rules;
+- Toxiproxy-like fault injection;
+- DNS test resolver;
+- TLS/reverse-proxy endpoints.
+
+## 12. NAT scenarios
 
 ```text
-OPEN / public
+open/public
 full-cone-like
 restricted
 port-restricted
-symmetric-like mapping
+symmetric-like
 mapping change mid-session
-mobile-network address change
-Wi-Fi -> mobile handover
+Wi-Fi -> mobile
 NAT rebinding
 hairpin unavailable
 ```
 
-Il test non deve assumere che Docker NAT sia una replica perfetta di CGNAT reale. Dopo il laboratorio deterministico restano necessari test su reti/device reali.
+Docker NAT non sostituisce CGNAT/mobile reali; L5 device/network testing resta necessario.
 
-## 10. Censorship / ban simulation
-
-Scenario automatici:
+## 13. Censorship scenarios
 
 ```text
 block relay IP
-block complete provider subnet
-block one ASN-equivalent test network
-block UDP
-block QUIC-like transport
-block known TCP port
-block DNS name
-serve DNS poison
-block TLS SNI/domain
-reset connections after protocol signature
-throttle bandwidth
-inject high jitter/loss
-active-probe bridge endpoint
+block provider subnet
+block UDP/QUIC-like
+block port
+DNS failure/poisoning
+SNI/domain filtering
+reset after fingerprint
+throttle/jitter/loss
+active-probe bridge
 allowlist-only environment
 ```
 
-Il censor simulator deve poter cambiare policy durante una sessione.
+Policy deve poter cambiare durante sessione.
 
-## 11. RPC/control-plane adversarial simulation
-
-Simulare:
+## 14. Control-plane adversarial scenarios
 
 ```text
 honest finalized state
 stale state
-valid old signer set
-valid old SecurityPolicy
-transaction submitted but failed
-partial execution/failure
-state mismatch after tx
-RPC omission
-conflicting RPC responses
-invalid inclusion proof
-rollback checkpoint
-forked/non-final checkpoint
-all RPC temporarily unavailable
+fork/non-final checkpoint
+invalid inclusion/non-inclusion proof
+fresh-install checkpoint below BootstrapFreshnessFloor
+valid old signer/policy/status
+submitted-but-failed tx
+partial execution
+state mismatch
+RPC omission/conflict
+all RPC unavailable
 ```
 
-Oracle: un client non deve accettare come `VERIFIED` stato che non supera `CONTROL_PLANE_SECURITY.md`.
+## 15. Revocation tests
 
-## 12. Storage simulation
+Simulare:
 
-Per ogni record temporaneo:
+- active device;
+- revoked device key epoch;
+- revoked authorization epoch;
+- root rotation;
+- RPC `not found` without proof;
+- stale revocation cache;
+- highest-seen rollback;
+- fresh install with stale checkpoint.
+
+## 16. Rendezvous attack tests
+
+Simulare:
 
 ```text
-create
-renew
-expire
-prune/overwrite
-repeat thousands/millions logically
+first valid write
+attacker observes slot
+attacker overwrite without write private key
+front-run malformed record
+replay generation N
+rollback generation
+expired-slot rewrite
+legitimate generation increment
 ```
 
-Assert:
+Oracle: soltanto la derived pairwise write key autorizza write/update.
+
+## 17. Storage simulation
+
+Migliaia/milioni logici di create/renew/expire/prune/overwrite.
+
+Assert active storage bound, bounded refunds/bounties e assenza message/media state.
+
+## 18. Identity/recovery simulation
 
 ```text
-active storage <= configured theoretical bound
-expired active keys converge to zero/bounded ring
-refund/bounty accounting bounded
-no message/media state introduced
-```
-
-## 13. Identity and recovery simulation
-
-Scenari:
-
-```text
-new RootIdentity
-new DeviceKey
-second authorized device
-revoke first device
-stale revocation cache
-RootRecoveryKey offline
+normal restore
+lost device
 DeviceAuthorizationKey compromise
-RootIdentity compromise
+RootRecoveryKey compromise without recovery policy
+RootRecoveryKey compromise with valid recovery quorum
+competing malicious old-root transition
+recovery delay
 UserRootRotation
-lost all devices + valid PairwiseRecoveryBundle
-lost all devices + no pairwise backup
+pairwise backup rollback
+pairwise restore + future-state rotation
 ```
 
-Il risultato atteso deve essere definito prima dell'implementazione.
+## 19. Contact bootstrap attacks
 
-## 14. Contact bootstrap attacks
+Copied/replayed/expired/substituted descriptor, wrong RootIdentity proof, valid attacker descriptor substituted for Bob, colluding contacts.
 
-Automatizzare:
+## 20. Handshake matrix
+
+Combinare versions, suite offers, transport semantics, certificate epochs, revocation freshness e route changes.
+
+Negative tests: offer stripping, wrong relationship, stale/revoked cert, replayed ephemeral, transcript mismatch.
+
+## 21. Rekey matrix
+
+Testare almeno:
 
 ```text
-copied QR
-expired capability
-replayed capability
-substituted QR before first contact
-wrong RootIdentity proof
-valid attacker contact substituted for Bob
-colluding contacts compare identity material
+normal N -> N+1
+simultaneous Init
+lost Init
+lost Commit
+lost Ack
+duplicate Init/Commit/Ack
+replayed old rekey object
+route switch during rekey
+old-key in-flight grace
+old-key send after Ack
+required-rekey timeout
 ```
 
-Il sistema deve distinguere autenticazione crittografica da assurance umana del primo contatto.
+No split-brain epoch silenzioso.
 
-## 15. Handshake matrix
+## 22. Transport semantic tests
 
-Generare combinazioni di:
+`RELIABLE_ORDERED_STREAM` e `UNRELIABLE_DATAGRAM` hanno suite separate. Media loss/reorder non blocca control/text.
+
+## 23. Relay Sybil/provenance
+
+Generare molti relay IDs dello stesso adversary, false self-declared metadata e provenance attestations duplicate/collusive.
+
+Oracle: N IDs o N attestazioni dello stesso issuer domain non equivalgono automaticamente a N operatori indipendenti.
+
+## 24. Shield simulation
+
+Vero circuit setup, per-hop keys, layered forwarding, compromise/collusion, rebuild, provenance-aware selection. Due proxy TCP non contano.
+
+## 25. Release/governance simulation
 
 ```text
-versions
-suite offers
-selected suite
-DeviceCertificate epochs
-revocation freshness
-rekey epochs
-transport changes
+valid threshold release
+insufficient signatures
+single signer compromise
+quorum compromise model
+signer-set rotation/rollback
+fresh-install stale checkpoint
+old verifier limitation case
+contract timelock/code hash
+unauthorized upgrade
+StateMigrationProof valid/invalid
+malicious first-install source
 ```
 
-Negative cases:
+## 26. Differential control-plane testing
 
-- offer stripping;
-- downgrade below policy;
-- self-signed unknown peer;
-- certificate for wrong relationship;
-- replayed ephemeral material;
-- stale certificate;
-- mismatched transcript;
-- wrong traffic-key epoch.
+Il `control-plane-mock` è utile solo se non diverge semanticamente dal `ChainAdapter` reale.
 
-## 16. Transport semantic tests
-
-Il core distingue due classi:
+Ogni canonical transition/vector rilevante deve poter essere eseguito contro almeno:
 
 ```text
-RELIABLE_ORDERED_STREAM
-UNRELIABLE_DATAGRAM
+control-plane-mock
+NearChainAdapter local/test environment
 ```
 
-Text/control/session messages richiedono semantica affidabile/ordinata o un reliability layer esplicito.
+Assert equivalenza su:
 
-Media può usare datagram/stream separati senza bloccare control/text quando un frame media viene perso.
+- accepted/rejected transition;
+- resulting canonical object/state root semantics;
+- revocation behavior;
+- expiry/height behavior;
+- storage reclaim;
+- failure class.
 
-Testare reorder/loss route-switch separatamente per ogni classe.
+Una feature non viene dichiarata corretta soltanto perché passa nel mock.
 
-## 17. Shield simulation
-
-Prima di claim production su Shield il laboratorio deve simulare:
+## 27. Test levels
 
 ```text
-Alice -> Hop A -> Hop B -> Bob
+L0 pure/unit + canonical vectors
+L1 multi-process deterministic virtual-time simulation
+L2 Docker/network chaos real-time
+L3 real ChainAdapter integration
+L4 Android emulator
+L5 physical devices / real Wi-Fi/mobile/CGNAT
+L6 external security/interoperability review
 ```
 
-con:
-
-- circuit setup autenticato;
-- chiavi per-hop separate;
-- layered forwarding;
-- next-hop token non globali;
-- rotation/teardown;
-- hop compromise singolo;
-- hop collusion;
-- path rebuild durante failure.
-
-Concatenare due proxy TCP non conta come test di Freedom Shield.
-
-## 18. Relay Sybil / eclipse simulation
-
-Generare molti relay controllati dallo stesso adversary con:
-
-- ID differenti;
-- classi dichiarate differenti;
-- endpoint differenti sulla stessa provenance;
-- capacity hint falsi;
-- geografia/provider dichiarati falsamente.
-
-Il selector deve distinguere self-declared metadata da provenance osservata/verificata e non considerare automaticamente `N relay IDs` come `N operatori indipendenti`.
-
-## 19. Release/governance simulation
-
-Scenari:
+## 28. Automatic loop
 
 ```text
-valid 3-of-5 release
-2-of-5 insufficient
-compromised one signer
-signer-set N -> N+1
-rollback to old signer set
-lost quorum + governance recovery set
-old SecurityPolicy replay
-contract upgrade timelock
-unauthorized contract code hash
-first-install malicious peer
-malicious mirror serves renamed APK
-```
-
-## 20. Clock simulation
-
-Ogni nodo ha un clock fault-injectable:
-
-```text
--24h
-+24h
-rollback during session
-jump forward during certificate validation
-monotonic clock preserved / reset after process restart
-```
-
-Assert contro `VerifiedTimeAnchor` e highest-seen checkpoint.
-
-## 21. Scenario DSL
-
-Target file:
-
-```yaml
-name: relay-block-and-nat-rebind
-nodes:
-  - alice
-  - bob
-  - relay_a
-  - relay_b
-steps:
-  - at: 0s
-    action: connect
-    from: alice
-    to: bob
-  - at: 10s
-    action: block
-    target: relay_a
-  - at: 12s
-    action: nat_rebind
-    target: alice
-  - at: 20s
-    assert: session_recovered
-  - at: 20s
-    assert: peer_identity_unchanged
-  - at: 20s
-    assert: no_mailbox_write
-```
-
-La sintassi definitiva può cambiare; il requisito è avere scenari versionati e riproducibili.
-
-## 22. Automatic development loop
-
-```text
-spec change
- -> Codex reads normative docs
- -> generate/update failing tests first
- -> implement isolated change
- -> run unit + property + scenario matrix
- -> chaos/adversarial regression
+spec/task
+ -> derive failing oracle/test
+ -> isolated implementation
+ -> L0/L1
+ -> relevant L2/L3
  -> reviewer agent
- -> compare invariants/threat model
- -> commit only if gates pass
+ -> invariant/threat-model check
+ -> human gate if normative spec changes
+ -> merge only when required gates pass
 ```
 
-Per security-sensitive changes evitare il pattern “modifica test finché diventa verde” senza giustificazione della modifica dell'oracle.
+## 29. Android gates
 
-## 23. Test levels
+APK/emulator/device obbligatorio per Keystore, process death, Doze/background, permissions, actual Android sockets/handover, camera/QR, package signing/update e `VpnService`.
 
-### L0 — pure/unit
+## 30. Evidence artifacts
 
-- canonical encoding;
-- hash/signatures/proofs;
-- state machines;
-- replay/rekey;
-- parser bounds.
-
-### L1 — process simulation
-
-Più nodi come processi/containers sulla stessa macchina.
-
-### L2 — network chaos
-
-NAT/firewall/loss/DNS/RPC adversarial.
-
-### L3 — chain integration
-
-NEAR Testnet o local environment compatibile con prove/finality.
-
-### L4 — Android emulator
-
-Keystore, lifecycle, permissions, connectivity transitions.
-
-### L5 — physical devices / real networks
-
-Wi-Fi differenti, mobile/CGNAT, vendor Android, sleep/background, hotspot, roaming.
-
-### L6 — external security/interoperability
-
-Independent review, fuzzing esterno, multi-implementation test.
-
-## 24. Quando compilare l'APK
-
-Non come loop primario per:
-
-- protocol state machine;
-- routing logic;
-- control-plane verifier;
-- release verifier;
-- relay/circuit logic;
-- chaos simulations.
-
-APK/emulator/device è obbligatorio per validare:
-
-- Android Keystore;
-- process death/restart;
-- background restrictions;
-- Doze/battery behavior;
-- sockets reali Android;
-- camera/QR;
-- package signing/update;
-- `VpnService` Gateway;
-- notifications/permissions;
-- platform network handover.
-
-## 25. Evidence artifacts
-
-Ogni scenario produce artefatti machine-readable:
+Ogni scenario produce:
 
 ```text
 scenario manifest
 seed
+virtual-time event trace
 node versions/code hashes
 network events
 security state transitions
 assertions
-logs redacted of secrets
+redacted logs
 result
 ```
 
-I failure devono essere riproducibili con lo stesso seed/config.
+## 31. Definition of done
 
-## 26. CI strategy
-
-CI minima futura:
-
-```text
-unit
-property/fuzz smoke
-protocol vectors
-control-plane proof vectors
-scenario fast matrix
-storage-bound tests
-release/governance tests
-```
-
-Nightly/extended:
-
-```text
-large chaos matrix
-randomized NAT/firewall scenarios
-long-session rekey
-relay Sybil/eclipsing
-clock skew
-storage stress
-multi-agent review tasks
-Android emulator gates
-```
-
-## 27. Codex safety boundaries
-
-Per task automatizzati:
-
-- repo/worktree isolati;
-- secret production non disponibili;
-- test chain/keys separate;
-- rete esterna limitata al necessario;
-- azioni destructive production vietate;
-- log delle azioni agentiche conservati per audit del processo;
-- human review obbligatoria prima di cambiare root, governance, release signer o mainnet config.
-
-## 28. Definition of done
-
-Una feature security/network non è “done” perché funziona nel happy path.
-
-È done quando:
-
-```text
-normative spec exists
-positive tests pass
-negative tests pass
-adversarial scenario exists
-resource bound asserted
-rollback/replay behavior tested
-logs do not leak secrets
-threat model updated if boundary changed
-Android gate added if platform-dependent
-```
+Una feature security/network è done quando esistono spec, positive/negative tests, adversarial scenario, resource bound, replay/rollback behavior, safe logs e platform gate se necessario.
