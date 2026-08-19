@@ -328,6 +328,7 @@ Post-V1 — Freedom Gateway
   selected-app Android Gateway
   whole-device Gateway
   DNS/leak controls
+  managed Free target: 100 MB/day
   egress diversity
   shielded/multi-hop Gateway
   pluggable anti-censorship transports
@@ -340,9 +341,11 @@ Post-V1 — Freedom Gateway
 
 Freedom Gateway usa il fabric Freedom come percorso opzionale per traffico di applicazioni esterne.
 
+![Freedom Gateway architecture](assets/freedom-gateway.svg)
+
 ```text
 app traffic
- -> local Gateway / VpnService
+ -> local Gateway / Android VpnService
  -> encrypted tunnel
  -> route / relay / bridge / Shield
  -> explicit Egress
@@ -379,11 +382,25 @@ Il Gateway deve essere progettato per ambienti con firewall/DPI/filtraggio aggre
 
 Non promettere bypass universale. Se una rete applica allowlist totale o elimina ogni connettività, un protocollo IP non può garantire il passaggio.
 
+### Quota Free iniziale
+
+Quando il Gateway managed sarà disponibile, il target Free iniziale è:
+
+```text
+100 MB / giorno di managed Gateway capacity
+```
+
+È una quota di **egress gestito**, non di Freedom Communication. Non deve limitare i messaggi/chiamate Freedom diretti o su capacità community/private e non sostituisce la quota Emergency Shield destinata alla comunicazione core.
+
+Il valore deve essere ricalibrato dopo dati reali di costo, geografia, overhead anti-censura e abuso.
+
+Plus/Shield può offrire quote molto superiori, egress/provider diversity, multi-hop e Maximum Reachability. Business può usare egress privati e quote custom.
+
 ### Browser
 
 Non integrare un browser generalista come requisito. Su Android è preferibile instradare Chrome/Firefox/app selezionate o l'intero device tramite `VpnService`, mantenendo il browser dell'utente separato.
 
-Dettagli: [`GATEWAY.md`](GATEWAY.md).
+Dettagli: [`GATEWAY.md`](GATEWAY.md) e [`MONETIZATION.md`](MONETIZATION.md).
 
 ## 17. Launch quality gate
 
