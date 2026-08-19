@@ -7,31 +7,37 @@ These instructions apply to Codex/agentic development in this repository.
 1. `docs/SECURITY_INVARIANTS.md`
 2. `docs/CONTROL_PLANE_SECURITY.md`
 3. `docs/REVOCATION.md`
-4. `spec/README.md`
-5. `spec/freedom.cddl`
-6. `docs/IDENTITY_MODEL.md`
-7. `docs/PROTOCOL.md`
-8. `docs/THREAT_MODEL.md`
-9. `docs/REPOSITORY_GOVERNANCE.md`
-10. subsystem-specific docs.
+4. `docs/PAIRWISE_RECOVERY.md`
+5. `spec/README.md`
+6. `spec/freedom.cddl`
+7. `spec/crypto-domains.txt`
+8. `docs/IDENTITY_MODEL.md`
+9. `docs/PROTOCOL.md`
+10. `docs/THREAT_MODEL.md`
+11. `docs/REPOSITORY_GOVERNANCE.md`
+12. subsystem-specific docs.
 
 Normative MUST/MUST NOT rules override older implementation behavior.
 
 ## Architecture invariants
 
-Do not introduce global user/device network IDs, on-chain messages/mailbox, persistent relay inbox, automatic offline delivery queue, RootIdentity/RootControlCommitment/DeviceRecordCommitment as routing IDs, public social graph, mandatory single RPC/provider/relay/egress, master decryption key, single-key production super-admin, tx-hash-is-success, RPC-not-found-is-non-revoked, silent Shield downgrade or unbounded temporary active state.
+Do not introduce global user/device network IDs, on-chain messages/mailbox, persistent relay inbox, automatic offline delivery queue, RootIdentity/RootControlCommitment/DeviceRecordCommitment as routing IDs, public social graph, mandatory single RPC/provider/relay/egress, master decryption key, single-key production super-admin, tx-hash-is-success, RPC-not-found-is-non-revoked, silent Shield downgrade, unbounded temporary active state or unregistered cryptographic purpose/domain constants.
 
-## Canonical schema
+Do not claim a pairwise backup is the latest verified state after total device loss unless freshness is provided by surviving trusted state or the canonical independent monotonic recovery anchor.
+
+## Canonical schema and crypto domains
 
 `spec/freedom.cddl` is the source of truth for frozen object field names/shapes.
 
-All signed security objects use deterministic canonical encoding + explicit signing domains. Encrypted objects/frames use purpose/context-bound AEAD associated data according to `spec/README.md`.
+`spec/crypto-domains.txt` is the source of truth for fixed SIGN/MAC/AEAD/HASH/KDF protocol domains.
 
-Do not create a second incompatible Markdown/code struct for convenience.
+All security objects use deterministic canonical encoding + explicit purpose/context binding according to `spec/README.md`.
+
+Do not create a second incompatible Markdown/code struct or ad-hoc crypto label for convenience.
 
 ## Normative-spec human gate
 
-Agents may propose changes to normative/security files, but MUST NOT autonomously weaken/remove a MUST/MUST NOT, change a trust assumption, signing/AEAD domain, canonical signed schema, revocation/recovery/governance/rekey state machine merely to make implementation/tests pass.
+Agents may propose changes to normative/security files, but MUST NOT autonomously weaken/remove a MUST/MUST NOT, change a trust assumption, cryptographic domain, canonical signed schema, revocation/recovery/governance/rekey state machine merely to make implementation/tests pass.
 
 A failing test is evidence, not permission to weaken the oracle.
 
@@ -82,7 +88,28 @@ when changing docs/spec/security architecture.
 
 ## Simulation targets
 
-Model endpoints, relay/bridge/egress failure, NAT rebinding, loss/reorder, DNS/TLS/transport blocking, stale/malicious RPC, failed tx, stale bootstrap checkpoint, revocation ambiguity, rendezvous overwrite/front-run, signer rollback, clock faults, storage exhaustion, Relay Sybil/eclipse, first-contact substitution, root compromise-recovery races and release/governance failures.
+Model endpoints, relay/bridge/egress failure, NAT rebinding, loss/reorder, DNS/TLS/transport blocking, stale/malicious RPC, failed tx, stale bootstrap checkpoint, revocation ambiguity, rendezvous overwrite/front-run, signer rollback, clock faults, storage exhaustion, Relay Sybil/eclipse, first-contact substitution, root compromise-recovery races, stale pairwise backup mirrors, recovery-anchor rollback and release/governance failures.
+
+## Pairwise recovery tests
+
+When touching pairwise backup/recovery logic, test at minimum:
+
+```text
+latest bundle + latest anchor -> accept
+old valid bundle + newer anchor -> reject
+missing anchor after total device loss -> no latest-freshness claim
+anchor rollback -> reject
+root-compromise restore -> RecoveryStateKey rotation
+post-restore -> peer re-auth + future rendezvous rotation
+```
+
+Integrity is not a substitute for freshness.
+
+## Recovery quorum tests
+
+Reject duplicate recovery-key commitments, zero threshold and threshold greater than the number of distinct recovery keys.
+
+A profile claiming independent compromise recovery must be reviewed for custody-domain independence, not just key count.
 
 ## Docker/host safety
 
@@ -100,7 +127,7 @@ Host simulation does not replace Android validation for Keystore, lifecycle/back
 
 ## Governance boundaries
 
-Do not automatically change production/mainnet signer sets, release roots, contract governance anchors, migration anchors or user recovery-policy roots.
+Do not automatically change production/mainnet signer sets, release roots, contract governance anchors, migration anchors, user recovery-policy roots or pairwise recovery-anchor semantics.
 
 Production governance/custody changes require explicit human review and canonical threshold procedures.
 
