@@ -3,10 +3,11 @@
 Status: **canonical design draft**
 
 Normative security rules: [`SECURITY_INVARIANTS.md`](SECURITY_INVARIANTS.md).
+Control-plane rules: [`CONTROL_PLANE_SECURITY.md`](CONTROL_PLANE_SECURITY.md).
 
 ## 1. Principio
 
-Il pagamento abilita servizi/entitlement Freedom. L'utente non deve possedere obbligatoriamente NEAR, wallet NEAR o saldo NEAR per usare il protocollo base.
+Il pagamento abilita servizi/entitlement Freedom senza diventare identity trust anchor.
 
 ```text
 PaymentAdapter
@@ -21,31 +22,24 @@ Nessun singolo provider è requisito permanente.
 ## 2. Separazione dei ruoli
 
 ```text
-payment provider -> prova economica
-Freedom control-plane -> attestation / entitlement state
-client -> UX + verifica stato
+payment provider   -> prova economica
+payment attestor   -> verifica provider
+voucher issuer     -> one-time entitlement capability
+control-plane      -> redemption/final entitlement state
+client             -> UX + proof/state verification
 ```
 
-Il provider payment non è root of trust dell'identità Freedom.
-
-Il ruolo payment attestor non può firmare release, SecurityPolicy o identity/device authorization.
+Payment attestor non può firmare release, SecurityPolicy o device authorization.
 
 ## 3. PaymentBindingCommitment
 
-Freedom **MUST NOT** riutilizzare `root_commitment`, `DeviceRecordCommitment` o `PairwiseContactAlias` come riferimento economico globale.
-
-Usare un commitment domain-separated:
+Non riutilizzare `root_commitment`, DeviceRecordCommitment o pairwise alias come payment reference.
 
 ```text
-PaymentBindingCommitment = H(root/payment context, "payment", random/context)
+PaymentBindingCommitment = H(payment context, random/context, domain)
 ```
 
-Requisiti:
-
-- diverso da entitlement/device/sponsorship commitment;
-- non usato come routing/contact identifier;
-- non copiato in plaintext come merchant reference se non necessario;
-- più acquisti possono usare binding/nullifier specifici quando utile a ridurre correlazione.
+Domain separation impedisce riuso diretto ma **non garantisce unlinkability** se payment ed entitlement sono collegati nella stessa transazione.
 
 ## 4. PurchaseIntent
 
@@ -63,22 +57,16 @@ PurchaseIntent {
 }
 ```
 
-`purchase_ref` è casuale ad alta entropia.
+`purchase_ref` casuale ad alta entropia.
 
-Non usare in merchant/provider reference plaintext:
-
-- email/telefono salvo necessità del provider;
-- RootIdentity/root_commitment;
-- DeviceRecordCommitment;
-- pairwise alias;
-- social metadata.
+Merchant reference non contiene identity/network/social identifiers Freedom salvo necessità esplicita del provider.
 
 ## 5. PaymentDescriptor
 
 ```text
 PaymentDescriptor {
     provider
-    merchant/payment target
+    merchant/payment_target
     supported_products[]
     currencies/assets[]
     config_version
@@ -87,34 +75,28 @@ PaymentDescriptor {
 }
 ```
 
-Nessun merchant secret viene distribuito nell'APK.
+Nessun merchant secret nell'APK.
 
-## 6. PayPal senza server pubblico
+## 6. Provider flow
 
 ```text
-App -> reads PurchaseIntent/PaymentDescriptor
-App -> hosted PayPal flow
-User -> completes payment
-Private Payment Worker -> queries PayPal outbound
-Worker -> reconciles purchase_ref / amount / status
-Worker -> publishes PaymentAttestation
-Control-plane -> applies entitlement transition
-App -> verifies final state
+App -> PurchaseIntent / PaymentDescriptor
+App -> hosted provider flow
+User -> pays
+Private Payment Worker -> provider verification outbound
+Worker -> PaymentAttestation
+Attestation -> one-time EntitlementVoucher issuance
+Client -> voucher redemption
+Control-plane -> verified entitlement transition
 ```
 
-Il worker:
+Il worker non è account server e può essere replicato/sostituito.
 
-- non espone API pubblica all'app;
-- può stare dietro NAT/firewall;
-- custodisce credenziali merchant fuori dal client;
-- non è account server Freedom;
-- può essere replicato/sostituito.
+## 7. Callback != proof
 
-## 7. Callback client != prova economica
+Checkout `OK` può solo portare a `PAYMENT_PENDING`.
 
-Il ritorno `OK` del checkout serve solo alla UX e può portare a `PAYMENT_PENDING`.
-
-Un client modificato può simulare il callback; l'entitlement nasce soltanto da prova verificata e stato control-plane verificato.
+Entitlement nasce da prova economica verificata + voucher redemption + verified control-plane state.
 
 ## 8. PaymentAttestation
 
@@ -138,51 +120,94 @@ Requisiti:
 - idempotenza;
 - amount/product/currency match;
 - replay reject;
-- worker key ruotabili/revocabili;
-- possibilità futura quorum/threshold tra worker indipendenti;
-- nessuna autorità del worker su release, identity o conversazioni.
+- worker key rotation/revocation;
+- nessuna authority su release/identity/conversation.
 
-## 9. Verified finality
+`PaymentAttestation` non deve contenere direttamente `EntitlementCommitment` quando è evitabile.
 
-`PaymentAttestation` pubblicata o transaction hash ricevuto **non** significa automaticamente entitlement attivo.
+## 9. EntitlementVoucher
+
+Per ridurre linkage diretto payment→account:
 
 ```text
-submit/observe attestation
- -> acceptable finality
- -> execution success
- -> resolve entitlement
- -> verify expected entitlement_epoch/tier/status
- -> only then show PAID/ACTIVE
+EntitlementVoucher {
+    voucher_commitment
+    product
+    entitlement_delta
+    issued_at
+    expires_at
+    issuer_epoch
+    signature_or_blind_credential
+}
 ```
 
-Failure o state mismatch -> `PAYMENT_PENDING`/errore esplicito, mai successo silenzioso.
+Il voucher è one-time e non contiene RootIdentity/DeviceRecordCommitment/pairwise alias in plaintext.
 
-## 10. Crypto payments
+Una implementazione più forte può usare blind signatures/anonymous credentials standard e reviewate.
+
+## 10. EntitlementRedemption
+
+```text
+EntitlementRedemption {
+    voucher_nullifier
+    entitlement_commitment_or_proof
+    redemption_epoch
+    proof
+}
+```
+
+Requisiti:
+
+- nullifier impedisce doppia redemption;
+- redemption non rivela payment provider transaction ID;
+- entitlement transition è verificata dopo finality/state proof;
+- voucher expired/revoked/replayed fallisce esplicitamente.
+
+Timing correlation tra payment e redemption può restare possibile: non promettere unlinkability assoluta.
+
+## 11. Verified finality
+
+```text
+submit/observe
+ -> finality proof
+ -> execution success
+ -> resulting state proof
+ -> expected entitlement epoch/tier/status
+ -> PAID/ACTIVE
+```
+
+Hash tx o attestation pubblicata non equivalgono a entitlement attivo.
+
+## 12. Crypto payments
 
 ```text
 PurchaseIntent
- -> crypto transfer / contract call
- -> on-chain verification
- -> finalized state verification
- -> entitlement
+ -> verified crypto transfer/contract call
+ -> PaymentAttestation or directly verified economic proof
+ -> voucher/redemption or equivalent privacy-preserving transition
+ -> verified entitlement
 ```
 
-Stablecoin possono essere preferibili per prezzi commerciali stabili; native token può usare quote a validità breve.
-
-## 11. NEAR è infrastruttura, non prodotto
-
-L'utente compra servizi Freedom, non NEAR.
-
-Gas/storage possono essere sponsorizzati da treasury/fee relayer e finanziati dai ricavi.
-
-## 12. Privacy invariants
+## 13. Privacy invariants
 
 - provider agnostic;
 - merchant secret mai nell'APK;
 - callback client != proof;
 - payment binding domain-separated;
-- provider reference non contiene identity/network/social identifiers Freedom in plaintext salvo necessità esplicita;
-- dati personali non copiati inutilmente on-chain;
+- payment attestation non contiene account identity quando evitabile;
+- voucher/nullifier separano economic proof da entitlement redemption;
 - payment state non entra nel packet hot path;
-- provider payment non diventa identity trust anchor;
+- timing correlation resta un limite da misurare;
 - transaction hash != entitlement success.
+
+## 14. Test gates
+
+- duplicate provider transaction;
+- callback forged;
+- attestation replay;
+- voucher double-spend;
+- expired voucher;
+- payment/entitlement transaction timing correlation analysis;
+- malicious/stale RPC around redemption;
+- finality/state mismatch;
+- worker key rotation/revocation.
