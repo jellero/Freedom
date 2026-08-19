@@ -2,99 +2,100 @@
 
 Status: **canonical / normative design rules**.
 
-Schema source of truth: [`../spec/freedom.cddl`](../spec/freedom.cddl).
+Schema: [`../spec/freedom.cddl`](../spec/freedom.cddl).
 Normative baseline: [`SECURITY_INVARIANTS.md`](SECURITY_INVARIANTS.md).
-Control-plane verification: [`CONTROL_PLANE_SECURITY.md`](CONTROL_PLANE_SECURITY.md).
+Control-plane: [`CONTROL_PLANE_SECURITY.md`](CONTROL_PLANE_SECURITY.md).
 
 ## 1. Obiettivo
 
-Freedom deve poter verificare che una DeviceKey, una delegated authorization key o un root epoch non siano stati revocati senza trasformare una singola RPC in trust anchor e senza mettere la chain nel packet hot path di ogni frame.
-
-La verifica distingue:
-
-```text
-certificate validity
-+ current key/authorization epoch
-+ revocation state
-+ freshness of the revocation view
-```
-
-Un certificato firmato correttamente ma revocato non è valido per un nuovo handshake.
+Freedom verifica certificate validity + key/authorization/root epochs + revocation state + freshness senza rendere una singola RPC trust anchor.
 
 ## 2. Device revocation
 
-Schema canonico: `device-revocation-record` in `spec/freedom.cddl`.
-
-Semantica:
-
-```text
-DeviceRevocationRecord {
-    device_record_commitment
-    revoked_key_epoch_floor
-    revocation_epoch
-    effective_height
-    ...
-}
-```
-
-Regola:
+Schema canonico: `device-revocation-record`.
 
 ```text
 certificate.key_epoch <= revoked_key_epoch_floor
-    -> certificate revoked
+ -> revoked
 ```
 
-Una revoca è monotona. Un record successivo non può abbassare `revoked_key_epoch_floor` o `revocation_epoch`.
+Revocation epoch/floor è monotono.
+
+Authorization può essere:
+
+```text
+DEVICE_CONTROL
+RECOVERY_OR_SUCCESSOR
+```
+
+La seconda modalità consente recovery revocation quando la scoped DeviceControlKey non è disponibile, purché la proof sia autorizzata dalla current verified identity/recovery state.
 
 ## 3. Authorization-key revocation
 
-Schema canonico: `authorization-revocation-record`.
-
-Serve quando viene compromessa/ritirata una `DeviceAuthorizationDelegation`.
-
-Regola:
+Schema: `authorization-revocation-record`.
 
 ```text
 certificate.authorization_epoch <= revoked_authorization_epoch_floor
-    -> certificate chain revoked
+ -> certificate chain revoked
 ```
 
-Una nuova delegation usa un `authorization_epoch` maggiore e non riattiva automaticamente certificati vecchi.
+Una nuova delegation usa epoch maggiore e non riattiva certificati vecchi.
 
-## 4. Root epoch / UserRootRotation
+## 4. RootControlState / root epoch
 
-Un `UserRootRotation` valido crea un nuovo `root_epoch`.
+Root continuity/recovery può usare un opaque `root_control_commitment` con current root epoch e recovery-policy commitment.
 
-Dopo l'activation height:
+Un `UserRootRotation` valido porta a un root epoch maggiore. Rollback a root epoch precedente viene rifiutato.
 
-- nuovi DeviceCertificate devono legarsi al nuovo root epoch;
-- vecchie delegation/certificate possono essere rifiutate secondo la rotation policy;
-- rollback a un root epoch precedente già superato è vietato;
-- un peer già associato al contatto conserva continuity solo se la root transition supera la policy prevista.
+`root_control_commitment` non è routing/contact identity, ma può correlare gli eventi della stessa recovery lineage sul control-plane.
 
-`LOST_DEVICE` non cambia il root epoch. `ROOT_COMPROMISE` sì.
+## 5. Sticky recovery policy
 
-## 5. Revocation proof
+Se la lineage ha una `UserRecoveryPolicy`, una normal root rotation **MUST** ereditare lo stesso recovery-policy commitment.
 
-Per stato production security-sensitive il client accetta revocation/non-revocation soltanto tramite stato riconducibile a un `VerifiedControlPlaneCheckpoint`.
+La current root da sola non può rimuovere/sostituire la policy.
 
-A seconda del layout del `ChainAdapter`, la prova può essere:
+V1 non supporta recovery-policy mutation arbitraria.
+
+## 6. Compromise recovery pending
+
+Una `COMPROMISE_RECOVERY` validata dal recovery quorum può targettare il latest current root state della stessa `root_control_commitment` lineage.
+
+Quando accepted:
 
 ```text
-inclusion proof of ACTIVE/current record
-or
-inclusion proof of revocation record
-or
-non-inclusion proof within a canonical revocation namespace
+RECOVERY_PENDING
 ```
 
-La semantica concreta deve essere univoca per adapter e coperta da test vector.
+fino all'activation height:
 
-Un `404`, `null` o "not found" restituito da una RPC non è una prova di non-revoca.
+- normal root rotations sono bloccate;
+- recovery policy mutation è bloccata;
+- high-risk device authorization può essere bloccata/pending;
+- current root non può cancellare unilateralmente la recovery;
+- cancellation/replacement richiede la independent recovery authority.
 
-## 6. Freshness classes
+Questo impedisce alla root rubata di evadere dalla recovery policy tramite normal rotation race.
 
-Il protocollo definisce classi di freshness, non una singola regola globale:
+## 7. Revocation proof
+
+Production revocation/non-revocation deriva da stato riconducibile a `VerifiedControlPlaneCheckpoint`.
+
+A seconda dell'adapter:
+
+```text
+inclusion proof current active state
+or
+inclusion proof revocation state
+or
+canonical non-inclusion proof
+```
+
+La semantica deve essere univoca e coperta da vectors.
+
+`404`, `null`, `not found` da RPC non è non-revocation proof.
+
+## 8. Freshness classes
 
 ```text
 FRESHNESS_STRICT
@@ -102,100 +103,64 @@ FRESHNESS_NORMAL
 FRESHNESS_DEGRADED_EXISTING_SESSION
 ```
 
-### FRESHNESS_STRICT
+Strict: post-recovery, new/unseen DeviceKey, high-risk release/governance/security operations.
 
-Per operazioni ad alto rischio, per esempio:
+Normal: ordinary new handshake with known certificate and sufficiently fresh verified cache.
 
-- primo handshake dopo root/device recovery;
-- nuova DeviceKey mai vista;
-- install/update di release security-sensitive;
-- security/governance transitions.
+Degraded-existing-session: bounded continuation di una sessione già autenticata durante temporary control-plane outage; non autorizza un nuovo unknown peer/device.
 
-Richiede checkpoint entro il limite configurato dalla `SecurityPolicy`.
+## 9. Stale state
 
-### FRESHNESS_NORMAL
+Freshness failure -> `REVOCATION_STATE_STALE`.
 
-Per nuovi handshake ordinari con certificate già noto e cache verificata sufficientemente recente.
+Possibili azioni: alternate provider/path refresh, bounded continuation of existing session if policy allows, oppure high-risk new-handshake failure.
 
-### FRESHNESS_DEGRADED_EXISTING_SESSION
+Outage non diventa `NOT_REVOKED`.
 
-Può consentire a una sessione già autenticata di continuare per un periodo bounded quando il control-plane è temporaneamente irraggiungibile, senza dichiarare nuova revocation freshness.
-
-Non autorizza silenziosamente un nuovo peer/device sconosciuto.
-
-## 7. Stale state
-
-Quando la freshness non soddisfa la policy:
-
-```text
-REVOCATION_STATE_STALE
-```
-
-Il client deve scegliere esplicitamente tra:
-
-- refresh tramite provider/path alternativo;
-- continuazione bounded di una sessione già autenticata se policy lo consente;
-- failure di un nuovo handshake high-risk.
-
-Non deve trasformare assenza di connettività al control-plane in `NOT_REVOKED`.
-
-## 8. Highest-seen anti-rollback
+## 10. Highest-seen
 
 Persistire almeno:
 
 ```text
 highest_verified_checkpoint
-highest_root_epoch per contact relationship
-highest_authorization_epoch per device chain
-highest_device_key_epoch per known device record
-highest_revocation_epoch per revocation namespace
+highest_root_epoch per contact/root lineage
+highest_authorization_epoch per known chain
+highest_device_key_epoch per device record
+highest_revocation_epoch per namespace
 ```
 
-Stato validamente provato ma inferiore al highest-seen rilevante viene rifiutato come rollback.
+Proof valido ma inferiore al highest-seen rilevante -> rollback reject.
 
-## 9. Bootstrap freshness
+## 11. Bootstrap freshness
 
-Un device nuovo non ha highest-seen locale. Per questo il first-install verifier e ogni release recente portano un `BootstrapFreshnessFloor`:
+Fresh install usa `BootstrapFreshnessFloor` della propria release/verifier.
+
+State sotto il floor viene rifiutato.
+
+Un verifier autentico ma esso stesso molto vecchio, ottenuto soltanto da canali attacker-controlled, non può conoscere magicamente uno state più recente; verifier freshness richiede independent bootstrap assurance.
+
+## 12. DeviceCertificate validation order
 
 ```text
-minimum_checkpoint_height
-minimum_checkpoint_hash?
-minimum_signer_set_epoch
-minimum_policy_epoch
-issued_in_release_id
+canonical parse
+ -> signing domain
+ -> expected contact/root proof
+ -> delegation signature/scope
+ -> child capability/expiry checks
+ -> device-record binding
+ -> DeviceKey possession
+ -> highest-seen root/auth/key epochs
+ -> current-enough revocation proof
+ -> authenticated
 ```
 
-Un primo bootstrap rifiuta stato sotto il floor incorporato nell'artifact/verifier che sta eseguendo.
+## 13. Invarianti
 
-Limite inevitabile:
-
-> se anche il bootstrap verifier stesso è una copia autentica ma molto vecchia ottenuta da un ambiente completamente controllato dall'attaccante, il protocollo non può dedurre da solo che esista stato più recente.
-
-Per questo l'assurance di freshness del **verifier stesso** deriva dal canale indipendente con cui viene ottenuto/aggiornato (store, OS/OEM, fingerprint/out-of-band o altro anchor indipendente). Freedom non promette freshness dal nulla.
-
-## 10. DeviceCertificate validation order
-
-Per un nuovo handshake:
-
-```text
-1. parse canonical certificate
-2. verify signing domain / deterministic encoding
-3. verify RootIdentity/contact relationship
-4. verify delegation signature and scope
-5. verify certificate capabilities subset of delegation
-6. verify certificate expiry <= delegation expiry
-7. verify DeviceKey possession
-8. verify key/root/authorization epochs against highest-seen
-9. verify current-enough revocation state proof
-10. only then mark peer/device authenticated
-```
-
-## 11. Invarianti
-
-- `not found from RPC != non-revoked`;
-- revocation epochs/floors sono monotoni;
-- certificate child authority non supera la delegation parent;
-- stale revocation state non viene mascherato da `VERIFIED`;
-- first install usa `BootstrapFreshnessFloor`;
-- un verifier autentico ma obsoleto non viene descritto come magicamente freshness-aware;
-- rollback di root/authorization/key/revocation epoch già osservati è vietato.
+- RPC not-found != non-revoked;
+- revocation floors/epochs monotonic;
+- child certificate authority <= parent delegation;
+- stale revocation state not `VERIFIED`;
+- root rollback rejected;
+- recovery policy sticky through normal root rotation;
+- pending compromise recovery cannot be cancelled by current root alone;
+- first install enforces freshness floor.
