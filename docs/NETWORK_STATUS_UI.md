@@ -1,225 +1,124 @@
 # Freedom — Network Status UI
 
-Status: **canonical UX/security labeling rules**
+Status: **product/security UX specification**.
 
-Normative security rules: [`SECURITY_INVARIANTS.md`](SECURITY_INVARIANTS.md).
-Shield label gate: [`SHIELD.md`](SHIELD.md).
-Adaptive evidence: [`ADAPTIVE_DEFENSE.md`](ADAPTIVE_DEFENSE.md).
+Normative security: [`SECURITY_INVARIANTS.md`](SECURITY_INVARIANTS.md).
+Revocation: [`REVOCATION.md`](REVOCATION.md).
+Shield: [`SHIELD.md`](SHIELD.md).
 
-## 1. Obiettivo
+## 1. Principio
 
-La UI separa:
-
-- fatti verificati/osservati;
-- inferenze;
-- contromisure;
-- Communication vs Gateway.
-
-> **Semplice quando tutto funziona. Trasparente quando qualcosa cerca di impedirti di comunicare.**
-
-## 2. Stati
+La UI distingue sempre:
 
 ```text
-NORMAL
-SHIELDED
-DEGRADED
-SUSPECTED
-UNAVAILABLE
+OBSERVED FACT
+DERIVED SECURITY STATE
+NETWORK INFERENCE
+COMMERCIAL CAPACITY STATE
 ```
 
-Colore mai unico segnale.
+Non usare una label più forte dello stato realmente verificato.
 
-## 3. Gate `SHIELDED`
+## 2. Communication labels
 
-`SHIELDED` può essere mostrato in production solo se il runtime ha completato il vero circuit protocol di `SHIELD.md`:
-
-- circuit setup valido;
-- per-hop keys separate;
-- layered forwarding attivo;
-- path conforme alla Shield policy;
-- no silent direct fallback.
-
-Due relay/proxy concatenati non autorizzano la label `SHIELDED`.
-
-## 4. Communication
+Possibili campi:
 
 ```text
-COMMUNICATION
-Peer assurance     Bootstrap / Verified
-Session            Authenticated / Inactive
-Encryption         E2EE ACTIVE only after handshake verification
-Route              Direct / Relay / Bridge / Shielded
-Interference       None / Suspected
+Peer assurance      BOOTSTRAP_UNVERIFIED / CONTACT_VERIFIED
+Device certificate  VERIFIED / INVALID
+Revocation state    CURRENT / STALE / INVALID
+Session             E2EE ACTIVE / INACTIVE
+Route               DIRECT / RELAY / BRIDGE / SHIELDED
+Network inference   NORMAL / DEGRADED / SUSPECTED / UNAVAILABLE
 ```
 
-`End-to-end encrypted by Freedom` appare solo dopo expected-contact authentication + valid DeviceCertificate/delegation + DeviceKey possession + session establishment.
+`CONTACT_VERIFIED` richiede independent safety-code/fingerprint/out-of-band assurance.
 
-## 5. Gateway
+`Device certificate VERIFIED` richiede delegation/certificate/key proof + current-enough revocation state.
+
+## 3. `SHIELDED` gate
+
+Non basta usare un relay o due proxy.
+
+`SHIELDED` compare soltanto quando:
 
 ```text
-GATEWAY
-Mode               Selected apps / Whole device
-Tunnel             Protected / Off
-Egress             Active / Unavailable
-Route              Relay / Bridge / Shielded / Direct egress
-Filtering          None / Suspected
-Managed quota      used / remaining
+authenticated Shield circuit active
+per-hop independent keys active
+layered forwarding active
+requested Shield policy satisfied
+circuit not expired/degraded below policy
+no silent direct fallback
 ```
 
-Gateway non mostra `End-to-end encrypted by Freedom` per traffico Internet generico.
+Durante la costruzione usare copy come `Building protected path`, non `SHIELDED`.
+
+## 4. `SUSPECTED`
+
+`SUSPECTED` è inferenza da evidenze come route failures selettive, peer activity recente e alternative disponibili.
+
+Non dichiarare:
+
+- “sei monitorato”;
+- “il governo ti sta bloccando”;
+- “questo firewall non può fermarci”.
+
+## 5. Revocation stale
+
+Se revocation freshness è insufficiente:
+
+```text
+Peer identity known
+Device authorization state STALE
+```
+
+Non mostrare `VERIFIED` come se fosse current.
+
+Per sessione esistente la policy può consentire degraded continuation bounded; per nuovo high-risk handshake può richiedere refresh/failure.
+
+## 6. Fresh install / release
+
+Update/install UI può mostrare:
+
+```text
+Release signatures  VERIFIED
+Artifact hash       VERIFIED
+APK signer          VERIFIED
+Policy              CURRENT
+Checkpoint floor    SATISFIED
+```
+
+`Checkpoint floor SATISFIED` significa che lo stato verificato non è sotto il `BootstrapFreshnessFloor` del verifier corrente.
+
+## 7. Gateway boundary
+
+Gateway non mostra `End-to-end encrypted by Freedom` per generic Internet traffic.
 
 Copy corretto:
 
-> **Protected path to Freedom egress**
-
-## 6. Control-plane evidence
-
-Non mostrare:
-
 ```text
-Peer activity RECENT
-Control-plane VERIFIED
+Protected path to Freedom egress
+Shielded network path active   # only if actual Shield gate satisfied
 ```
 
-solo perché un RPC ha risposto.
+Quota Gateway è capacity state, non security/network incident state.
 
-Serve:
-
-```text
-VerifiedControlPlaneCheckpoint
-+ valid state proof
-+ fresh pairwise RecoveryBeacon
-```
-
-Se proof/freshness fallisce:
+## 8. Network Indicator
 
 ```text
-Control-plane state  UNVERIFIED / STALE
+NORMAL       route working
+DEGRADED     fallback/degradation
+SUSPECTED    selective interference/route failure suspected
+UNAVAILABLE  no valid path found
+SHIELDED     orthogonal protection/path state, only after Shield gate
 ```
 
-non `peer active`.
+`SHIELDED` non dovrebbe essere trattato come “severity level” equivalente a NORMAL/DEGRADED; è una proprietà del path corrente.
 
-## 7. Evidenza vs inferenza
+## 9. Anti-dark-pattern
 
-Fatti:
+Free e paid tiers ricevono la stessa verità tecnica. Premium può aumentare capacity/path diversity, non cambiare la diagnosi né rendere `VERIFIED` uno stato non verificato.
 
-- verified RecoveryBeacon freshness;
-- verified control-plane checkpoint;
-- route/transport connect result;
-- authenticated handshake result;
-- relay/bridge/egress reachability;
-- packet loss/RTT;
-- Shield circuit state;
-- quota state.
+## 10. Accessibility
 
-Inferenze:
-
-```text
-INTERFERENCE_OR_ROUTE_FAILURE_SUSPECTED
-PROTOCOL_BLOCK_SUSPECTED
-DPI_OR_FILTERING_SUSPECTED
-```
-
-Non dichiarare `sei monitorato`, attribution a Stato/ISP o universal bypass.
-
-## 8. First-contact assurance
-
-Per contatti:
-
-```text
-BOOTSTRAP_UNVERIFIED
-CONTACT_VERIFIED
-```
-
-`CONTACT_VERIFIED` richiede verifica indipendente/safety code/fingerprint secondo UX.
-
-Una sessione può essere crittograficamente autenticata rispetto al descriptor ricevuto senza provare da sola che il descriptor appartenga alla persona fisica che l'utente intendeva contattare.
-
-## 9. Vista semplice Communication
-
-```text
-FREEDOM COMMUNICATION
-
-Status             Connected
-Peer               Verified / Bootstrap only
-Encryption         End-to-end
-Route              Relay / Shielded
-Interference       None / Suspected
-```
-
-## 10. Vista semplice Gateway
-
-```text
-FREEDOM GATEWAY
-
-Status             Connected
-Mode               3 selected apps
-Path               Shielded / Relay / Bridge
-Egress             CH / managed
-Filtering          None
-Managed capacity   82 / 100 MB today
-```
-
-Quota esaurita non diventa `SUSPECTED`/`UNAVAILABLE` se il problema è economico/capacity.
-
-## 11. Vista tecnica
-
-Campi possibili:
-
-```text
-verified checkpoint height
-control-plane proof state
-recovery beacon proof/freshness
-pairwise/contact assurance
-route generation
-transport semantic class
-relay descriptor/provenance class
-Shield circuit epoch/hop count
-last failure reason
-fallback attempts
-Gateway egress/DNS/leak state
-quota state
-```
-
-Non mostrare secrets o global identifiers non necessari.
-
-## 12. Core Free / Pro
-
-Free e Pro vedono la stessa verità tecnica.
-
-Pro può aumentare managed capacity, path diversity, prewarming, multi-hop/Shield resources e Gateway quota, ma non può ottenere label di sicurezza più favorevoli a parità di stato.
-
-## 13. Anti-dark-pattern
-
-Il client non deve:
-
-- elevare packet loss a censura senza evidenza;
-- usare `SUSPECTED` per vendere Pro;
-- mostrare `SHIELDED` prima del vero circuit gate;
-- mostrare `VERIFIED` da risposta RPC non provata;
-- mostrare E2EE su Gateway generico;
-- confondere quota Gateway con incidente security;
-- nascondere egress trust boundary;
-- promettere anonimato/universal bypass.
-
-## 14. Notification policy
-
-```text
-INFO       route changed
-NOTICE     degraded/fallback
-WARNING    interference/route failure suspected
-CRITICAL   no valid path
-```
-
-Deduplicare per incidente.
-
-## 15. Invarianti UX
-
-- labels derivano da runtime state verificato;
-- `SHIELDED` richiede real Shield circuit;
-- `VERIFIED` control-plane richiede proof;
-- `CONTACT_VERIFIED` distingue human assurance da bootstrap;
-- Communication/Gateway separati;
-- facts/inference separati;
-- no passive-surveillance detection claim;
-- same meaningful diagnostics for Free/paid tiers.
+Colore non è mai l'unico segnale. Ogni stato ha testo/icona/description accessibile.
