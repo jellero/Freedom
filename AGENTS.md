@@ -4,8 +4,6 @@ These instructions apply to Codex/agentic development in this repository.
 
 ## Read first for security-sensitive work
 
-Before modifying identity, protocol, chain/control-plane, relay, Shield, Gateway, payments, recovery or release code, read:
-
 1. `docs/SECURITY_INVARIANTS.md`
 2. `docs/CONTROL_PLANE_SECURITY.md`
 3. `docs/REVOCATION.md`
@@ -14,47 +12,50 @@ Before modifying identity, protocol, chain/control-plane, relay, Shield, Gateway
 6. `docs/IDENTITY_MODEL.md`
 7. `docs/PROTOCOL.md`
 8. `docs/THREAT_MODEL.md`
-9. subsystem-specific docs.
+9. `docs/REPOSITORY_GOVERNANCE.md`
+10. subsystem-specific docs.
 
 Normative MUST/MUST NOT rules override older implementation behavior.
 
 ## Architecture invariants
 
-Do not introduce global user/device network IDs, on-chain messages/mailbox, persistent relay inbox, automatic offline delivery queue, RootIdentity/DeviceRecordCommitment as routing IDs, public social graph, mandatory single RPC/provider/relay/egress, master decryption key, single-key production super-admin, `tx-hash-is-success`, silent Shield downgrade or unbounded temporary active state.
+Do not introduce global user/device network IDs, on-chain messages/mailbox, persistent relay inbox, automatic offline delivery queue, RootIdentity/RootControlCommitment/DeviceRecordCommitment as routing IDs, public social graph, mandatory single RPC/provider/relay/egress, master decryption key, single-key production super-admin, tx-hash-is-success, RPC-not-found-is-non-revoked, silent Shield downgrade or unbounded temporary active state.
 
 ## Canonical schema
 
-`spec/freedom.cddl` is the source of truth for protocol object field names/shapes.
+`spec/freedom.cddl` is the source of truth for frozen object field names/shapes.
 
-Do not duplicate a new incompatible struct in Markdown or code merely because it is convenient.
+All signed security objects use deterministic canonical encoding + explicit signing domains. Encrypted objects/frames use purpose/context-bound AEAD associated data according to `spec/README.md`.
 
-All signed security objects use deterministic canonical encoding and domain-separated signing input.
+Do not create a second incompatible Markdown/code struct for convenience.
 
 ## Normative-spec human gate
 
-Agents may propose changes to:
+Agents may propose changes to normative/security files, but MUST NOT autonomously weaken/remove a MUST/MUST NOT, change a trust assumption, signing/AEAD domain, canonical signed schema, revocation/recovery/governance/rekey state machine merely to make implementation/tests pass.
+
+A failing test is evidence, not permission to weaken the oracle.
+
+### Branch/PR rule
+
+For normative/security-sensitive changes:
 
 ```text
-docs/SECURITY_INVARIANTS.md
-docs/CONTROL_PLANE_SECURITY.md
-docs/REVOCATION.md
-docs/IDENTITY_MODEL.md
-docs/PROTOCOL.md
-spec/freedom.cddl
-spec/README.md
+agent branch/worktree
+ -> automated checks
+ -> pull request
+ -> human/code-owner review
+ -> human merge
 ```
 
-but MUST NOT autonomously weaken/remove a MUST/MUST NOT, change a trust assumption, signing domain, canonical signed schema or security state machine merely to make implementation/tests pass.
+Agents MUST NOT intentionally direct-push such changes to `main`, even if repository settings technically allow it.
 
-Such changes require explicit human review before they are treated as canonical/main-ready.
-
-A failing test is evidence about implementation or specification; it is not permission to weaken the oracle.
+The target repository configuration is protected `main` with required PR/code-owner/status checks as documented in `docs/REPOSITORY_GOVERNANCE.md`.
 
 ## Development method
 
 Follow `docs/ADVANCED_DEVELOPMENT.md`.
 
-Prefer simulator-first development for protocol/control-plane/routing. Full Android APK install is an integration gate, not the primary loop.
+Prefer simulator-first development. Full Android APK install is an integration gate, not the primary protocol loop.
 
 Use isolated worktrees/branches for parallel tasks.
 
@@ -68,39 +69,41 @@ For every bug/security fix:
 4. add regression coverage;
 5. run negative/adversarial cases;
 6. run relevant unit/property/scenario tests;
-7. update docs/threat model if the boundary genuinely changes;
-8. request human review if the normative requirement itself changes.
+7. update threat/docs if the security boundary genuinely changes;
+8. request human review if normative semantics change.
+
+Run at minimum:
+
+```text
+python tools/check_spec_consistency.py
+```
+
+when changing docs/spec/security architecture.
 
 ## Simulation targets
 
-Lab should model endpoints, relay/bridge/egress failures, NAT rebinding, packet loss/reorder, DNS/TLS/transport blocking, stale/malicious RPC, failed/partial tx, stale bootstrap checkpoint, revocation ambiguity, rendezvous overwrite/front-run, signer rollback, clock faults, storage exhaustion, Relay Sybil/eclipse, first-contact substitution, root compromise recovery and release/governance failures.
+Model endpoints, relay/bridge/egress failure, NAT rebinding, loss/reorder, DNS/TLS/transport blocking, stale/malicious RPC, failed tx, stale bootstrap checkpoint, revocation ambiguity, rendezvous overwrite/front-run, signer rollback, clock faults, storage exhaustion, Relay Sybil/eclipse, first-contact substitution, root compromise-recovery races and release/governance failures.
 
 ## Docker/host safety
 
 Do not give an agent unrestricted access to a production/personal host Docker daemon.
 
-Preferred execution:
+Prefer disposable VM/dedicated CI runner or rootless/isolated runtime.
 
-```text
-disposable VM / dedicated CI runner
-or
-rootless/isolated container runtime
-```
+Do not mount `/var/run/docker.sock` from a sensitive workstation into an agent-controlled container unless that host itself is disposable and contains no sensitive data/credentials.
 
-Do not mount `/var/run/docker.sock` from a sensitive workstation into an agent-controlled container unless that host is itself disposable and contains no sensitive credentials/data.
-
-Production secrets, mainnet admin keys, release roots and personal credentials are never available to autonomous test agents.
+Production/mainnet/release secrets are never available to autonomous test agents.
 
 ## Android gates
 
-Host-side simulation does not replace Android validation for Keystore, lifecycle/background restrictions, permissions, package signing/update, Android network handover, camera/QR and `VpnService`.
+Host simulation does not replace Android validation for Keystore, lifecycle/background restrictions, permissions, signing/update, real network handover, camera/QR and `VpnService`.
 
 ## Governance boundaries
 
-Do not automatically change production/root/mainnet signer sets, release roots, contract governance anchors, migration anchors or user recovery-policy roots.
+Do not automatically change production/mainnet signer sets, release roots, contract governance anchors, migration anchors or user recovery-policy roots.
 
-Production governance/custody changes require explicit human review and the threshold procedures described in canonical docs.
+Production governance/custody changes require explicit human review and canonical threshold procedures.
 
 ## Evidence
 
-Keep tests reproducible. Preserve seed/config, node versions/code hashes, virtual/network events and assertions without logging private/session/recovery secrets.
+Keep tests reproducible. Preserve seed/config, virtual/network event trace, node/code hashes and assertions without logging private/session/recovery secrets.
