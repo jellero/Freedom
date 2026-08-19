@@ -59,6 +59,7 @@ Tunnel        Protected
 Egress        Active
 Route         Shielded / Bridge / Direct egress
 Filtering     None / Suspected
+Managed quota 82 MB / 100 MB today
 ```
 
 Il Gateway **non deve** mostrare `End-to-end encrypted by Freedom` per traffico Internet generico.
@@ -72,6 +73,8 @@ oppure:
 > **Shielded network path active**
 
 La sicurezza oltre l'egress dipende anche dal protocollo dell'applicazione finale, ad esempio HTTPS.
+
+Il contatore `100 MB/day` è mostrato solo quando il traffico usa managed Gateway capacity. Private/business egress o policy differenti mostrano la propria quota separatamente.
 
 ## 4. Apertura automatica
 
@@ -104,6 +107,7 @@ Current transport    FILTERED / FAILED
 Bridge               ACTIVE
 Egress               REACHABLE
 Gateway path          RECOVERED
+Managed quota         82 / 100 MB today
 
 Il percorso normale è stato degradato.
 Freedom Gateway sta usando un transport alternativo.
@@ -160,9 +164,19 @@ FREEDOM GATEWAY
 Status             Connected
 Mode               3 selected apps
 Path               Shielded
-Egress             CH / private-managed
+Egress             CH / managed
 Filtering          None
+Free managed       82 / 100 MB today
 ```
+
+Se la quota gestita è quasi esaurita:
+
+```text
+Gateway managed capacity
+12 MB remaining today
+```
+
+La UI non deve trasformare questo stato economico in `DEGRADED`, `SUSPECTED` o `UNAVAILABLE` se tecnicamente la rete funziona.
 
 ## 7. Vista tecnica
 
@@ -181,6 +195,8 @@ fallback attempts
 current protection policy
 Gateway egress class
 Gateway DNS/leak state
+Gateway quota class
+Gateway bytes used / remaining
 ```
 
 Non mostrare secret, private key, session key o identificatori globali non necessari.
@@ -216,13 +232,16 @@ Un utente Free deve:
 - ricevere la stessa spiegazione tecnica;
 - beneficiare del recovery/fallback core;
 - cambiare route/relay/transport quando esistono alternative gratuite/community;
-- ricevere quota Emergency Shield quando prevista.
+- ricevere quota Emergency Shield quando prevista;
+- quando Gateway managed è disponibile, ricevere il target iniziale di **100 MB/giorno** di capacità egress gestita.
 
 Principio:
 
 > **La censura non deve diventare un paywall.**
 
-La futura policy commerciale Gateway può limitare capacità egress gestita, ma non deve falsificare classificazioni o indebolire la comunicazione Freedom core.
+La policy commerciale Gateway può limitare capacità egress gestita, ma non deve falsificare classificazioni o indebolire la comunicazione Freedom core.
+
+La quota Gateway e la quota Emergency Shield Communication devono restare separate anche in UI.
 
 ## 10. Emergency Shield / Pro
 
@@ -238,6 +257,9 @@ parallel failover
 aggressive transport rotation
 bridge/non-public pools
 Maximum Resilience
+Gateway managed quota
+egress/provider diversity
+Maximum Reachability budget
 ```
 
 Free e Pro usano gli stessi principi di autenticazione e la stessa interpretazione tecnica degli eventi.
@@ -253,7 +275,9 @@ Il client non deve:
 - degradare route Free funzionanti;
 - mostrare `E2EE Freedom` su Gateway generico;
 - nascondere che un egress Gateway è una trust boundary differente;
-- dichiarare universal firewall bypass.
+- dichiarare universal firewall bypass;
+- rappresentare `quota Gateway esaurita` come interferenza/censura;
+- bloccare Freedom Communication perché il managed Gateway ha finito i 100 MB del giorno.
 
 ## 12. Notification policy
 
@@ -274,6 +298,8 @@ Recovery Gateway:
 
 > **Gateway ripristinato tramite un percorso alternativo.**
 
+Quota Gateway quasi esaurita è una notifica di capacità separata, non una network incident notification.
+
 ## 13. Main UI
 
 ```text
@@ -287,10 +313,11 @@ Network indicator
 Gateway, quando implementato:
 
 ```text
-Gateway toggle/status
-  |- Selected apps
-  |- Whole device
+Freedom Gateway
+  |- ON / OFF
+  |- Selected apps / Whole device
   |- Protection mode
+  |- Managed quota remaining
   `- Network details
 ```
 
@@ -307,4 +334,6 @@ Non serve integrare un browser generalista.
 - nessun universal firewall claim;
 - diagnostica significativa anche Free;
 - Pro aumenta capacità/resilienza, non la verità mostrata;
-- egress Gateway visibile come ruolo separato dal relay.
+- egress Gateway visibile come ruolo separato dal relay;
+- quota Free managed Gateway mostrata come capacity state, non security state;
+- quota Gateway e Emergency Shield Communication contabilizzate e comunicate separatamente.
