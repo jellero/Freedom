@@ -55,3 +55,14 @@ jobs:
 
       - name: Run deterministic L1 simulator against shared core
         run: python sim/simctl.py --all --quiet --no-build --evidence-dir build/sim-evidence
+
+  l2-docker-network:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run real-container path failure/address-rebind smoke
+        run: python sim/l2/run_docker.py
