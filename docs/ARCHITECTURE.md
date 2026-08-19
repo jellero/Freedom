@@ -5,8 +5,10 @@ Status: **canonical design draft**.
 Normative security: [`SECURITY_INVARIANTS.md`](SECURITY_INVARIANTS.md).
 Control-plane: [`CONTROL_PLANE_SECURITY.md`](CONTROL_PLANE_SECURITY.md).
 Revocation: [`REVOCATION.md`](REVOCATION.md).
+Pairwise recovery: [`PAIRWISE_RECOVERY.md`](PAIRWISE_RECOVERY.md).
 Shield: [`SHIELD.md`](SHIELD.md).
 Schema: [`../spec/freedom.cddl`](../spec/freedom.cddl).
+Crypto domains: [`../spec/crypto-domains.txt`](../spec/crypto-domains.txt).
 
 ## 1. System layers
 
@@ -17,23 +19,25 @@ Freedom separa:
 3. opaque device control-plane state (`DeviceRecordCommitment`, `DeviceControlKey`);
 4. verifiable control-plane checkpoint/proofs/revocation;
 5. pairwise identity/rendezvous;
-6. routing/transport fabric;
-7. Freedom Communication;
-8. Freedom Shield;
-9. Freedom Gateway;
-10. verified distribution/release governance.
+6. pairwise recovery state (`RecoveryStateKey`, encrypted bundle, optional monotonic anchor);
+7. routing/transport fabric;
+8. Freedom Communication;
+9. Freedom Shield;
+10. Freedom Gateway;
+11. verified distribution/release governance.
 
 ## 2. Overview
 
 ```text
                  VERIFIABLE CONTROL PLANE
-      +----------------------------------------------+
-      | checkpoint/state proofs                     |
-      | opaque device revocation/rotation           |
-      | pairwise rendezvous/recovery                |
-      | entitlement/payment                         |
-      | release/security/contract governance        |
-      +----------------------+-----------------------+
+      +--------------------------------------------------+
+      | checkpoint/state proofs                         |
+      | opaque device revocation/rotation               |
+      | pairwise rendezvous                             |
+      | optional pairwise recovery freshness anchor     |
+      | entitlement/payment                             |
+      | release/security/contract governance            |
+      +----------------------+---------------------------+
                              |
                     only when needed
                              |
@@ -131,7 +135,34 @@ Each direction/epoch derives a one-time write keypair. Slot observation does not
 
 Rendezvous/recovery writes are signed, generation-monotonic, bounded and reclaimable.
 
-## 10. Transport fabric
+Fixed cryptographic purpose labels are not ad-hoc strings in implementations; they come from `spec/crypto-domains.txt`.
+
+## 10. Pairwise recovery freshness
+
+Pairwise state is recovered either from a surviving authorized device or from an encrypted `PairwiseRecoveryBundle` stored on an untrusted source.
+
+**Integrity does not prove freshness after total device loss.**
+
+The rollback-detectable profile uses a small verified `PairwiseRecoveryAnchor` that commits to the latest backup generation/hash/state commitment:
+
+```text
+root_control_commitment
+anchor_epoch
+latest_backup_generation
+latest_bundle_hash
+latest_state_commitment
+recovery_key_epoch
+```
+
+The full contact/pairwise backup remains encrypted and off-chain.
+
+The anchor leaks only recovery-lineage backup-update timing, not the social graph/plaintext; that timing correlation is an explicit privacy trade-off.
+
+Without a surviving device or verified anchor, Freedom can validate bundle integrity but cannot claim `LATEST_VERIFIED_BACKUP` freshness.
+
+After restore, peers are re-authenticated and future rendezvous/recovery/session state is rotated.
+
+## 11. Transport fabric
 
 ```text
 DIRECT
@@ -145,19 +176,19 @@ PLUGGABLE / OBFUSCATED TRANSPORT
 
 Adapters declare reliable-stream/datagram semantics. Media loss does not block control/text through a shared sequence space.
 
-## 11. Relay
+## 12. Relay
 
 Forward not store, bounded resources, no implicit egress, no session keys, no global identity headers.
 
 `N relay IDs != N independent operators`.
 
-## 12. Shield
+## 13. Shield
 
 A production Shield path requires true circuit setup, per-hop independent keys, layered forwarding, provenance-aware selection and no silent direct fallback.
 
 Two chained proxies are not Shield.
 
-## 13. Session security
+## 14. Session security
 
 ```text
 both-offer anti-downgrade
@@ -171,7 +202,7 @@ both-offer anti-downgrade
 
 Rekey simultaneous/loss/duplicate behavior is state-machine defined.
 
-## 14. Synchronous semantics
+## 15. Synchronous semantics
 
 ```text
 active authenticated session -> transmit now
@@ -180,7 +211,7 @@ no active authenticated session -> fail/discard
 
 No mailbox/offline queue/store-and-forward.
 
-## 15. Governance
+## 16. Governance
 
 Production critical actions use threshold governance with explicit quorum trust assumption and separated custody/operator domains where practical.
 
@@ -194,13 +225,13 @@ GovernanceRootRotation >= 3-of-5 + recovery
 
 This means no single technical credential is unilateral; quorum collusion remains a trust assumption.
 
-## 16. Contract/chain migration
+## 17. Contract/chain migration
 
 Contract upgrade is immutable-core or threshold/timelocked/code-hash pinned.
 
 Chain migration requires a `StateMigrationProof` linking source finalized state, migration program hash and target imported state root.
 
-## 17. Gateway boundary
+## 18. Gateway boundary
 
 ```text
 external app
@@ -212,7 +243,7 @@ external app
 
 Gateway protects/diversifies the path; it does not convert generic external protocols into Freedom E2EE.
 
-## 18. Distribution
+## 19. Distribution
 
 ```text
 untrusted artifact bytes
@@ -224,11 +255,11 @@ untrusted artifact bytes
  -> install
 ```
 
-## 19. Primitive prohibitions
+## 20. Primitive prohibitions
 
-No global network DeviceID, on-chain mailbox/messages, public social graph, mandatory single infrastructure, master decrypt key, single-key production super-admin, tx-hash-is-success, silent Shield downgrade or unbounded temporary active state.
+No global network DeviceID, on-chain mailbox/messages, public social graph, mandatory single infrastructure, master decrypt key, single-key production super-admin, tx-hash-is-success, silent Shield downgrade, unbounded temporary active state or unregistered protocol cryptographic domains.
 
-## 20. Principle
+## 21. Principle
 
 > **Nessun server centrale. Nessun super-admin. Niente di opaco. Fiducia nel protocollo. Sicurezza nell'architettura.**
 
