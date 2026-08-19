@@ -264,7 +264,66 @@ Il protocollo deve quindi trattarlo come **non fidato e sacrificabile**.
 
 ---
 
-## 11. Economia
+## 11. Relay Contributor reward
+
+Freedom incentiva gli utenti Free che mettono a disposizione il proprio dispositivo come relay utile alla rete.
+
+Policy iniziale:
+
+```text
+FREE
+  10 active contact slots
+
+FREE + RELAY CONTRIBUTOR
+  20 active contact slots
+  = 10 base + 10 bonus
+```
+
+Il bonus è un **entitlement di partecipazione**, non una licenza Pro e non modifica la sicurezza crittografica.
+
+### 11.1 Requisito di contributo
+
+Non deve essere sufficiente accendere `relay_enabled` per pochi secondi e ottenere il bonus permanentemente.
+
+Il beneficio resta attivo quando il device soddisfa una policy minima di contributo verificabile, definita e calibrata con dati reali. I segnali possono includere, senza richiedere tutti contemporaneamente:
+
+- disponibilità relay durante finestre temporali bounded;
+- circuiti accettati;
+- traffico effettivamente inoltrato con soglie minime/massime;
+- uptime utile;
+- attestazioni/receipt opache di forwarding;
+- rispetto dei limiti e assenza di comportamento abusivo.
+
+Non premiare volume illimitato: il sistema non deve incentivare traffico artificiale, relay farming o spreco di banda.
+
+### 11.2 Privacy del reward
+
+La prova di contributo non deve pubblicare:
+
+- contatti dell'utente;
+- peer serviti;
+- contenuto inoltrato;
+- mapping leggibile `DeviceID -> circuiti`;
+- cronologia dettagliata del traffico.
+
+Se serve enforcement resistente a client modificati, usare receipt/commitment opachi e finestre aggregate invece di un log pubblico dei circuiti.
+
+### 11.3 Perdita del bonus
+
+Se l'utente disabilita il relay o non soddisfa più la policy minima, il bonus può scadere dopo una grace period bounded.
+
+Se in quel momento l'utente ha più di 10 contatti attivi:
+
+- nessun contatto viene cancellato automaticamente;
+- le sessioni esistenti non vengono distrutte come punizione commerciale;
+- non può aggiungere nuovi contatti finché non torna entro il limite base o riattiva/riqualifica il contributo relay;
+- il client mostra chiaramente lo stato degli slot.
+
+Questo evita perdita dati/social state improvvisa e rende il reward reversibile senza dark pattern.
+
+---
+
+## 12. Economia relay
 
 ```text
 DIRECT
@@ -272,6 +331,7 @@ DIRECT
 
 DEVICE / COMMUNITY RELAY
   capacità volontaria / best effort
+  Relay Contributor: +10 contact slots per Free qualificato
 
 EMERGENCY SHIELD FREE
   quota managed bounded
@@ -283,11 +343,11 @@ MULTI-HOP / MAXIMUM RESILIENCE
   più banda e più nodi, tipicamente premium
 ```
 
-Un futuro incentivo economico ai relay community/device è possibile ma non è necessario per il protocollo base e richiede un design separato contro Sybil, farming e abuso.
+Ulteriori incentivi economici ai relay community/device sono possibili in futuro, ma richiedono un design separato contro Sybil, farming e abuso.
 
 ---
 
-## 12. Principio architetturale
+## 13. Principio architetturale
 
 > **Qualsiasi macchina compatibile può inoltrare Freedom; nessuna macchina deve diventare Freedom.**
 
