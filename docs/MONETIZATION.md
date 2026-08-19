@@ -25,6 +25,7 @@ Freedom può vendere capacità Shield superiore, multi-hop e resilienza preventi
 Il client ufficiale deve poter offrire gratuitamente il nucleo di Freedom:
 
 - identità Freedom;
+- fino a **10 contatti attivi** per RootIdentity/entitlement Free;
 - contatti espliciti tramite DeviceID/QR;
 - sessioni E2EE;
 - messaggistica sincrona;
@@ -41,6 +42,29 @@ Il client ufficiale deve poter offrire gratuitamente il nucleo di Freedom:
 La resilienza minima del protocollo non deve essere rimossa dal piano gratuito. Il protocollo non deve introdurre una dipendenza tecnica da un abbonamento per poter stabilire o recuperare una sessione tra due peer compatibili quando esiste un percorso disponibile.
 
 Free e Pro devono ricevere la stessa classificazione tecnica onesta degli eventi di rete. Non deve esistere una versione "meno trasparente" del pannello Network per gli utenti gratuiti.
+
+### 2.1 Limite contatti Free
+
+Il limite Free riguarda **contatti attivi simultaneamente**, non il numero totale di persone mai aggiunte.
+
+Esempio:
+
+```text
+Free contact slots: 10
+
+Alice   active
+Bob     active
+...
+10 / 10
+```
+
+L'utente può eliminare/disattivare un contatto e liberare immediatamente uno slot per un altro contatto.
+
+La rubrica e il social graph non devono essere pubblicati in chiaro sulla blockchain. La lista dei contatti resta locale e cifrata.
+
+Se in futuro è necessario impedire che un client modificato aggiri il limite, l'enforcement deve usare **slot/commitment opachi** o una primitive equivalente che consenta di contare gli slot senza pubblicare una relazione leggibile `Account -> DeviceID[]`.
+
+Il design deve minimizzare anche i metadati derivabili da numero, timing e rotazione degli slot. Il limite commerciale non giustifica la pubblicazione del social graph.
 
 ## 3. Emergency Shield Free
 
@@ -77,6 +101,7 @@ Quando il budget è quasi esaurito, il client può informare l'utente in modo ne
 
 Possibili funzionalità premium del client ufficiale:
 
+- contatti illimitati o un limite molto superiore al Free, secondo la policy commerciale;
 - maggiore capacità o priorità sui relay gestiti;
 - budget Shield molto superiore al Free;
 - **Always-Shielded mode** senza direct IP;
@@ -93,7 +118,7 @@ Possibili funzionalità premium del client ufficiale:
 - multi-device e strumenti di migrazione/recovery avanzati;
 - personalizzazioni e funzionalità client non necessarie all'interoperabilità di base.
 
-Il piano Pro monetizza infrastruttura, banda, path diversity e automazione più costose. Non compra una cifratura più forte, non compra una classificazione più onesta degli eventi e non deve diventare requisito per autenticare una sessione Freedom.
+Il piano Pro monetizza infrastruttura, banda, path diversity, capacità e automazione più costose. Non compra una cifratura più forte, non compra una classificazione più onesta degli eventi e non deve diventare requisito per autenticare una sessione Freedom.
 
 Le funzioni premium non devono creare un protocollo incompatibile con i client base.
 
@@ -108,7 +133,7 @@ Freedom non deve:
 - usare paura, sorveglianza non dimostrata o claim assoluti come leva commerciale;
 - mostrare un paywall prima di aver tentato le contromisure Free disponibili durante un incidente critico.
 
-Il tier commerciale può determinare **quanta infrastruttura gestita** viene consumata, non reinterpretare i segnali tecnici.
+Il tier commerciale può determinare **quanta infrastruttura gestita e quanta capacità prodotto** viene consumata, non reinterpretare i segnali tecnici.
 
 ## 6. Freedom Business
 
