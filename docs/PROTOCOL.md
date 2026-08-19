@@ -6,18 +6,20 @@ Normative security: [`SECURITY_INVARIANTS.md`](SECURITY_INVARIANTS.md).
 Identity: [`IDENTITY_MODEL.md`](IDENTITY_MODEL.md).
 Control-plane: [`CONTROL_PLANE_SECURITY.md`](CONTROL_PLANE_SECURITY.md).
 Revocation: [`REVOCATION.md`](REVOCATION.md).
+Pairwise recovery: [`PAIRWISE_RECOVERY.md`](PAIRWISE_RECOVERY.md).
 Shield: [`SHIELD.md`](SHIELD.md).
 Canonical schema: [`../spec/freedom.cddl`](../spec/freedom.cddl).
+Crypto domains: [`../spec/crypto-domains.txt`](../spec/crypto-domains.txt).
 
-Markdown definisce semantica/state machine. `spec/freedom.cddl` definisce field names/object shapes congelati.
+Markdown definisce semantica/state machine. `spec/freedom.cddl` definisce field names/object shapes congelati. `spec/crypto-domains.txt` definisce fixed cryptographic purpose/domain constants.
 
 ## 1. Core invariants
 
-- deterministic canonical encoding + domain-separated signatures;
+- deterministic canonical encoding + registered domain-separated crypto contexts;
 - no global DeviceID network-facing;
 - no message/media/APK on-chain;
 - no mailbox/offline queue;
-- identity/authorization/device-control/pairwise/routing/traffic keys separated;
+- identity/authorization/device-control/pairwise/routing/traffic/recovery keys separated;
 - RPC not trust;
 - tx hash != success;
 - explicit revocation proof/freshness;
@@ -51,6 +53,8 @@ V1 normal root rotation inherits the current recovery-policy commitment.
 
 A current/compromised root cannot remove the policy unilaterally.
 
+A valid policy requires distinct recovery-key commitments and a threshold inside the number of distinct keys. A production profile claiming independent compromise recovery should use a genuinely independent threshold quorum rather than multiple files controlled by the same compromised environment.
+
 `COMPROMISE_RECOVERY` is quorum-authorized and delayed. Once accepted as `RECOVERY_PENDING`, normal root rotations and recovery-policy mutation are blocked until resolution. The current root cannot cancel the request alone.
 
 The recovery quorum may recover the latest current state of the same opaque root-control lineage even if a stolen root performed a normal rotation before the recovery request opened.
@@ -74,7 +78,7 @@ The record does not prove account ownership. Peer authorization comes from the e
 ## 5. DeviceCertificate validation
 
 ```text
-canonical parse/signing domain
+canonical parse + crypto domain
  -> expected contact/root proof
  -> delegation signature/scope
  -> child capabilities/expiry constrained by parent
@@ -126,6 +130,8 @@ Public slot:
 slot_id = H("Freedom/RendezvousSlot" || network_id || write_public_key)
 ```
 
+The exact HASH/KDF purposes are fixed by `spec/crypto-domains.txt`.
+
 The control-plane can verify slot binding without learning direction/epoch.
 
 Write acceptance requires valid slot/public-key binding, write signature, monotonic generation and size/expiry bounds.
@@ -144,18 +150,50 @@ read remote slot
 
 RecoveryBeacon follows the same one-time write-key authority and remains pairwise/ciphertext/bounded.
 
-## 10. Pairwise recovery
+## 10. Pairwise recovery / freshness
 
 `pairwise-recovery-bundle` is ciphertext-only state from a surviving-device transfer or user-chosen untrusted backup store.
 
-After restore:
+Canonical bundle state includes:
 
 ```text
-reject detectable rollback
+bundle_id
+state_epoch
+backup_generation
+previous_bundle_hash
+recovery_key_epoch
+state_commitment
+```
+
+Integrity alone does not prove freshness after total device loss.
+
+Rollback-detectable profile uses canonical `pairwise-recovery-anchor`:
+
+```text
+root_control_commitment
+anchor_epoch
+latest_backup_generation
+latest_bundle_hash
+latest_state_commitment
+recovery_key_epoch
+updated_at_height
+authorization_proof
+```
+
+Restore with anchor:
+
+```text
+obtain verified latest anchor
+ -> require exact bundle generation/hash/state commitment match
+ -> decrypt/validate
  -> re-authenticate peer
- -> rotate/re-derive future rendezvous state
+ -> rotate/re-derive future rendezvous/recovery state
  -> establish fresh session keys
 ```
+
+Mismatch -> `PAIRWISE_BACKUP_ROLLBACK_OR_MISMATCH`.
+
+Without surviving device or independent anchor, integrity may be verified but the client MUST NOT claim `LATEST_VERIFIED_BACKUP` freshness.
 
 No surviving device/backup -> ownership may return, contacts re-bootstrap.
 
@@ -197,6 +235,8 @@ session_id
 ```
 
 Selection is deterministic/strongest-allowed under local policy. Offer stripping below policy -> `NEGOTIATION_DOWNGRADE`.
+
+Handshake transcript authentication uses the fixed `MAC FREEDOM/HANDSHAKE_TRANSCRIPT` domain.
 
 ## 14. Session establishment
 
@@ -245,13 +285,14 @@ Rules:
 - duplicate/replay idempotently rejected/ignored by state/hash;
 - wrong epoch/transcript/timeout terminates before lifetime exhaustion;
 - route switch does not reset key epoch;
-- reconnect creates a new session schedule.
+- reconnect creates a new session schedule;
+- rekey authentication uses fixed domains from `spec/crypto-domains.txt`.
 
 No silent split-brain.
 
 ## 16. Wire/application objects
 
-Canonical CDDL now includes:
+Canonical CDDL includes:
 
 ```text
 encrypted-control-frame
@@ -295,7 +336,7 @@ submit
 
 ## 20. Release / governance / migration
 
-Release/security objects use canonical CDDL.
+Release/security objects use canonical CDDL and registered signature domains.
 
 Signer transitions are cross-authorized/monotonic; contract core is immutable or threshold/timelocked/code-hash pinned.
 
@@ -336,6 +377,8 @@ REPLAY_DETECTED
 RENDEZVOUS_WRITE_UNAUTHORIZED
 RENDEZVOUS_GENERATION_ROLLBACK
 ROOT_RECOVERY_PENDING
+PAIRWISE_BACKUP_ROLLBACK_OR_MISMATCH
+PAIRWISE_BACKUP_FRESHNESS_UNPROVEN
 ROUTE_UNAVAILABLE
 PEER_OFFLINE
 SESSION_REKEY_REQUIRED
@@ -349,17 +392,19 @@ BOOTSTRAP_STATE_TOO_OLD
 
 ## 23. Interoperability gates
 
-- deterministic encoding/signing-domain vectors;
+- deterministic encoding vectors;
+- crypto-domain cross-type/network/purpose negative vectors;
 - delegation scope/expiry negative cases;
+- recovery-policy threshold/distinct-key validation;
 - revocation/non-revocation/freshness vectors;
 - fresh-install stale checkpoint tests;
 - rendezvous overwrite/front-run/replay;
+- pairwise recovery anchor rollback/mismatch/no-anchor semantics;
 - both-offer downgrade tests;
 - full rekey race/loss/duplicate/route-switch matrix;
 - control/media semantic tests;
 - control-plane proof/finality/storage convergence;
 - sticky compromise-recovery race/timelock;
-- pairwise backup rollback/post-restore rotation;
 - relay provenance/Sybil/Shield tests;
 - signer/contract/migration rollback tests;
 - independent security review.
