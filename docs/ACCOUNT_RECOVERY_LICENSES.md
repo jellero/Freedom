@@ -1,107 +1,54 @@
 # Freedom — Account Recovery & Licenses
 
-Status: **canonical design draft**
+Status: **canonical design draft**.
 
 Normative security rules: [`SECURITY_INVARIANTS.md`](SECURITY_INVARIANTS.md).
-Identity details: [`IDENTITY_MODEL.md`](IDENTITY_MODEL.md).
+Identity: [`IDENTITY_MODEL.md`](IDENTITY_MODEL.md).
+Schema: [`../spec/freedom.cddl`](../spec/freedom.cddl).
 
 ## 1. Separazione
 
 ```text
-RootRecoveryKey              -> cold recovery / root continuity
-RootIdentity                 -> ownership/root epoch
-DeviceAuthorizationKey       -> delegated device authorization
-DeviceCertificate            -> offline DeviceKey authorization
-DeviceKey                    -> operational device key
-DeviceRecordCommitment       -> opaque control-plane handle
-PairwiseContactAlias         -> relationship state
-RecoveryStateKey             -> encrypted pairwise backup
-Session keys                 -> ephemeral communication
-EntitlementCommitment        -> domain-separated license state
+RootRecoveryKey        -> cold recovery / continuity
+UserRecoveryPolicy     -> independent compromise-recovery authority
+DeviceAuthorizationKey -> delegated device authorization
+DeviceCertificate      -> offline DeviceKey authorization
+DeviceKey              -> operational device key
+DeviceControlKey       -> scoped control-plane record control
+RecoveryStateKey       -> encrypted pairwise backup
+EntitlementCommitment  -> domain-separated commercial state
 ```
 
-No global `DeviceID` network-facing.
+No global DeviceID network-facing.
 
 ## 2. Prima installazione
 
 ```text
 RootRecoveryKey
 RootIdentity
+UserRecoveryPolicy optional-but-required-for-compromise-recovery
 DeviceAuthorizationKey + delegation
 DeviceKey
-device_random_secret
-DeviceRecordCommitment
+DeviceRecordCommitment + DeviceControlKey
 RecoveryStateKey
 Recovery Kit
 0 mandatory chain writes
 ```
 
-`RootRecoveryKey` non deve essere usata come chiave operativa per ogni handshake/device action.
+## 3. Recovery Kit envelope
 
-## 3. Recovery Kit cryptographic envelope
+Il Recovery Kit deve usare:
 
-```text
-EncryptedRecoveryBundle {
-    version
-    kdf_id
-    kdf_params
-    salt
-    nonce
-    root_recovery_secret_ciphertext
-    recovery_state_key_ciphertext?
-    root_identity_fingerprint
-    bundle_integrity
-}
-```
+- >=128-bit random recovery entropy;
+- >=128-bit random salt;
+- memory-hard KDF (`Argon2id` target o standard equivalente reviewato);
+- versioned KDF params;
+- standard AEAD;
+- checksum soltanto come detection/UX, non authentication.
 
-Requisiti minimi:
+Rate limiting locale non sostituisce entropy/KDF contro brute force offline.
 
-- recovery secret/code generato casualmente con **almeno 128 bit di entropia**; non una password breve scelta dall'utente;
-- salt random almeno 128 bit;
-- KDF memory-hard standard, target `Argon2id` (o sostituto standard equivalente dopo review);
-- parametri KDF versionati e benchmarkati su device reali;
-- AEAD standard per il bundle (`AES-GCM` o `ChaCha20-Poly1305`/equivalente reviewato);
-- checksum non sostituisce AEAD authentication;
-- rate limiting UX locale non è difesa sufficiente contro brute-force offline: la sicurezza deriva dall'entropia + KDF.
-
-QR e recovery code devono essere conservabili separatamente.
-
-## 4. DeviceAuthorizationDelegation
-
-```text
-DeviceAuthorizationDelegation {
-    root_epoch
-    authorization_public_key
-    authorization_epoch
-    capabilities
-    valid_from
-    expires_at
-    root_recovery_signature
-}
-```
-
-Una delegated key compromessa può essere revocata/ruotata senza cambiare automaticamente la RootRecoveryKey.
-
-## 5. Ripristino normale
-
-```text
-Restore
- -> decrypt Recovery Kit
- -> recover RootIdentity/root epoch
- -> generate NEW DeviceAuthorizationKey if needed
- -> generate NEW DeviceKey
- -> generate NEW DeviceRecordCommitment
- -> privacy-preserving device activation
- -> verified finality/state proof
- -> NEW DeviceCertificate
- -> resolve entitlement proof/state
-```
-
-Non clonare vecchie DeviceKey.
-
-## 6. Root compromise
-
-Perdita di device e compromissione root sono distinte.
+## 4. Root compromise non è normal restore
 
 ```text
 LOST_DEVICE
@@ -109,150 +56,107 @@ LOST_DEVICE
  -> authorize replacement
 
 ROOT_COMPROMISE
+ -> independent recovery quorum
+ -> recovery delay
  -> UserRootRotation
- -> new RootRecoveryKey / root epoch
- -> rotate DeviceAuthorizationDelegation
- -> re-authorize surviving devices
+ -> new root epoch
 ```
+
+Se l'utente possiede soltanto una RootRecoveryKey e nessun recovery factor indipendente precommitted, Freedom non può distinguere proprietario e ladro dopo furto completo di quella secret. In quel profilo il progetto non promette compromise recovery.
+
+## 5. UserRecoveryPolicy
+
+Schema canonico: `user-recovery-policy`.
+
+La policy può usare più recovery keys/shares distribuite tra custody domains indipendenti.
+
+Il policy commitment è fissato prima dell'incidente; non può essere inventato dopo che la root è già compromessa.
+
+## 6. Ripristino normale
 
 ```text
-UserRootRotation {
-    old_root_epoch
-    new_root_public_key
-    new_root_commitment
-    continuity_proof
-    recovery_policy_proof
-    issued_at
-}
+Restore
+ -> decrypt Recovery Kit
+ -> recover current RootIdentity/root epoch
+ -> generate NEW DeviceAuthorizationKey if needed
+ -> generate NEW DeviceKey
+ -> generate NEW DeviceRecordCommitment/DeviceControlKey
+ -> create opaque record
+ -> verify finalized state
+ -> issue/use NEW DeviceCertificate
+ -> resolve entitlement
 ```
 
-Una root compromessa non è “recuperata” continuando a usarla.
+Non clonare vecchie DeviceKey.
 
-## 7. DeviceCertificate
+## 7. Pairwise recovery
 
-```text
-DeviceCertificate {
-    version
-    network_id
-    root_identity_commitment_or_proof
-    authorization_epoch
-    device_public_key
-    key_epoch
-    protocol_version
-    capabilities?
-    issued_at
-    expires_at
-    certificate_id
-    authorization_signature
-}
-```
-
-Verifica offline; revocation/freshness da proof/cache verificati.
-
-## 8. Multi-device privacy
-
-```text
-active_devices <= max_devices
-```
-
-Production target usa `DeviceAuthorizationProof`/slot nullifier per evitare una lista pubblica `RootIdentity -> devices[]`.
-
-Una implementazione testnet linkabile deve dichiarare la limitazione.
-
-## 9. Pairwise continuity
-
-`PairSecret` / `PairRendezvousSecret` non vengono messi on-chain.
-
-Due recovery path:
+Due path:
 
 ```text
 A. surviving authorized device
-   -> authenticated device-to-device pairwise-state transfer
+   -> authenticated pairwise-state transfer
 
-B. Recovery Kit + encrypted PairwiseRecoveryBundle
+B. encrypted PairwiseRecoveryBundle
+   -> bytes from user-chosen backup source
+   -> decrypt/verify locally
 ```
+
+Schema canonico: `pairwise-recovery-bundle`.
+
+La source dei backup è non fidata; può essere file locale esportato, private cloud scelto dall'utente, storage dell'organizzazione o più mirror di ciphertext.
+
+Il bundle contiene `state_epoch`, `recovery_key_epoch`, `contacts_metadata_ciphertext`, `pairwise_state_ciphertext` e integrity data.
+
+Dopo restore:
 
 ```text
-PairwiseRecoveryBundle {
-    version
-    state_epoch
-    contacts_metadata_ciphertext
-    pairwise_state_ciphertext
-    integrity
-}
+reject detectable rollback
+ -> re-authenticate each peer
+ -> rotate/re-derive future rendezvous state
+ -> establish fresh session
 ```
 
-Il bundle è cifrato con `RecoveryStateKey` e non pubblica il social graph.
+Una copia vecchia del bundle non deve diventare future rendezvous authority indefinita.
 
-Se non esiste device sopravvissuto né pairwise backup valido:
+Se manca surviving device e manca backup valido, ownership/entitlement possono tornare ma i contatti richiedono re-bootstrap.
 
-> la RootIdentity e l'entitlement possono essere recuperati, ma i contatti richiedono re-bootstrap.
+## 8. Device quota V1
 
-## 10. Entitlement
+`max_devices` commerciale V1 è product/service policy del client ufficiale, non security/interoperability invariant.
+
+Un client modificato può aggirare una policy locale; questo non concede impersonation o accesso ai plaintext altrui.
+
+Hard enforcement privacy-preserving futuro richiede credential/nullifier/ZK reviewati.
+
+## 9. Contact slots V1
+
+`base_contact_slots = 10` è anch'esso product policy locale/servizio, non protocol security primitive.
+
+No social graph pubblico per enforcement commerciale.
+
+## 10. Relay Contributor
 
 ```text
-FreedomEntitlement {
-    version
-    entitlement_commitment
-    tier
-    issued_at
-    expires_at?
-    entitlement_epoch
-    max_devices
-    base_contact_slots
-    policy_version
-    status
-}
+FREE                     10 product slots
+FREE + RELAY CONTRIBUTOR 20 product slots
 ```
 
-`EntitlementCommitment` è domain-separated.
+È un incentivo UX/commerciale del client ufficiale, non una garanzia anti-tamper del protocollo. Il modello economico non deve dipendere esclusivamente da questo bonus.
 
-## 11. Contact slots V1
+## 11. Verified state / revocation
 
-`base_contact_slots = 10` è una **policy del client ufficiale**, non un requisito di interoperabilità/security V1.
+Activation, revocation, root rotation ed entitlement changes richiedono finality proof + execution success + resulting-state proof + anti-rollback.
 
-Quindi:
+Freshness/revocation segue `REVOCATION.md`; `RPC not found` non è non-revocation proof.
 
-- la rubrica resta locale/cifrata;
-- il control-plane non pubblica il social graph per far rispettare la quota;
-- un client modificato può tecnicamente aggirare una policy locale: questo non consente impersonation o accesso a plaintext altrui;
-- un futuro enforcement resistente a tampering richiede nullifier/ZK/credential dedicati prima di diventare normativo.
+## 12. Invarianti
 
-## 12. Relay Contributor
-
-```text
-FREE                     10 local product slots
-FREE + RELAY CONTRIBUTOR 20 local product slots
-```
-
-Il benefit è entitlement/product policy; non modifica session acceptance di peer remoti.
-
-Il nuovo device deve riqualificarsi se il benefit dipende da quel device.
-
-Scadenza benefit non cancella contatti né termina sessioni; limita nuove aggiunte nel client ufficiale secondo policy.
-
-## 13. Verified finality / time
-
-Activation, revocation, root rotation ed entitlement changes richiedono:
-
-```text
-finality proof
-+ execution success
-+ resulting state proof
-+ anti-rollback/highest-seen checks
-```
-
-Expiry usa `VerifiedTimeAnchor`/height/epoch quando possibile, non soltanto wall clock locale.
-
-## 14. Invarianti
-
-- RootRecoveryKey distinta da DeviceAuthorizationKey e DeviceKey;
-- Recovery Kit >=128-bit recovery entropy + memory-hard KDF + AEAD;
+- RootRecoveryKey distinta da DeviceAuthorizationKey, DeviceControlKey e DeviceKey;
+- root-compromise recovery richiede independent precommitment;
 - recovery normale genera nuova DeviceKey;
-- root compromise usa `UserRootRotation`;
-- pairwise state non è social graph on-chain;
-- pairwise recovery è device-transfer o encrypted bundle;
-- assenza di pairwise backup implica re-bootstrap contatti;
-- multi-device production target privacy-preserving;
-- contact-slot quota V1 non è interoperability rule;
+- pairwise backup resta ciphertext;
+- post-restore pairwise future state viene ruotato/re-derivato;
+- assenza backup implica re-bootstrap;
+- contact/device quota V1 non è interoperability rule;
 - transaction hash != success.
