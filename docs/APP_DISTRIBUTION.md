@@ -22,6 +22,12 @@ Principio:
 
 > **la rete distribuisce byte non fidati; la crittografia e il control-plane decidono quali byte sono una release Freedom installabile.**
 
+### Diagramma della Freedom Release Network
+
+![Freedom Release Network](assets/freedom-release-network.svg)
+
+Il diagramma rende esplicita la separazione fra **release authority**, **control-plane verificabile**, **sorgenti non fidate dei byte** e **verifier fail-closed sul nuovo device**.
+
 ---
 
 ## 2. Nessuna chiave privata ufficiale nel client
@@ -237,6 +243,8 @@ REVOKED     -> non installare / non aggiornare a questa release
 
 Una release viene `REVOKED` solo per motivi di sicurezza/compromissione/policy, non perché un singolo utente l'ha installata.
 
+Nessuna write per singola installazione significa anche **nessuna telemetria on-chain necessaria sul numero o timing degli install**.
+
 ---
 
 ## 8. Release manifest
@@ -434,6 +442,10 @@ L'installazione resta user-initiated secondo le regole della piattaforma.
 ---
 
 ## 16. UX proposta
+
+![Freedom populated UI concept](assets/freedom-ui-concept.svg)
+
+Il visual è un **concept di prodotto**, non uno screenshot del transport/crypto spike Android corrente. Le label di sicurezza mostrate nella UI devono comparire solo quando il relativo stato è realmente verificato dal client.
 
 Client esistente:
 
