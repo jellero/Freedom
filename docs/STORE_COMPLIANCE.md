@@ -1,267 +1,208 @@
 # Freedom — Store Compliance Architecture
 
-## 1. Separazione fondamentale
+Status: **canonical design draft**
 
-Freedom Protocol e i client distribuiti sugli store sono livelli distinti.
+Normative security rules: [`SECURITY_INVARIANTS.md`](SECURITY_INVARIANTS.md).
+
+## 1. Separazione fondamentale
 
 ```text
 Freedom Protocol
-  identity / rendezvous / routing / E2EE
+  identity / pairwise rendezvous / routing / E2EE
         |
         +-- Freedom Communication
         +-- Freedom Gateway optional
         |
-        +-- Android client -> Google Play compliance
-        `-- iOS client     -> App Store compliance
+        +-- Android client -> store compliance
+        `-- iOS client     -> store compliance
 ```
 
-Le regole degli store non devono introdurre una master key, un server centrale di messaggistica o modificare automaticamente il wire protocol.
+Le regole degli store non introducono master key, mailbox o server centrale di delivery e non ridefiniscono automaticamente il wire protocol.
 
-## 2. Posizionamento del prodotto
-
-Freedom non deve essere descritto come "messenger blockchain".
-
-Descrizione tecnica neutra:
-
-> Freedom è un sistema di comunicazione E2EE live con routing/relay sostituibili e un control-plane verificabile; una capacità Gateway opzionale può usare lo stesso fabric per proteggere e rendere più resiliente il traffico di rete del dispositivo.
-
-Freedom Communication e Gateway devono essere descritti come security boundary differenti.
-
-## 3. Contatti e reporting
-
-I contatti vengono stabiliti esplicitamente tramite QR/link/capability pairwise.
-
-Il client deve prevedere almeno:
-
-- blocco contatto;
-- gestione richieste;
-- termini/privacy policy;
-- supporto;
-- reporting esplicito quando richiesto dalle policy applicabili.
-
-Un report di contenuto E2EE deve essere creato localmente solo su azione esplicita dell'utente e includere esclusivamente l'evidenza scelta.
-
-## 4. Identity privacy
-
-Il client non usa un global `DeviceID` come identità di rete.
+## 2. Identity privacy
 
 ```text
 RootIdentity
+DeviceCertificate
 DeviceKey
 DeviceRecordCommitment
 PairwiseContactAlias
 TransportToken
 ```
 
-Evitare per default:
+Nessun global DeviceID network-facing.
 
-- numero telefono obbligatorio;
-- email obbligatoria;
-- upload automatico rubrica;
-- advertising ID;
-- analytics non necessari;
-- logging plaintext;
-- centralizzazione del contact graph.
+Evitare per default numero/email obbligatori, upload rubrica, advertising ID, analytics non necessari, plaintext logging e centralizzazione social graph.
 
-## 5. Blockchain e crypto policy
-
-NEAR è infrastruttura/control-plane, non il prodotto venduto all'utente.
-
-Il client di comunicazione non deve aggiungere senza necessità:
-
-- trading;
-- portfolio;
-- exchange;
-- NFT;
-- investimento;
-- custodia asset.
-
-La blockchain non trasporta chat, media, Gateway payload o APK.
-
-## 6. Contact QR e Install QR
+## 3. Contact QR / Install QR
 
 ```text
 Contact QR
-  pairwise/bootstrap identity capability
+ -> identity/bootstrap capability
 
 Install QR
-  release/bootstrap descriptor
+ -> release locator / source hints / transfer capability
 ```
 
-I due flussi sono separati.
+Sono flussi distinti.
 
-L'Install QR deve essere utilizzabile anche da un dispositivo che non ha ancora Freedom.
+Il Contact QR non autentica da solo una sessione: l'handshake verifica expected RootIdentity/contact + DeviceCertificate + DeviceKey possession.
 
-Dettagli: [`APP_DISTRIBUTION.md`](APP_DISTRIBUTION.md).
+L'Install QR non può ridefinire release signer root o Android signer anchor.
 
-## 7. Account/recovery/deletion
+## 4. Account/recovery/deletion
 
-Il client deve poter:
+Il client deve poter revocare il device, eliminare key/dati locali e richiedere cancellazione di eventuali dati service-side opzionali.
 
-```text
-revoke current device
-remove local keys
-remove local conversations
-remove cached media
-remove local contacts
-request deletion of optional service-side data
-```
+La revoca invalida il device per nuovi handshake secondo freshness policy; non pretende di cancellare la storia immutabile del control-plane.
 
-La chain non deve contenere PII evitabile. La revoca invalida device/authorization per nuovi handshake senza pretendere di cancellare la storia immutabile del registro.
+## 5. Android relay mode
 
-## 8. Android relay mode
-
-`DEVICE_RELAY` mobile:
+`DEVICE_RELAY`:
 
 - opt-in;
-- stato visibile;
-- limiti configurabili;
-- disattivabile;
-- nessuna mailbox;
-- resource bounded;
-- non nascosto rispetto alla descrizione del prodotto;
-- non è un Internet egress.
+- visibile/disattivabile;
+- resource-bounded;
+- no mailbox;
+- no plaintext/session keys;
+- no Internet egress implicito.
 
-Un Relay Contributor non deve trasformare il telefono in un open proxy Internet.
+Relay Contributor non trasforma il telefono in open proxy Internet.
 
-## 9. Freedom Gateway su Android
-
-Freedom Gateway è separato dal relay messenger.
+## 6. Freedom Gateway su Android
 
 ```text
 selected apps / whole device
-        |
-Android VpnService
-        |
-Freedom encrypted tunnel
-        |
-relay / bridge / Shield
-        |
-explicit egress
-        |
-Internet
+ -> Android VpnService
+ -> Freedom encrypted tunnel
+ -> relay / bridge / Shield
+ -> explicit egress
+ -> Internet
 ```
 
-Android/Google Play consentono l'uso di `VpnService` solo entro le categorie e condizioni previste dalla policy vigente. La build Play deve quindi:
+La build store deve rispettare le policy vigenti della piattaforma al momento della release, inclusi disclosure/consenso/dichiarazioni richieste.
 
-- dichiarare chiaramente l'uso di `VpnService` nella listing;
-- mostrare informativa/consenso quando richiesto;
-- cifrare i dati dal device all'endpoint del tunnel;
-- non usare il traffico di altre app per monetizzazione pubblicitaria/manipolazione;
-- presentare Gateway come funzionalità coerente con lo scopo dichiarato dell'app;
-- completare la dichiarazione Play Console richiesta;
-- essere pronta a separare Gateway in una build/companion differente se la review store lo richiede.
+Se necessario, Freedom può separare:
 
-Una restrizione Play non deve rimuovere la capacità dal protocollo/Direct build.
+```text
+Freedom Play
+Freedom Direct
+Freedom Gateway companion
+```
 
-Dettagli tecnici: [`GATEWAY.md`](GATEWAY.md).
+Una restrizione dello store non deve eliminare il protocollo o la Direct build dove legalmente/tecnicamente consentita.
 
-## 10. Gateway transparency
+## 7. Gateway transparency
 
-Quando Gateway è attivo il client deve mostrare chiaramente:
+Quando attivo mostra almeno:
 
-- stato ON/OFF;
+- ON/OFF;
 - selected-app vs whole-device;
-- egress/path corrente almeno in advanced UI;
-- eventuale split tunneling;
+- egress/path corrente in advanced UI;
+- split tunneling;
 - kill-switch/strict mode;
-- dati che il servizio tratta secondo la privacy policy.
+- quota managed separata;
+- privacy/trust boundary distinta da Freedom Communication.
 
-Non deve dichiarare che il Gateway offre la stessa E2EE endpoint-to-endpoint della chat Freedom.
+Non mostrare “E2EE by Freedom” per traffico Gateway generico.
 
-## 11. Google Play build: app distribution
+## 8. Google Play build / Direct build
 
-La build Google Play usa il percorso store conforme per install/update della build store.
+### Play
 
-```text
-Share Freedom
- -> official Play listing / compliant bootstrap
-```
+Usa percorso install/update conforme allo store.
 
-Non basare il normale funzionamento della Play build su:
+Non basare self-update su APK duplicato negli asset, silent install o bypass store.
 
-- APK duplicato negli asset per self-update;
-- silent install;
-- bypass update store;
-- uso improprio di `REQUEST_INSTALL_PACKAGES`.
-
-## 12. Freedom Direct build: peer/relay distribution
+### Direct
 
 ```text
-existing Freedom client
+existing Freedom
  -> Share Freedom
  -> Install QR
- -> peer-local / relay / mirror
- -> release verification
- -> Android system installer
+ -> peer / relay / mirror
+ -> bootstrap verifier
+ -> verified artifact
+ -> Android installer
 ```
 
-L'APK resta un artifact standalone verificato.
+L'APK è artifact standalone verificato.
 
-Il client Direct può mantenerne una cache verificata e servirlo tramite endpoint temporaneo/capability.
+## 9. Anti-fake / first sideload
 
-## 13. Anti-fake app
-
-Prima dell'installazione Direct devono concordare:
+Prima dell'installazione Direct:
 
 ```text
-FreedomRelease signatures
-artifact SHA-256
-package ID
-version code
-signing certificate / lineage
+exact artifact SHA-256
+threshold FreedomRelease signatures
+package_id
+version / anti-downgrade
+Android signer / lineage
+ReleaseStatus
 SecurityPolicy
 ```
 
-Il primo sideload richiede un trust anchor indipendente dal peer/relay.
+Per il primo sideload il `Freedom Bootstrap Verifier` usa root pinned:
 
-Il QR non può ridefinire silenziosamente la signing root ufficiale.
+```text
+expected_package_id
+release_signer_set_root_commitment
+android_signing_root_or_lineage_anchor
+minimum verifier policy
+```
 
-## 14. iOS/background
+Il peer/relay/QR/source non può ridefinire queste root.
 
-iOS limita network execution persistente in background.
+## 10. Release governance
 
-Freedom non deve fingere che un iPhone sia sempre un listener/relay raggiungibile.
+Production release authorization/revocation/critical SecurityPolicy usa threshold/multi-key secondo `SECURITY_INVARIANTS.md`.
 
-Wake hint della piattaforma può essere un'ottimizzazione, non identity authority.
+Una singola private key online non deve diventare super-admin della supply chain.
 
-Gateway iOS deve essere progettato separatamente usando le API e entitlement previsti dalla piattaforma e non va promesso sulla base del solo design Android.
+## 11. iOS/background
 
-## 15. Store review mode
+Freedom non presume che iOS consenta listener/relay persistenti in background. Wake hint non è identity authority.
 
-Per review deve esistere una procedura riproducibile per:
+Gateway iOS richiede design/API/entitlement specifici della piattaforma e non viene promesso sulla base del solo Android design.
+
+## 12. Store review mode
+
+Procedura riproducibile per:
 
 - onboarding;
 - Contact QR;
-- sessione E2EE;
+- DeviceCertificate/expected-contact session;
+- E2EE live;
+- peer offline -> no delivery queue;
 - block/report;
-- Relay mode se incluso nella build;
-- Install QR;
-- Gateway ON/OFF e selected-app/whole-device se incluso;
-- spiegazione di cosa è on-chain;
-- spiegazione di cosa il Gateway può e non può vedere;
-- distinzione relay vs Internet egress.
+- Relay mode;
+- Share Freedom/install verification;
+- Gateway controls se inclusi;
+- spiegazione control-plane/data-plane;
+- relay vs egress.
 
-## 16. Protocol independence
+## 13. Protocol independence
 
-Una policy Google/Apple può cambiare la build ufficiale ma non deve cambiare automaticamente:
+Store policy non cambia automaticamente:
 
-- RootIdentity/pairwise identity model;
-- autenticazione E2EE;
-- synchronous delivery semantics;
+- RootIdentity/DeviceCertificate/pairwise model;
+- authenticated E2EE;
+- forward-secrecy/rekey requirements;
+- synchronous semantics;
 - relay semantics;
-- ChainAdapter;
-- FreedomRelease authenticity;
-- Direct build architecture;
-- transport adapter model;
-- possibilità di egress/private Gateway su piattaforme che lo consentono.
+- ChainAdapter abstraction;
+- threshold release authenticity;
+- Direct distribution trust model;
+- transport adapter model.
 
-## 17. Invarianti
+## 14. Invarianti
 
-- store compliance non introduce un server centrale di delivery;
-- Play/iOS policy non diventa trust anchor del protocollo;
-- `DEVICE_RELAY` non è Internet egress;
-- Gateway è opt-in e visibile;
-- Gateway non viene presentato come equivalente alla chat E2EE;
-- la Direct build resta tecnicamente separata dalla Play build dove necessario;
-- ogni uso di VPN/platform networking deve rispettare la policy vigente al momento della release.
+- store compliance non introduce central delivery server/mailbox;
+- store non è trust anchor del protocollo;
+- `DEVICE_RELAY != INTERNET_EGRESS`;
+- Gateway opt-in/visibile;
+- Gateway != Communication E2EE boundary;
+- Direct/Play separation possibile;
+- first sideload root pinned indipendente dalla source;
+- production release governance threshold;
+- transaction hash non determina da solo stato security-critical.
