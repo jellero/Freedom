@@ -29,6 +29,9 @@ REQUIRED_FILES = [
     "docs/THREAT_MODEL.md",
     "docs/ADVANCED_DEVELOPMENT.md",
     "docs/REPOSITORY_GOVERNANCE.md",
+    "sim/README.md",
+    "sim/scenarios/relay-block-nat-rebind.yaml",
+    "sim/scenarios/pairwise-backup-rollback.yaml",
     ".github/CODEOWNERS",
 ]
 
@@ -219,6 +222,17 @@ def main() -> int:
     ):
         if required_phrase not in pairwise:
             fail(errors, f"PAIRWISE_RECOVERY.md missing required semantic marker: {required_phrase}")
+
+    # Keep the first simulator fixtures aligned with the security semantics they were
+    # introduced to exercise, without requiring a YAML dependency in this drift checker.
+    pairwise_scenario = read("sim/scenarios/pairwise-backup-rollback.yaml")
+    for required_marker in (
+        "PAIRWISE_BACKUP_ROLLBACK_OR_MISMATCH",
+        "future_rendezvous_state_rotated",
+        "old_backup_not_future_authority",
+    ):
+        if required_marker not in pairwise_scenario:
+            fail(errors, f"pairwise simulator fixture missing marker: {required_marker}")
 
     # SVGs are source-controlled documentation and should remain XML-well-formed.
     for svg in (ROOT / "docs" / "assets").glob("*.svg"):
