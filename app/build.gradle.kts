@@ -20,6 +20,14 @@ android {
         }
     }
 
+    // The Android client compiles the same pure-Java protocol state-machine core
+    // exercised by the host simulator. Android-specific adapters remain in app/.
+    sourceSets {
+        getByName("main") {
+            java.srcDir("../core/src/main/java")
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17

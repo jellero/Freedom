@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "steps": [
+    {
+      "name": "bootstrap-floor",
+      "request": {"op": "set_bootstrap_floor", "minimum_height": 100},
+      "expect": {"accepted": true}
+    },
+    {
+      "name": "stale-checkpoint",
+      "request": {"op": "verify_checkpoint", "height": 99, "proof_valid": true},
+      "expect": {"accepted": false, "failure": "BOOTSTRAP_STATE_TOO_OLD"}
+    },
+    {
+      "name": "fresh-checkpoint",
+      "request": {"op": "verify_checkpoint", "height": 101, "proof_valid": true},
+      "expect": {"accepted": true, "verified_height": 101}
+    },
+    {
+      "name": "highest-seen-rollback",
+      "request": {"op": "verify_checkpoint", "height": 100, "proof_valid": true},
+      "expect": {"accepted": false, "failure": "CONTROL_PLANE_ROLLBACK"}
+    },
+    {
+      "name": "failed-execution-is-not-success",
+      "request": {
+        "op": "verify_mutation",
+        "finality_proof_valid": true,
+        "execution_succeeded": false,
+        "resulting_state_proof_valid": true,
+        "exact_transition_matched": true,
+        "resulting_version": 1
+      },
+      "expect": {"accepted": false, "failure": "CONTROL_PLANE_EXECUTION_FAILED"}
+    },
+    {
+      "name": "verified-mutation",
+      "request": {
+        "op": "verify_mutation",
+        "finality_proof_valid": true,
+        "execution_succeeded": true,
+        "resulting_state_proof_valid": true,
+        "exact_transition_matched": true,
+        "resulting_version": 2
+      },
+      "expect": {"accepted": true, "committed_version": 2}
+    },
+    {
+      "name": "mutation-state-rollback",
+      "request": {
+        "op": "verify_mutation",
+        "finality_proof_valid": true,
+        "execution_succeeded": true,
+        "resulting_state_proof_valid": true,
+        "exact_transition_matched": true,
+        "resulting_version": 1
+      },
+      "expect": {"accepted": false, "failure": "CONTROL_PLANE_ROLLBACK"}
+    }
+  ]
+}

@@ -1,5 +1,8 @@
 # Canonical Freedom security/specification ownership
 /spec/ @jellero
+/core/ @jellero
+/sim/jvm/ @jellero
+/sim/l3/ @jellero
 /docs/SECURITY_INVARIANTS.md @jellero
 /docs/CONTROL_PLANE_SECURITY.md @jellero
 /docs/REVOCATION.md @jellero

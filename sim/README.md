@@ -1,83 +1,93 @@
 # Freedom simulator lab
 
-Status: **executable L1 deterministic engineering simulator / not a protocol implementation**.
+Status: **executable L1 deterministic simulator + executable L2 Docker network smoke**.
 
 The canonical development method is `docs/ADVANCED_DEVELOPMENT.md`.
 
-This directory is the versioned host-side multi-node lab that Codex/CI expands. It deliberately does **not** contain a fake independent implementation of Freedom cryptography.
+## Shared-core rule
 
-## Current executable runner
+`sim/simctl.py` does **not** own the security transition state machines anymore.
 
-`sim/simctl.py` is now executable with the Python standard library only.
+It compiles and launches the same pure-Java core in `core/src/main/java` that is also included in the Android source set:
 
-Run every deterministic L1 scenario:
+```text
+scenario DSL / virtual time / fault orchestration
+                 |
+                 v
+        sim/jvm/CoreStateServer
+                 |
+                 v
+        core/FreedomCore.java
+                 |
+      +----------+----------+
+      |                     |
+     L1 sim             Android source set
+```
+
+Python remains responsible for scheduling, fault injection, evidence and assertions. Route/recovery/freshness/rekey/control-plane transition state belongs in `core/`.
+
+## L0 shared-core test
+
+```bash
+python tools/run_core_tests.py
+```
+
+This compiles pure Java 17 with `javac` and runs the state-machine self-tests without building an APK.
+
+## L1 deterministic runner
+
+Run every deterministic scenario:
 
 ```bash
 python sim/simctl.py --all
 ```
 
-Quiet CI form:
+CI can reuse already-compiled core classes:
 
 ```bash
-python sim/simctl.py --all --quiet
+python sim/simctl.py --all --quiet --no-build --evidence-dir build/sim-evidence
 ```
 
-Generate machine-readable evidence:
+Current executable L1 state includes:
+
+- route failure + alternate relay recovery;
+- peer identity independent from route;
+- no mailbox writes;
+- pairwise-backup stale/latest handling;
+- monotonic recovery anchor;
+- bootstrap freshness floor/highest-seen state;
+- bounded rekey transition and key-epoch state;
+- verified control-plane mutation acceptance rule in the shared core.
+
+`sim/scenarios/*.yaml` are versioned acceptance fixtures. `10s` is virtual scheduler time, never `sleep(10)`.
+
+## L2 real Docker network smoke
+
+Run:
 
 ```bash
-python sim/simctl.py --all --evidence-dir build/sim-evidence
+python sim/l2/run_docker.py
 ```
 
-The runner provides:
-
-- seeded deterministic execution;
-- a virtual-clock event scheduler;
-- a restricted versioned YAML scenario DSL;
-- independent logical nodes;
-- relay blocking and NAT rebinding;
-- deterministic route recovery;
-- pairwise-backup stale/latest mirror behavior;
-- bootstrap-freshness-floor rejection/acceptance;
-- a first explicit rekey transition oracle;
-- assertions and JSON evidence traces.
-
-## Current scenarios
-
-`sim/scenarios/*.yaml` are executable acceptance fixtures.
-
-Current baseline:
+The L2 smoke uses real Docker bridge networks and TCP sockets. It creates two relays and probes them from isolated client containers, then verifies:
 
 ```text
-relay-block-nat-rebind.yaml
-    relay failure + NAT rebinding
-    -> alternate route recovery
-    -> peer identity unchanged
-    -> no mailbox write
+client on network A -> relay A
+client on network B -> relay A
+    peer-visible source address changes
 
-pairwise-backup-rollback.yaml
-    latest verified recovery anchor + stale valid backup
-    -> rollback reject
-    -> latest matching bundle accept
-    -> peer re-auth
-    -> future rendezvous state rotation
-
-stale-control-plane.yaml
-    valid checkpoint below BootstrapFreshnessFloor
-    -> BOOTSTRAP_STATE_TOO_OLD
-    -> later fresh verified checkpoint accepted
-
-rekey-lost-ack.yaml
-    STABLE(1) -> INIT -> COMMIT -> dropped Ack -> confirmed Ack
-    -> STABLE(2)
-    -> no split brain
-    -> old send key erased
+stop relay A
+    primary probe fails
+    alternate relay B remains reachable
 ```
 
-These scenarios are intentionally small. They are regression oracles that production core modules must eventually drive; they are not evidence that the current Android spike already implements those properties.
+This validates real process/container/network behavior. It does **not** claim Docker bridge networking reproduces carrier CGNAT/mobile networks; those remain L5 gates.
+
+The Docker harness is designed for a disposable CI/VM host. Do not expose a sensitive workstation Docker daemon to autonomous agents.
 
 ## Scenario DSL v1
 
-The L1 runner accepts a deliberately restricted YAML shape:
+The L1 parser accepts a deliberately restricted YAML subset with no third-party dependency:
 
 ```yaml
 version: 1
@@ -97,67 +107,48 @@ steps:
     assert: no_mailbox_write
 ```
 
-Supported L1 scenarios use non-decreasing virtual timestamps. `10s` means scheduler time, not `sleep(10)`.
+Expanding DSL semantics requires versioned tests; arbitrary YAML features are intentionally unsupported.
 
-The parser is intentionally dependency-free so CI does not require PyYAML. Expanding the DSL requires versioned semantics and tests rather than accepting arbitrary YAML features.
-
-## Architecture goal
-
-As the host-side production core appears, the simulator should execute the **same** state machines and serialization rather than duplicating them:
+## Current scenario baseline
 
 ```text
-Alice endpoint
-Bob endpoint
-Relay A / B
-Bridge
-Egress
-Honest / stale / malicious RPC
-Control-plane mock
-NAT / censor / clock fault injectors
-Release mirror
-Latest / stale pairwise-backup mirrors
+relay-block-nat-rebind.yaml
+pairwise-backup-rollback.yaml
+stale-control-plane.yaml
+rekey-lost-ack.yaml
 ```
 
-The current runner owns orchestration/fault injection/oracles only. Cryptographic and protocol logic should migrate into shared `core/` modules and be called from `simctl`.
+The scenarios are regression oracles, not proof that every current Android UI flow already calls the canonical core.
 
-## Time model
+## L3 differential control-plane gate
 
-### L1 — virtual deterministic time
-
-Scenario actions and internally scheduled events use the virtual scheduler. No wall-clock sleeps are required.
-
-### L2 — real kernel/network time
-
-Docker/network namespaces/`tc netem`/nftables will validate socket/kernel behavior separately. L2 must not replace L1 deterministic state-machine oracles.
-
-## Docker boundary
-
-Do not mount a sensitive workstation's `/var/run/docker.sock` into an agent container.
-
-Use a disposable VM, isolated CI runner or rootless disposable runtime. No production/mainnet/release secrets are available to the lab.
-
-## Evidence output
-
-Each evidence report records:
+L3 acceptance means the same canonical transition vectors are executed against:
 
 ```text
-scenario
-source fixture
-seed
-virtual time
-actions/internal events
-assertions
-result
+shared-core/control-plane oracle
+real NearChainAdapter local/test environment
 ```
 
-Future runners add core/spec commit hashes and node code hashes.
+and compared on accepted/rejected result, failure class and resulting canonical state.
 
-Secrets, plaintext conversations and recovery private material must not be written to evidence artifacts.
+The repository does not yet contain a canonical new `NearChainAdapter` implementation/contract to test. Therefore L3 must remain **explicitly incomplete rather than fake-green** until that adapter exists. When added, it must plug into the differential contract under `sim/l3/` and become a required gate before control-plane features are declared implemented.
 
-## No mock-only acceptance
+## Evidence
 
-A passing L1 scenario proves only the modeled state/oracle behavior.
+L1 evidence contains scenario/source/seed/virtual time/events/assertions/result and marks the core as `shared-java-17`.
 
-Control-plane transitions that pass against a deterministic mock must also pass differential tests against the real `ChainAdapter` local/test environment before being considered implemented.
+L2 outputs its real network transition result. Future L2 evidence will add packet/network traces where useful.
 
-Similarly, Android-specific properties remain L4/L5 gates.
+Secrets, plaintext conversations and recovery private material must never be written to evidence artifacts.
+
+## Acceptance boundary
+
+```text
+L0 shared core          -> pure transition/unit evidence
+L1 virtual simulator    -> deterministic orchestration/fault evidence
+L2 Docker               -> real kernel/socket/container evidence
+L3 ChainAdapter         -> real control-plane differential evidence
+L4 Android emulator     -> platform integration
+L5 physical networks    -> real Wi-Fi/mobile/CGNAT
+L6 external review      -> independent security/interoperability
+```
