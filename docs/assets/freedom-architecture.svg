@@ -1,99 +1,122 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="980" viewBox="0 0 1600 980" role="img" aria-labelledby="title desc">
-  <title id="title">Freedom system architecture</title>
-  <desc id="desc">Architecture showing two Freedom devices, blockchain identity and fallback rendezvous, direct or relayed routes, authenticated encrypted session, and application traffic kept off-chain.</desc>
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1160" viewBox="0 0 1600 1160" role="img" aria-labelledby="title desc">
+  <title id="title">Freedom Protocol architecture</title>
+  <desc id="desc">Current Freedom architecture with RootIdentity, opaque device records, pairwise identities, distributed control plane, replaceable direct relay and shielded routes, device relays, synchronous E2EE sessions and verified peer app distribution.</desc>
   <defs>
-    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
-      <path d="M0,0 L0,6 L9,3 z" fill="#475569"/>
-    </marker>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z" fill="#475569"/></marker>
+    <marker id="arrowCyan" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z" fill="#0891b2"/></marker>
     <style>
-      .bg { fill:#ffffff; }
-      .title { font:700 42px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; fill:#0f172a; }
-      .subtitle { font:400 21px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; fill:#475569; }
-      .section { font:700 24px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; fill:#0f172a; }
-      .label { font:600 20px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; fill:#0f172a; }
-      .small { font:400 17px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; fill:#334155; }
-      .tiny { font:400 15px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; fill:#475569; }
-      .box { fill:#f8fafc; stroke:#cbd5e1; stroke-width:2; rx:22; }
-      .device { fill:#eff6ff; stroke:#60a5fa; stroke-width:3; rx:26; }
-      .chain { fill:#f5f3ff; stroke:#8b5cf6; stroke-width:3; rx:26; }
-      .route { fill:#f0fdf4; stroke:#22c55e; stroke-width:3; rx:26; }
-      .relay { fill:#fff7ed; stroke:#fb923c; stroke-width:3; rx:26; }
-      .session { fill:#ecfeff; stroke:#06b6d4; stroke-width:3; rx:26; }
-      .app { fill:#f8fafc; stroke:#94a3b8; stroke-width:2; rx:20; }
-      .line { stroke:#475569; stroke-width:3; fill:none; marker-end:url(#arrow); }
-      .dash { stroke:#64748b; stroke-width:3; stroke-dasharray:10 9; fill:none; marker-end:url(#arrow); }
-      .secure { stroke:#0891b2; stroke-width:7; fill:none; }
+      .bg{fill:#ffffff}.title{font:700 40px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#0f172a}.subtitle{font:400 20px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#475569}.section{font:700 23px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#0f172a}.label{font:600 18px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#0f172a}.small{font:400 16px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#334155}.tiny{font:400 14px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#475569}.box{fill:#f8fafc;stroke:#cbd5e1;stroke-width:2}.device{fill:#eff6ff;stroke:#60a5fa;stroke-width:3}.identity{fill:#f0f9ff;stroke:#38bdf8;stroke-width:2}.chain{fill:#f5f3ff;stroke:#8b5cf6;stroke-width:3}.route{fill:#f0fdf4;stroke:#22c55e;stroke-width:3}.relay{fill:#fff7ed;stroke:#fb923c;stroke-width:3}.shield{fill:#eef2ff;stroke:#6366f1;stroke-width:3}.session{fill:#ecfeff;stroke:#06b6d4;stroke-width:3}.dist{fill:#fff7ed;stroke:#f59e0b;stroke-width:2}.line{stroke:#475569;stroke-width:3;fill:none;marker-end:url(#arrow)}.dash{stroke:#64748b;stroke-width:3;stroke-dasharray:10 9;fill:none;marker-end:url(#arrow)}.secure{stroke:#0891b2;stroke-width:6;fill:none;marker-end:url(#arrowCyan)}.pair{stroke:#0ea5e9;stroke-width:3;stroke-dasharray:8 7;fill:none}.muted{fill:#64748b}
     </style>
   </defs>
+  <rect class="bg" x="0" y="0" width="1600" height="1160"/>
+  <text class="title" x="800" y="54" text-anchor="middle">Freedom Protocol — current architecture</text>
+  <text class="subtitle" x="800" y="88" text-anchor="middle">Root identity · pairwise identity · distributed control plane · replaceable data paths</text>
 
-  <rect class="bg" x="0" y="0" width="1600" height="980"/>
+  <!-- Control plane -->
+  <rect class="chain" x="330" y="125" width="940" height="245" rx="28"/>
+  <text class="section" x="800" y="166" text-anchor="middle">Distributed / verifiable control plane</text>
+  <text class="tiny" x="800" y="194" text-anchor="middle">NEAR Testnet is the first ChainAdapter implementation, not the Freedom wire protocol</text>
 
-  <text class="title" x="800" y="62" text-anchor="middle">Freedom — struttura del sistema</text>
-  <text class="subtitle" x="800" y="100" text-anchor="middle">Identità on-chain, comunicazione off-chain, rendezvous solo quando serve</text>
+  <rect class="box" x="365" y="220" width="200" height="105" rx="18"/>
+  <text class="label" x="465" y="253" text-anchor="middle">Root identity</text>
+  <text class="tiny" x="465" y="282" text-anchor="middle">ownership · recovery</text>
+  <text class="tiny" x="465" y="304" text-anchor="middle">entitlement</text>
+
+  <rect class="box" x="590" y="220" width="200" height="105" rx="18"/>
+  <text class="label" x="690" y="253" text-anchor="middle">Device records</text>
+  <text class="tiny" x="690" y="282" text-anchor="middle">opaque commitment</text>
+  <text class="tiny" x="690" y="304" text-anchor="middle">rotation · revocation</text>
+
+  <rect class="box" x="815" y="220" width="200" height="105" rx="18"/>
+  <text class="label" x="915" y="253" text-anchor="middle">Pairwise recovery</text>
+  <text class="tiny" x="915" y="282" text-anchor="middle">rendezvous slots</text>
+  <text class="tiny" x="915" y="304" text-anchor="middle">RecoveryBeacon · TTL</text>
+
+  <rect class="box" x="1040" y="220" width="195" height="105" rx="18"/>
+  <text class="label" x="1138" y="253" text-anchor="middle">Policy / releases</text>
+  <text class="tiny" x="1138" y="282" text-anchor="middle">security · bulletin</text>
+  <text class="tiny" x="1138" y="304" text-anchor="middle">signed manifests</text>
 
   <!-- Devices -->
-  <rect class="device" x="80" y="220" width="300" height="250"/>
-  <text class="section" x="230" y="270" text-anchor="middle">Device A</text>
-  <text class="small" x="120" y="315">DeviceID</text>
-  <text class="small" x="120" y="350">Identity private key</text>
-  <text class="small" x="120" y="385">Route candidates</text>
-  <text class="small" x="120" y="420">Messaggi / media locali</text>
+  <rect class="device" x="70" y="420" width="355" height="255" rx="26"/>
+  <text class="section" x="248" y="458" text-anchor="middle">Alice — Freedom client</text>
+  <rect class="identity" x="105" y="482" width="285" height="154" rx="18"/>
+  <text class="small" x="130" y="513">RootIdentity</text>
+  <text class="small" x="130" y="543">DeviceKey</text>
+  <text class="small" x="130" y="573">DeviceRecordCommitment</text>
+  <text class="small" x="130" y="603">PairwiseContactAlias_AB</text>
+  <text class="tiny" x="248" y="655" text-anchor="middle">no global DeviceID in network layer</text>
 
-  <rect class="device" x="1220" y="220" width="300" height="250"/>
-  <text class="section" x="1370" y="270" text-anchor="middle">Device B</text>
-  <text class="small" x="1260" y="315">DeviceID</text>
-  <text class="small" x="1260" y="350">Identity private key</text>
-  <text class="small" x="1260" y="385">Route candidates</text>
-  <text class="small" x="1260" y="420">Messaggi / media locali</text>
+  <rect class="device" x="1175" y="420" width="355" height="255" rx="26"/>
+  <text class="section" x="1352" y="458" text-anchor="middle">Bob — Freedom client</text>
+  <rect class="identity" x="1210" y="482" width="285" height="154" rx="18"/>
+  <text class="small" x="1235" y="513">RootIdentity</text>
+  <text class="small" x="1235" y="543">DeviceKey</text>
+  <text class="small" x="1235" y="573">DeviceRecordCommitment</text>
+  <text class="small" x="1235" y="603">PairwiseContactAlias_BA</text>
+  <text class="tiny" x="1352" y="655" text-anchor="middle">contact = person, not each device</text>
 
-  <!-- Blockchain -->
-  <rect class="chain" x="520" y="150" width="560" height="250"/>
-  <text class="section" x="800" y="200" text-anchor="middle">Blockchain layer — NEAR Testnet</text>
+  <!-- Control plane access -->
+  <path class="dash" d="M320 420 C390 360 450 355 520 350"/>
+  <path class="dash" d="M1280 420 C1210 360 1150 355 1080 350"/>
+  <text class="tiny" x="370" y="378" text-anchor="middle">verify / recover</text>
+  <text class="tiny" x="1230" y="378" text-anchor="middle">verify / recover</text>
 
-  <rect class="box" x="565" y="230" width="220" height="125"/>
-  <text class="label" x="675" y="270" text-anchor="middle">Device Registry</text>
-  <text class="tiny" x="675" y="305" text-anchor="middle">DeviceID → public key</text>
-  <text class="tiny" x="675" y="330" text-anchor="middle">key epoch / revocation</text>
+  <!-- Pairwise relation -->
+  <path class="pair" d="M425 470 C650 395 950 395 1175 470"/>
+  <text class="small" x="800" y="414" text-anchor="middle">pairwise authenticated relationship · PairSecret · rotating aliases</text>
 
-  <rect class="box" x="815" y="230" width="220" height="125"/>
-  <text class="label" x="925" y="270" text-anchor="middle">Rendezvous</text>
-  <text class="tiny" x="925" y="305" text-anchor="middle">fallback read-before-write</text>
-  <text class="tiny" x="925" y="330" text-anchor="middle">record opaco + TTL</text>
+  <!-- Route selector -->
+  <rect class="route" x="520" y="465" width="560" height="128" rx="24"/>
+  <text class="section" x="800" y="505" text-anchor="middle">Local route selector</text>
+  <text class="small" x="800" y="538" text-anchor="middle">direct · NAT · relay · shielded · future/obfuscated transport</text>
+  <text class="tiny" x="800" y="566" text-anchor="middle">routing uses temporary TransportToken / RelayCircuitToken, not identity</text>
 
-  <!-- Read/resolve arrows -->
-  <path class="dash" d="M380 285 C445 250, 470 250, 520 270"/>
-  <path class="dash" d="M1220 285 C1155 250, 1130 250, 1080 270"/>
-  <text class="tiny" x="450" y="235" text-anchor="middle">resolve / fallback</text>
-  <text class="tiny" x="1150" y="235" text-anchor="middle">resolve / fallback</text>
+  <path class="line" d="M425 555 L520 535"/>
+  <path class="line" d="M1175 555 L1080 535"/>
 
-  <!-- Routing layer -->
-  <rect class="route" x="500" y="485" width="600" height="150"/>
-  <text class="section" x="800" y="530" text-anchor="middle">Route establishment</text>
-  <text class="small" x="800" y="570" text-anchor="middle">1. route noto → 2. NAT traversal → 3. relay → 4. blockchain rendezvous</text>
-  <text class="tiny" x="800" y="605" text-anchor="middle">Finché esiste un percorso valido, gli update viaggiano direttamente nella sessione</text>
+  <!-- Data paths -->
+  <rect class="route" x="230" y="735" width="300" height="115" rx="22"/>
+  <text class="label" x="380" y="772" text-anchor="middle">DIRECT / NAT</text>
+  <text class="tiny" x="380" y="803" text-anchor="middle">fast path when policy permits</text>
+  <text class="tiny" x="380" y="826" text-anchor="middle">may expose peer IPs</text>
 
-  <path class="line" d="M380 390 C440 430, 465 490, 500 540"/>
-  <path class="line" d="M1220 390 C1160 430, 1135 490, 1100 540"/>
+  <rect class="relay" x="650" y="700" width="300" height="150" rx="22"/>
+  <text class="label" x="800" y="738" text-anchor="middle">Freedom relay</text>
+  <text class="tiny" x="800" y="769" text-anchor="middle">VPS · server · community</text>
+  <text class="tiny" x="800" y="792" text-anchor="middle">phone/tablet/desktop DEVICE_RELAY</text>
+  <text class="tiny" x="800" y="815" text-anchor="middle">forward-only · ciphertext · bounded RAM</text>
+  <text class="tiny" x="800" y="838" text-anchor="middle">not an Internet open proxy</text>
 
-  <!-- Relay -->
-  <rect class="relay" x="645" y="675" width="310" height="105"/>
-  <text class="label" x="800" y="715" text-anchor="middle">Relay Freedom opzionale</text>
-  <text class="tiny" x="800" y="747" text-anchor="middle">forward-only · ciphertext · buffer temporanei</text>
+  <rect class="shield" x="1070" y="735" width="300" height="115" rx="22"/>
+  <text class="label" x="1220" y="772" text-anchor="middle">SHIELDED / MULTI-HOP</text>
+  <text class="tiny" x="1220" y="803" text-anchor="middle">replaceable relay circuit</text>
+  <text class="tiny" x="1220" y="826" text-anchor="middle">privacy / resilience policy</text>
 
-  <!-- Secure session -->
-  <rect class="session" x="425" y="820" width="750" height="110"/>
-  <text class="section" x="800" y="860" text-anchor="middle">Authenticated E2EE session</text>
-  <text class="small" x="800" y="897" text-anchor="middle">messaggi · ACK · file · signaling chiamate · route update</text>
+  <path class="line" d="M675 593 C580 645 470 680 400 735"/>
+  <path class="line" d="M800 593 L800 700"/>
+  <path class="line" d="M925 593 C1020 645 1130 680 1200 735"/>
 
-  <!-- Secure paths -->
-  <path class="secure" d="M380 445 C500 710, 1100 710, 1220 445"/>
-  <text class="small" x="800" y="685" text-anchor="middle">percorso diretto quando disponibile</text>
+  <!-- E2EE session -->
+  <rect class="session" x="370" y="905" width="860" height="125" rx="25"/>
+  <text class="section" x="800" y="946" text-anchor="middle">Authenticated E2EE live session</text>
+  <text class="small" x="800" y="980" text-anchor="middle">Root identity proof + authorized DeviceKey + ephemeral transcript</text>
+  <text class="small" x="800" y="1008" text-anchor="middle">text · ACK · file · voice · video · route updates · no offline mailbox</text>
 
-  <path class="line" d="M650 635 C690 655, 710 665, 725 675"/>
-  <path class="line" d="M950 675 C975 660, 1000 650, 1035 635"/>
+  <path class="secure" d="M380 850 C480 885 520 895 590 905"/>
+  <path class="secure" d="M800 850 L800 905"/>
+  <path class="secure" d="M1220 850 C1120 885 1080 895 1010 905"/>
 
-  <path class="line" d="M800 780 L800 820"/>
+  <!-- Distribution -->
+  <rect class="dist" x="85" y="900" width="235" height="132" rx="20"/>
+  <text class="label" x="202" y="936" text-anchor="middle">Share Freedom</text>
+  <text class="tiny" x="202" y="966" text-anchor="middle">QR -> peer / relay / mirror</text>
+  <text class="tiny" x="202" y="990" text-anchor="middle">verify manifest · hash · signer</text>
+  <text class="tiny" x="202" y="1014" text-anchor="middle">source bytes != trust anchor</text>
 
-  <!-- Footer principles -->
-  <text class="tiny" x="80" y="960">La blockchain non trasporta messaggi o media. I relay non conservano conversazioni. Se il peer non è raggiungibile, i dati applicativi restano sull'endpoint mittente.</text>
+  <path class="dash" d="M202 900 C210 820 215 735 220 640"/>
+
+  <!-- Footer -->
+  <text class="tiny" x="800" y="1090" text-anchor="middle">Control plane verifies identity/recovery only when needed. Data plane remains off-chain and path-replaceable.</text>
+  <text class="tiny" x="800" y="1120" text-anchor="middle">No global DeviceID in transport · no message storage on chain · relays forward, not store.</text>
 </svg>
