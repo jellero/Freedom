@@ -4,7 +4,9 @@ Status: **canonical / normative design rules**.
 
 Normative baseline: [`SECURITY_INVARIANTS.md`](SECURITY_INVARIANTS.md).
 Revocation/freshness: [`REVOCATION.md`](REVOCATION.md).
+Pairwise recovery: [`PAIRWISE_RECOVERY.md`](PAIRWISE_RECOVERY.md).
 Schema: [`../spec/freedom.cddl`](../spec/freedom.cddl).
+Crypto domains: [`../spec/crypto-domains.txt`](../spec/crypto-domains.txt).
 
 ## 1. RPC non è trust
 
@@ -22,7 +24,7 @@ RPC JSON da solo non è `VERIFIED_STATE`.
 
 ## 2. Verified checkpoint / state proof
 
-Il `ChainAdapter` verifica finality/consensus proof, state-root binding, inclusion/non-inclusion proof, canonical encoding, signing domain, epoch e policy.
+Il `ChainAdapter` verifica finality/consensus proof, state-root binding, inclusion/non-inclusion proof, canonical encoding, cryptographic domain, epoch e policy.
 
 Per NEAR la prima implementazione deve usare primitive coerenti col modello reale di finality/state, non fidarsi del solo RPC response.
 
@@ -91,7 +93,7 @@ Il contract-visible slot è:
 slot_id = H("Freedom/RendezvousSlot" || network_id || write_public_key)
 ```
 
-Il contratto non deve conoscere direction/epoch per verificare il binding.
+Il fixed HASH/KDF purpose è registrato in `spec/crypto-domains.txt`; il contratto non deve conoscere direction/epoch per verificare il binding.
 
 Write valida soltanto con:
 
@@ -128,6 +130,17 @@ Compromise recovery richiede independent recovery authority precommitted prima d
 
 Schema: `user-recovery-policy`.
 
+Policy validation MUST reject:
+
+```text
+< 2 recovery key commitments
+duplicate recovery key commitments
+threshold == 0
+threshold > number of distinct recovery keys
+```
+
+Per un profilo production che dichiara independent compromise recovery, threshold >=2 e custody domains separati dalla active RootRecoveryKey/device environment sono il target operativo.
+
 V1 policy è **sticky**:
 
 ```text
@@ -136,7 +149,7 @@ NORMAL root rotation
  -> same recovery_policy_commitment
 ```
 
-La current RootRecoveryKey da sola non può rimuovere/sostituire la policy.
+La current root da sola non può rimuovere/sostituire la policy.
 
 Policy mutation non è una V1 operation finché non viene specificata una transition separata autorizzata almeno dal current recovery quorum.
 
@@ -146,7 +159,7 @@ Policy mutation non è una V1 operation finché non viene specificata una transi
 
 Una valid request può recuperare la **latest current root state della stessa root_control_commitment lineage**, anche se l'attaccante ha già fatto una normal root rotation con la root rubata.
 
-Quando la request è accepted/pending:
+Quando accepted:
 
 ```text
 RECOVERY_PENDING
@@ -157,12 +170,47 @@ fino all'activation height:
 - block normal root rotations;
 - block recovery-policy mutation;
 - high-risk new device authorization può essere bloccata/pending;
-- current root non può cancellare unilateralmente la request;
+- current root non può cancellare unilateralmente la recovery;
 - cancellation/replacement richiede la independent recovery authority prevista dalla policy.
 
-Dopo il delay la valid recovery quorum transition supersede la compromised lineage state precedente.
+Questo impedisce alla root rubata di evadere dalla recovery policy tramite normal rotation race.
 
-## 14. Contract governance
+## 14. PairwiseRecoveryAnchor
+
+Il full `PairwiseRecoveryBundle` resta off-chain su storage scelto dall'utente/deployment.
+
+Per il profilo rollback-detectable dopo perdita totale dei device, il control-plane conserva soltanto un piccolo `pairwise-recovery-anchor`:
+
+```text
+root_control_commitment
+anchor_epoch
+latest_backup_generation
+latest_bundle_hash
+latest_state_commitment
+recovery_key_epoch
+updated_at_height
+authorization_proof
+```
+
+Update valida soltanto se:
+
+```text
+anchor_epoch == previous.anchor_epoch + 1
+latest_backup_generation > previous.latest_backup_generation
+root_control_commitment unchanged for lineage
+recovery_key_epoch >= previous.recovery_key_epoch
+authorization proof valid under current verified recovery-state authority
+```
+
+L'anchor update è una mutazione security-sensitive e richiede finality + resulting-state proof.
+
+La source che conserva i bundle non è trust e non può ridefinire l'anchor.
+
+Trade-off: l'anchor non pubblica social graph/plaintext, ma rende osservabile il timing degli update della stessa opaque recovery lineage.
+
+Senza anchor/surviving device, bundle integrity può essere verificata ma la freshness non è dimostrabile. Vedi `PAIRWISE_RECOVERY.md`.
+
+## 15. Contract governance
 
 Production sceglie immutable security core oppure threshold-governed upgrade.
 
@@ -170,7 +218,7 @@ Upgradeable core richiede code hash, migration program hash, activation height, 
 
 Una singola Full Access key production viola il modello.
 
-## 15. Governance quorum assumption
+## 16. Governance quorum assumption
 
 `3-of-5` elimina una singola key unilaterale, non quorum collusion.
 
@@ -178,7 +226,7 @@ Signer production devono usare per quanto praticabile custody/operator domains d
 
 Se un singolo soggetto controlla unilateralmente il quorum, il claim corretto è “nessuna singola chiave”, non “nessun singolo attore”.
 
-## 16. Signer-set anti-rollback
+## 17. Signer-set anti-rollback
 
 ```text
 next_epoch = previous_epoch + 1
@@ -191,7 +239,7 @@ old set cannot reactivate
 
 Quorum-loss recovery è pre-pinned, stronger-threshold/timelocked, non una emergency key singola.
 
-## 17. Chain migration
+## 18. Chain migration
 
 `ChainMigrationManifest` da solo non basta.
 
@@ -199,7 +247,7 @@ Serve `StateMigrationProof` che lega source finalized checkpoint/export root, mi
 
 Governance autorizza la migration rule/version; non può firmare arbitrariamente uno state rewrite e chiamarlo migration.
 
-## 18. Acceptance gates
+## 19. Acceptance gates
 
 - fresh-install stale checkpoint/floor;
 - honest/stale/forked/malicious RPC proof vectors;
@@ -207,8 +255,10 @@ Governance autorizza la migration rule/version; non può firmare arbitrariamente
 - rendezvous overwrite/front-run/replay;
 - storage convergence;
 - DeviceControlKey + recovery revocation;
+- UserRecoveryPolicy duplicate/threshold/custody validation;
 - sticky UserRecoveryPolicy;
 - compromise-recovery latest-lineage/race/timelock;
+- pairwise backup anchor monotonic update + rollback/mismatch;
 - signer custody/quorum assumptions;
 - contract upgrade/rollback;
 - deterministic StateMigrationProof.
