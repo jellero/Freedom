@@ -2,17 +2,18 @@
 
 ## 1. Definizione
 
-Freedom è un protocollo decentralizzato di comunicazione sincrona. L'architettura separa sette responsabilità:
+Freedom è un sistema di comunicazione sincrona e resilienza di rete che separa esplicitamente:
 
 1. **ownership identity** — chi possiede e recupera l'identità Freedom;
-2. **device authorization** — quali DeviceKey sono attualmente autorizzate;
-3. **verifiable control-plane** — come vengono verificati rotation/revocation, entitlement, recovery e policy;
-4. **pairwise rendezvous** — come due contatti online si ritrovano quando non hanno più un percorso valido;
-5. **routing/transport** — come i pacchetti attraversano la rete;
-6. **secure session** — come gli endpoint si autenticano e derivano chiavi;
-7. **application** — messaggi, file, audio e video.
+2. **device authorization** — quali DeviceKey sono autorizzate;
+3. **verifiable control-plane** — rotation/revocation, entitlement, recovery e policy;
+4. **pairwise identity/rendezvous** — come due contatti si autenticano e si ritrovano;
+5. **routing/transport fabric** — come vengono scelti path, relay, bridge e transport;
+6. **Freedom Communication** — sessione E2EE live tra endpoint Freedom;
+7. **Freedom Gateway** — percorso opzionale per traffico di app esterne verso un Internet egress;
+8. **application layer** — messaggi, file, audio, video e funzioni client.
 
-La prima implementazione del control-plane usa una blockchain, ma il traffico applicativo rimane sempre off-chain.
+La prima implementazione del control-plane usa una blockchain, ma chat, media, Gateway payload e APK rimangono off-chain.
 
 ## 2. Vista d'insieme
 
@@ -38,22 +39,58 @@ La prima implementazione del control-plane usa una blockchain, ma il traffico ap
            |                                                     |
            +----------- pairwise authenticated state ------------+
                                    |
-                              route selector
+                         path / transport selector
                                    |
-            +----------------------+----------------------+
-            |                      |                      |
-         DIRECT                  RELAY                 SHIELDED
-                              /         \
-                         VPS/server   device/community
-                                   |
-                       authenticated E2EE live session
-                                   |
-                          text / file / voice / video
+             +---------------------+---------------------+
+             |                                           |
+             v                                           v
+   FREEDOM COMMUNICATION                         FREEDOM GATEWAY
+   direct / relay / Shield                      app/device traffic
+             |                                           |
+   authenticated E2EE live                      relay/bridge/Shield
+             |                                           |
+ text / file / voice / video                    explicit Internet Egress
+                                                         |
+                                                      Internet
 ```
 
-Il registro/control-plane è fondamentale come **funzione distribuita e verificabile** del trust model attuale. NEAR è soltanto la prima implementazione tramite `ChainAdapter` e deve essere sostituibile.
+Il control-plane è fondamentale come **funzione distribuita e verificabile** del trust model attuale. NEAR è soltanto la prima implementazione tramite `ChainAdapter`.
 
-## 3. Identity plane
+## 3. Due security boundaries differenti
+
+### Freedom Communication
+
+```text
+Freedom endpoint A
+      <==== authenticated E2EE ====>
+Freedom endpoint B
+```
+
+Le session key restano agli endpoint. Relay, RPC e provider di rete non sono trust anchor della conversazione.
+
+### Freedom Gateway
+
+```text
+external app
+   -> encrypted Freedom tunnel
+   -> relay / bridge / Shield
+   -> explicit Egress
+   -> Internet
+```
+
+Il Gateway protegge il percorso fino all'egress, ma la sicurezza oltre l'egress dipende anche dal protocollo applicativo finale.
+
+Per esempio:
+
+- HTTPS mantiene cifratura applicativa verso il sito;
+- HTTP plaintext può essere osservabile dall'egress;
+- un egress vede metadata di destinazione necessari al forwarding.
+
+Quindi il Gateway **non deve essere descritto come equivalente all'E2EE Freedom-to-Freedom**.
+
+Dettagli: [`GATEWAY.md`](GATEWAY.md).
+
+## 4. Identity plane
 
 Freedom non usa un `DeviceID` globale come identità pubblica o identificatore di trasporto.
 
@@ -70,9 +107,7 @@ Il `DeviceRecordCommitment` serve per lookup, key rotation e revocation ma non �
 
 Dettagli: [`IDENTITY_MODEL.md`](IDENTITY_MODEL.md).
 
-## 4. Device authorization
-
-Ogni device genera localmente una DeviceKey e un commitment opaco.
+## 5. Device authorization
 
 ```text
 DeviceRecord {
@@ -86,7 +121,7 @@ DeviceRecord {
 }
 ```
 
-La RootIdentity autorizza l'attivazione:
+La RootIdentity autorizza il device:
 
 ```text
 ActivateDevice {
@@ -101,9 +136,9 @@ ActivateDevice {
 
 Gli stati minimi sono `ACTIVE` e `REVOKED`.
 
-Una rotazione incrementa `key_epoch`. Il commitment tecnico può restare stabile durante la rotazione, ma non viene esposto come global network identity.
+Una rotazione incrementa `key_epoch`; il commitment tecnico può restare stabile durante la rotazione senza diventare una global network identity.
 
-## 5. Contact bootstrap
+## 6. Contact bootstrap
 
 La rubrica rappresenta persone/RootIdentity, non singoli telefoni.
 
@@ -114,7 +149,7 @@ Bob / RootIdentity
   `- Desktop
 ```
 
-Il contatto viene scambiato intenzionalmente tramite QR, link, NFC o altro canale esterno.
+Il contatto può essere scambiato via QR, link, NFC o altro canale esterno.
 
 ```text
 FreedomContact {
@@ -130,11 +165,9 @@ FreedomContact {
 
 La `contact_capability` è casuale ad alta entropia e può essere one-shot o temporanea.
 
-Il bootstrap non pubblica una relazione leggibile tra identità, device e route.
+## 7. Pairwise identity e rendezvous
 
-## 6. Pairwise identity / rendezvous secret
-
-Dopo il primo handshake autenticato, i due contatti derivano e persistono localmente:
+Dopo il primo handshake autenticato:
 
 ```text
 PairSecret_AB
@@ -142,33 +175,21 @@ PairwiseContactAlias_AB
 PairRendezvousSecret_AB
 ```
 
-Gli alias sono specifici della relazione:
+Alias differenti vengono usati per relazioni differenti.
+
+Da `PairRendezvousSecret` derivano slot opachi e rotanti. Il secret non viene pubblicato.
+
+### Read-before-write
 
 ```text
-Alice <-> Bob     alias X
-Alice <-> Carol   alias Y
+1. try local known routes
+2. try allowed relay/bridge paths
+3. read peer pairwise slot
+4. if usable -> connect, no write
+5. read own slot
+6. if already valid -> wait/poll
+7. otherwise write one bounded offer
 ```
-
-Da `PairRendezvousSecret` vengono derivati slot opachi e rotanti. Il secret non viene pubblicato.
-
-## 7. Rendezvous rule
-
-Il control-plane non è una tabella di routing continuamente aggiornata.
-
-Per A che vuole ritrovare B:
-
-```text
-1. controlla route candidate locali già conosciuti
-2. tenta i percorsi consentiti dalla policy locale
-3. se tutti falliscono, legge lo slot B->A
-4. se trova un record valido, usa quello e NON scrive
-5. se non trova niente, legge il proprio slot A->B
-6. se esiste già un'offerta locale valida, non riscrive
-7. altrimenti pubblica un nuovo record indipendente
-8. continua a leggere lo slot remoto fino a riconnessione/scadenza
-```
-
-La regola è **read-before-write**.
 
 ## 8. Rendezvous record
 
@@ -178,11 +199,7 @@ RendezvousRecord {
     expires_at
     ciphertext
 }
-```
 
-Payload cifrato:
-
-```text
 RendezvousPayload {
     sender_pairwise_alias
     sender_device_proof
@@ -190,13 +207,14 @@ RendezvousPayload {
     rendezvous_nonce
     route_candidates[]
     relay_candidates[]
+    transport_hints[]?
     ephemeral_transport_public_key
 }
 ```
 
-Il record pubblico non espone una relazione leggibile RootIdentity/device/route. Ha TTL breve e non richiede uno storico di revisioni.
+Il record pubblico non deve esporre una relazione leggibile RootIdentity/device/route.
 
-## 9. Route candidates
+## 9. Route and transport fabric
 
 ```text
 RouteCandidate {
@@ -209,55 +227,37 @@ RouteCandidate {
 }
 ```
 
-Un IP non rappresenta un'identità Freedom. `candidate_type` può distinguere local, observed, direct, relay o tipi futuri.
+Un IP non rappresenta un'identità Freedom.
 
-## 10. Route maintenance
-
-Dopo che A e B hanno una sessione valida, gli aggiornamenti di rete passano dentro la sessione E2EE:
-
-```text
-RouteUpdate {
-    sequence
-    candidates[]
-    relay_candidates[]
-    expires_at
-}
-```
-
-Non viene effettuata alcuna write blockchain per un semplice cambio IP/porta se esiste ancora almeno un percorso valido.
-
-## 11. Path selection e privacy
-
-Possibili classi:
+Classi di path:
 
 ```text
 DIRECT
 NAT_TRAVERSAL
 RELAY
-SHIELDED / MULTI-HOP
-future / obfuscated transport
+BRIDGE
+SHIELDED
+MULTI_HOP
+PLUGGABLE / OBFUSCATED TRANSPORT
 ```
-
-Il direct path è efficiente ma espone gli endpoint di rete ai peer. Non deve essere obbligatorio.
 
 Il path selector può usare:
 
 - policy privacy;
 - RTT;
 - stabilità recente;
-- costo/capacità del relay;
-- disponibilità del trasporto;
-- durata prevista del mapping;
+- costo/capacità;
+- disponibilità del transport;
 - rischio di censura/blocco;
-- preferenze dell'utente.
+- provider/ASN diversity;
+- preferenze utente;
+- battery/data policy.
 
 Nessuna autorità centrale decide il percorso.
 
-## 12. Transport identity
+## 10. Transport abstraction
 
-Routing e identità restano separati.
-
-Il network layer usa capability temporanee:
+Il network layer usa capability temporanee e adapter sostituibili:
 
 ```text
 TransportToken
@@ -266,27 +266,57 @@ NextHopToken
 RouteCapability
 ```
 
-Un relay non dovrebbe ricevere RootIdentity o DeviceRecordCommitment quando gli basta un token di circuito.
-
-## 13. Path diversity e censorship resistance
+Interfaccia concettuale:
 
 ```text
-direct blocked      -> altro route
-relay A blocked     -> relay B / altro path
-RPC A blocked       -> RPC B
-transport filtrato  -> transport alternativo
-fee relayer down    -> altro relayer / pagamento compatibile
+TransportAdapter {
+    connect(candidate, policy)
+    probe_capabilities()
+    health()
+    classify_failure()
+    close()
+}
 ```
 
-Bootstrap, RPC, relay, fee relayer e provider devono essere multipli e sostituibili.
+Classi future possono includere:
 
-Un IP, dominio o endpoint specifico non deve essere requisito permanente del protocollo.
+```text
+native TLS/TCP
+UDP / QUIC-like carrier
+HTTPS / WebSocket-like carrier
+HTTP/2 or HTTP/3 tunnel
+bridge transport
+obfuscated transport
+active-probing-resistant transport
+WebTunnel-like transport
+ephemeral proxy transport
+```
 
-Freedom non può garantire disponibilità se il dispositivo perde ogni forma di connettività, né anonimato assoluto contro un avversario globale capace di osservare l'intera rete.
+Freedom dovrebbe riutilizzare transport anti-censura esistenti e reviewati quando appropriato, invece di inventare primitive proprietarie senza necessità.
 
-## 14. Adaptive recovery control-plane
+## 11. Censorship resistance
 
-Dopo la perdita completa del path, A e B possono pubblicare negli slot pairwise opachi un `RecoveryBeacon` cifrato e a TTL breve:
+Invariante:
+
+> **nessun singolo fingerprint, protocollo, IP, dominio, relay, RPC, provider o transport deve essere requisito permanente.**
+
+```text
+direct blocked       -> another route
+relay A blocked      -> relay B / bridge
+RPC A blocked        -> RPC B
+transport A filtered -> transport B
+public pool blocked  -> non-public / pairwise bridge
+```
+
+Non esiste garanzia universale contro ogni firewall. Un avversario può applicare allowlist totale o eliminare ogni connettività.
+
+Obiettivo corretto:
+
+> **se esiste almeno un carrier ancora utilizzabile, Freedom deve tentare automaticamente strategie indipendenti per trovare un percorso valido.**
+
+## 12. Adaptive Defense
+
+Dopo la perdita completa del path, peer già autenticati possono usare `RecoveryBeacon` pairwise, cifrati e a TTL breve.
 
 ```text
 RecoveryBeacon {
@@ -300,18 +330,16 @@ RecoveryBeacon {
 }
 ```
 
-Un beacon valido prova attività recente, non presenza assoluta in tempo reale.
-
 ```text
-A control-plane reachable        yes
-B beacon recent                  yes
-current A<->B data path          fail
+control-plane reachable          yes
+peer activity recent             yes
+current data path                fail
         |
         v
 INTERFERENCE_OR_ROUTE_FAILURE_SUSPECTED
         |
         v
-alternate route / relay / transport
+alternate route / relay / bridge / transport
 ```
 
 Vincoli:
@@ -321,14 +349,14 @@ Vincoli:
 - payload cifrato;
 - TTL breve;
 - backoff/rate limit;
-- stop delle write appena la sessione è ristabilita;
+- stop delle write dopo recovery;
 - nessun claim di rilevamento della sorveglianza passiva.
 
 Dettagli: [`ADAPTIVE_DEFENSE.md`](ADAPTIVE_DEFENSE.md).
 
-## 15. Relay architecture
+## 13. Relay architecture
 
-Un relay Freedom è una macchina o un dispositivo che esegue software di forwarding.
+Un relay Freedom può essere:
 
 ```text
 VPS / VM
@@ -340,14 +368,12 @@ private organization node
 telefono / tablet / desktop Freedom opt-in
 ```
 
-Un normale dispositivo Freedom può svolgere due ruoli separati:
+Un normale device può svolgere:
 
 ```text
-ENDPOINT  -> sessioni del proprio utente
-RELAY     -> inoltro ciphertext di altri circuiti
+ENDPOINT -> sessioni del proprio utente
+RELAY    -> inoltro ciphertext di altri circuiti
 ```
-
-Il ruolo relay non concede accesso alle chiavi E2EE.
 
 ```text
 RelayCandidate {
@@ -361,60 +387,103 @@ RelayCandidate {
 }
 ```
 
-Classi iniziali: `DEDICATED`, `COMMUNITY`, `DEVICE`, `PRIVATE`, `MANAGED`.
-
-Un `DEVICE` relay non richiede necessariamente una porta pubblica permanente. Può essere utile tramite NAT mapping, transport compatibili o connessioni outbound/circuiti già stabiliti.
+Classi iniziali:
 
 ```text
-RelayPacket {
-    version
-    packet_id
-    next_hop_token
-    hop_limit
-    expires_at
-    ciphertext
-}
+DEDICATED
+COMMUNITY
+DEVICE
+PRIVATE
+MANAGED
+```
+
+Requisiti relay:
+
+- payload Freedom E2EE;
+- niente mailbox persistenti;
+- buffer/TTL bounded;
+- quote/rate limit;
+- nessuna fiducia per autenticità del contenuto;
+- device relay opt-in e resource-bounded;
+- nessun arbitrary Internet proxy nel relay base.
+
+Dettagli: [`RELAYS.md`](RELAYS.md).
+
+## 14. Relay != Egress
+
+Questa separazione è obbligatoria.
+
+```text
+DEVICE_RELAY / COMMUNITY_RELAY
+    Freedom circuit -> Freedom circuit
+    no arbitrary Internet exit
+
+MANAGED_EGRESS / PRIVATE_EGRESS / BUSINESS_EGRESS
+    Gateway tunnel -> Internet
+```
+
+Un Relay Contributor non deve trasformare inconsapevolmente il proprio telefono o IP domestico in un exit node aperto.
+
+## 15. Freedom Gateway
+
+Freedom Gateway è post-V1 e usa le primitive di path/transport già sviluppate per il messenger.
+
+```text
+Android app traffic
+      |
+      v
+local VpnService
+      |
+ encrypted tunnel
+      |
+path selector
+  |- direct to egress
+  |- relay -> egress
+  |- bridge -> egress
+  `- Shield / multi-hop -> egress
+      |
+   Internet
+```
+
+Modalità previste:
+
+```text
+OFF
+SELECTED_APPS
+WHOLE_DEVICE
 ```
 
 Requisiti:
 
-- payload applicativo E2EE;
-- niente mailbox persistenti;
-- buffer/TTL bounded;
-- quote per peer/connessione;
-- possibilità di interrompere il servizio localmente;
-- nessuna fiducia necessaria per autenticità del contenuto;
-- `DEVICE_RELAY` opt-in e bounded da policy batteria/rete/CPU/RAM/banda;
-- nessun arbitrary Internet proxy nel protocollo relay base.
+- consenso esplicito;
+- split tunnel configurabile;
+- DNS/leak controls;
+- kill-switch opzionale;
+- egress diversity;
+- route/transport status visibile;
+- nessun egress implicito su community/device relay;
+- nessun claim di anonimato assoluto.
 
-Dettagli: [`RELAYS.md`](RELAYS.md).
+Dettagli: [`GATEWAY.md`](GATEWAY.md).
 
-## 16. Relay Contributor
+## 16. Maximum Reachability
 
-```text
-Free                     10 contatti attivi
-Free + Relay Contributor 20 contatti attivi
-```
-
-Il bonus di +10 è temporaneo e richiede contributo relay utile. La prova deve essere privacy-preserving e non pubblicare peer serviti, social graph o contenuto inoltrato.
-
-## 17. Synchronous delivery
+Modalità futura:
 
 ```text
-active authenticated session?
-  yes -> transmit
-  no  -> discard / fail locally
+MAXIMUM_REACHABILITY
+  multiple transport strategies
+  bounded warm alternatives
+  independent providers
+  non-public bridges after filtering evidence
+  parallel connect when allowed
+  aggressive failover
+  bounded probing/backoff
 ```
 
-Il protocollo base non crea mailbox di consegna futura e non replica automaticamente messaggi su blockchain o relay.
+L'obiettivo è massimizzare la probabilità di stabilire un percorso in reti restrittive, non garantire matematicamente il bypass di qualsiasi firewall.
 
-## 18. Live / ephemeral client mode
-
-Un client può offrire una modalità Live che evita persistenza locale della cronologia, backup/preview plaintext e distrugge session state/key al termine.
-
-Questa proprietà riguarda il client locale e non può impedire al peer remoto o a un dispositivo compromesso di conservare ciò che ha ricevuto.
-
-## 19. Secure session
+## 17. Secure session
 
 Trovare un endpoint non significa aver autenticato il peer.
 
@@ -425,7 +494,7 @@ L'handshake verifica:
 3. possesso della DeviceKey;
 4. transcript effimero della sessione.
 
-Il transcript deve legare almeno:
+Il transcript lega almeno:
 
 ```text
 protocol_version
@@ -439,21 +508,25 @@ negotiated_suite
 session_id
 ```
 
-Una modifica deve invalidare il transcript.
+Il relay non partecipa come authority all'autenticazione endpoint-to-endpoint.
 
-## 20. Session lifecycle
+## 18. Synchronous delivery
 
-Ogni nuova connessione genera materiale effimero nuovo.
+```text
+active authenticated session?
+  yes -> transmit
+  no  -> discard / fail locally
+```
 
-Separare almeno:
+Nessuna mailbox di consegna futura nel protocollo base.
 
-- messaging/session keys;
-- route control keys;
-- media keys.
+## 19. Live mode
 
-La rotazione interna delle session keys non richiede blockchain.
+Il client può offrire una modalità Live che evita persistenza locale della cronologia e distrugge session state/key al termine.
 
-## 21. Chain adapter
+Questa proprietà è locale e non impedisce al peer remoto o a un OS compromesso di conservare contenuti ricevuti.
+
+## 20. Chain adapter
 
 ```text
 interface ChainAdapter {
@@ -470,30 +543,22 @@ interface ChainAdapter {
 
 La prima implementazione è `NearChainAdapter` su NEAR Testnet.
 
-## 22. Gas e fee relayer
+## 21. Fee relayer
 
 Un fee relayer:
 
-- paga il gas;
+- paga gas;
 - non possiede RootIdentity o DeviceKey;
 - non può firmare come endpoint;
-- non deve essere unico o obbligatorio;
-- può essere sostituito senza cambiare identità o wire protocol.
+- non deve essere unico;
+- può essere sostituito senza cambiare protocollo.
 
-Recovery beacon e coordinamento anti-failure possono produrre write solo quando il data-plane è perso o una policy di resilienza le richiede.
+## 22. Application layer
 
-## 23. Bootstrap della rete
-
-Un client può usare più fonti iniziali per trovare peer, relay o RPC, ma nessuna di esse autentica l'identità.
-
-L'autenticità deriva dalle firme, dall'identità pairwise attesa e dallo stato verificabile del control-plane.
-
-## 24. Applicazione
-
-Sopra la sessione sicura vivono:
+Freedom Communication trasporta nella sessione sicura:
 
 ```text
-text messages
+text
 ACK
 attachments
 call signaling
@@ -505,19 +570,9 @@ session control
 
 Il registro distribuito non è nel packet hot path.
 
-I frame applicativi evitano identificatori globali stabili quando il session context basta a identificare il mittente/destinatario.
+Freedom Gateway trasporta pacchetti/tunnel di app esterne verso egress espliciti, in un security boundary separato.
 
-## 25. Monetizzazione e indipendenza
-
-I servizi commerciali possono offrire capacità relay gestita, Shield/Maximum Resilience, SDK, deployment e supporto Business.
-
-I device/community relay possono contribuire capacità best-effort; un Free qualificato come Relay Contributor riceve +10 slot contatto.
-
-Questi servizi non devono diventare requisiti del protocollo.
-
-## 26. Share Freedom / distribution
-
-La distribuzione dell'app è separata dalla comunicazione applicativa.
+## 23. Share Freedom
 
 ```text
 peer / relay / mirror / store
@@ -526,23 +581,29 @@ peer / relay / mirror / store
         -> install via platform
 ```
 
-La sorgente dei byte non è un trust anchor. Dettagli: [`APP_DISTRIBUTION.md`](APP_DISTRIBUTION.md).
+La sorgente dei byte non è un trust anchor.
 
-## 27. Proprietà architetturali
+Dettagli: [`APP_DISTRIBUTION.md`](APP_DISTRIBUTION.md).
+
+## 24. Proprietà architetturali
 
 Freedom mira a mantenere queste invarianti:
 
 - RootIdentity indipendente dal percorso;
 - nessun `DeviceID` globale necessario al network layer;
 - DeviceRecordCommitment opaco e solo control-plane;
-- contatto logico = persona/RootIdentity, non singolo device;
+- contatto logico = persona/RootIdentity;
 - alias pairwise tra contatti;
 - token di trasporto temporanei;
-- sessione autenticata indipendentemente dal relay;
+- sessione Freedom autenticata indipendentemente dal relay;
 - comunicazione sincrona senza mailbox di rete;
-- registro distribuito non necessario per ogni pacchetto o cambio route;
-- relay incapace di leggere il contenuto;
+- registro non necessario per ogni pacchetto o cambio route;
+- relay incapace di leggere contenuto Freedom E2EE;
 - direct path non obbligatorio;
-- bootstrap, RPC, relay e fee relayer sostituibili;
+- bootstrap, RPC, relay, egress e fee relayer sostituibili;
+- nessun singolo transport obbligatorio;
 - recovery beacon pairwise/temporanei;
-- scritture on-chain proporzionali a identity/control events e recovery, non al volume della comunicazione.
+- `DEVICE_RELAY` separato da Internet egress;
+- Gateway e Communication con trust model esplicitamente distinti;
+- nessun claim di universal firewall bypass;
+- scritture on-chain proporzionali a identity/control events e recovery, non al volume di comunicazione o Gateway traffic.
