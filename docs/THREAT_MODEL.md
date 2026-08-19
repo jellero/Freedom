@@ -6,483 +6,617 @@ Freedom assume una rete non fidata.
 
 Un avversario può:
 
-- osservare traffico e metadati di rete;
-- controllare alcuni peer o relay;
-- restituire informazioni di routing false;
+- osservare traffico e metadata;
+- controllare peer, relay, bridge, egress o RPC;
 - bloccare, ritardare, duplicare o riordinare pacchetti;
-- bloccare IP, domini, RPC, relay o classi di trasporto;
+- bloccare IP, domini, provider, RPC, relay, egress o classi di transport;
+- usare DPI e fingerprinting;
+- eseguire active probing contro bridge/relay;
+- applicare allowlist molto restrittive;
 - tentare traffic analysis e correlazione temporale;
-- tentare impersonation e replay;
-- creare molti nodi/identità;
-- controllare uno o più endpoint RPC;
-- tentare di saturare relay, chain writes o risorse locali;
-- tentare di ottenere reward Relay Contributor senza fornire capacità utile;
-- tentare di usare un relay come proxy generico verso Internet;
-- distribuire client modificati se compromette la supply chain o il sistema di aggiornamento.
+- tentare impersonation/replay;
+- creare molte identità o nodi;
+- saturare relay, egress, chain writes o risorse locali;
+- tentare reward farming del Relay Contributor;
+- tentare di usare un relay come open proxy;
+- distribuire client modificati;
+- compromettere uno o più Internet egress del Gateway.
 
-Freedom non assume che relay, NAT observer, bootstrap node, fee relayer, RPC o provider commerciale siano fidati per autenticare una persona o un device.
+Freedom non assume che relay, bridge, egress, NAT observer, bootstrap node, fee relayer o RPC siano fidati per autenticare una conversazione Freedom.
 
-## 2. Trust anchors
+## 2. Due security boundary
 
-Le radici di fiducia sono limitate a:
-
-- RootIdentity/private root material locale secondo ruolo;
-- DeviceKey privata locale;
-- autorizzazione verificabile della DeviceKey corrente;
-- stato verificato del control-plane;
-- primitive crittografiche standard;
-- stato locale autenticato derivato da relazioni/sessioni precedenti.
-
-Un IP, relay, RPC, fee relayer, risultato di discovery, payment provider o provider commerciale non è un trust anchor.
-
-La funzione di registro/control-plane verificabile è fondamentale per il trust model attuale; una blockchain specifica come NEAR non deve esserlo.
-
-## 3. Identity correlation
-
-Freedom non usa un `DeviceID` globale nel network layer.
-
-La separazione canonica è:
+### Freedom Communication
 
 ```text
-RootIdentity             ownership/recovery
-DeviceRecordCommitment   lookup/rotation/revocation opaco
-PairwiseContactAlias     relazione specifica
-TransportToken           circuito/route temporaneo
+Alice Freedom endpoint
+   <==== authenticated E2EE ====>
+Bob Freedom endpoint
 ```
 
-Questa separazione riduce la superficie di correlazione ma non la elimina.
+Le session key restano agli endpoint.
 
-Un osservatore può ancora tentare di correlare:
+Relay/bridge/path intermedi non devono poter decifrare il contenuto applicativo Freedom.
 
-- timing di device activation/revocation;
-- timing di rendezvous/recovery;
-- uso dello stesso RPC/provider;
-- dimensioni delle transazioni;
-- indirizzi IP/ASN;
-- ingress/egress dei relay;
-- payment/entitlement events.
+### Freedom Gateway
 
-Mitigazioni:
+```text
+external app
+ -> encrypted Freedom tunnel
+ -> relay / bridge / Shield
+ -> Egress
+ -> Internet
+```
 
-- nessun global device identifier nei frame applicativi o relay;
-- commitment opachi nel control-plane;
-- alias differenti per relazioni differenti;
-- slot rendezvous derivati da secret pairwise;
-- token di trasporto temporanei;
-- payload del rendezvous cifrato;
-- riduzione e batching prudente delle write dove compatibile;
-- provider/route diversity.
+L'egress è una trust boundary differente. Può osservare almeno metadata necessari al forwarding e, se l'applicazione finale usa plaintext, anche quel plaintext.
 
-Un commitment stabile **non è automaticamente anonimo**. La metadata resistance deve essere misurata empiricamente.
+Quindi:
 
-## 4. Device impersonation
+> **Freedom Gateway non eredita automaticamente le stesse garanzie E2EE endpoint-to-endpoint di Freedom Communication.**
 
-Attacco: Mallory tenta di presentare una DeviceKey non autorizzata come device corrente di Bob.
+Dettagli: [`GATEWAY.md`](GATEWAY.md).
 
-Difesa:
+## 3. Trust anchors
 
-1. Alice possiede la RootIdentity/contact identity attesa per Bob;
-2. verifica che la DeviceKey presentata sia autorizzata da quella RootIdentity e non revocata;
-3. verifica `key_epoch`/freshness tramite `ChainAdapter` o cache verificata;
-4. l'handshake richiede prova del possesso della DeviceKey;
-5. il transcript lega pairwise aliases, device authorization proof, epoch ed ephemeral keys.
+Le radici di fiducia del core sono limitate a:
 
-Senza Root authorization valida e private DeviceKey corrente, Mallory non deve completare l'handshake.
+- RootIdentity/private material locale secondo ruolo;
+- DeviceKey locale;
+- stato verificato del control-plane;
+- primitive crittografiche standard;
+- stato locale autenticato derivato da relazioni/sessioni precedenti;
+- release/signing root secondo il modello update.
+
+Non sono trust anchor della conversazione:
+
+- IP;
+- relay;
+- bridge;
+- egress;
+- RPC;
+- fee relayer;
+- provider commerciale;
+- payment provider;
+- risultato di discovery.
+
+## 4. Identity impersonation
+
+Freedom non usa un global `DeviceID` nel network layer.
+
+Un attacker non deve poter impersonare il peer atteso senza:
+
+1. una identity/contact proof coerente con la relazione pairwise;
+2. una DeviceKey attualmente autorizzata;
+3. prova del possesso della DeviceKey;
+4. transcript valido della sessione corrente.
+
+`DeviceRecordCommitment` è un handle tecnico del control-plane e non deve diventare un'identità di trasporto globale.
 
 ## 5. Man-in-the-middle
 
-La semplice cifratura ECDH non basta se l'ephemeral exchange non è autenticato.
+Una semplice ECDH non autenticata è insufficiente.
 
-Il transcript deve includere entrambe le identità pairwise attese, autorizzazioni device, epoch, ephemeral key, nonce, versione e suite.
+Il transcript deve legare:
 
-Qualsiasi sostituzione deve causare authentication failure.
+```text
+network/protocol version
+pairwise identity context
+device authorization proof
+key epoch
+ephemeral keys
+nonces
+suite
+session_id
+```
+
+La sostituzione di uno di questi elementi deve causare authentication failure.
 
 ## 6. Replay
 
-### Rendezvous
+### Rendezvous/recovery
 
-Freshness verificata tramite:
+Freshness tramite:
 
 - slot pairwise atteso;
-- stato del registro sufficientemente verificato/finalizzato;
-- `expires_at`;
-- nonce del rendezvous;
-- autenticazione/decifrabilità del payload;
-- materiale effimero valido per il tentativo corrente.
+- stato verificato del control-plane;
+- TTL/`expires_at`;
+- nonce;
+- autenticazione del payload;
+- materiale effimero del tentativo corrente.
 
 ### Session frames
 
-Mitigato da sequence monotoni/finestra anti-replay autenticata con AEAD.
+Sequence monotona/finestra anti-replay autenticata con AEAD.
 
 ### Handshake
 
-Mitigato da nonce casuali e nuove ephemeral key per connessione.
+Nonce casuali + ephemeral key nuove per connessione.
 
-## 7. Stale routing
+## 7. Rendezvous metadata
 
-Un record vecchio ma autentico può indicare una route non più valida.
-
-Difese:
-
-- TTL corto;
-- candidate expiration;
-- preferenza per route update ricevuti in-session;
-- read-before-write;
-- control-plane usato solo dopo fallimento dei percorsi locali consentiti dalla policy.
-
-## 8. Rendezvous metadata
-
-Un registro pubblico può rendere osservabili tempi e pattern delle write.
+Un control-plane pubblico può rendere osservabili timing/pattern di write.
 
 Mitigazioni:
 
 - slot pairwise opachi;
-- capability casuali al primo contatto;
-- pair secret dopo l'handshake;
+- capability casuali;
+- PairRendezvousSecret;
 - slot rotanti;
 - payload cifrato;
-- niente RootIdentity, DeviceRecordCommitment o IP in value leggibile quando evitabile;
-- write solo dopo perdita completa del route;
-- niente cancellazione on-chain dopo successo quando creerebbe segnali aggiuntivi.
+- niente RootIdentity/device commitment/IP in chiaro quando evitabile;
+- write solo dopo failure o policy esplicita;
+- read-before-write;
+- TTL/backoff.
 
-Queste misure non eliminano completamente traffic analysis o correlazioni temporali.
+Queste misure non eliminano completamente traffic analysis.
 
-## 9. Network identity leakage
+## 8. Network identity leakage
 
-Un indirizzo IP non è un'identità Freedom, ma direct path o partecipazione come relay possono esporre endpoint di rete a peer/hop adiacenti.
+Un direct path o la partecipazione come relay può esporre l'IP a peer/hop adiacenti.
 
 Requisiti:
 
-- direct path non obbligatorio;
-- relay/shielded/multi-hop quando la privacy di rete è prioritaria;
-- RootIdentity e DeviceRecordCommitment non usati come routing identifiers;
-- transport token/capability minimizzati e temporanei;
-- log senza mapping persistenti identity/IP non necessari;
-- `DEVICE_RELAY` deve informare l'utente dell'aumento di esposizione come nodo di rete.
+- direct non obbligatorio;
+- relay/Shield quando privacy di rete è prioritaria;
+- niente RootIdentity/DeviceRecordCommitment come routing identifier;
+- transport token temporanei;
+- log minimizzati;
+- device relay con informativa sul maggiore livello di esposizione di rete.
 
-Freedom non promette che un peer remoto non possa conoscere l'IP quando viene scelta una connessione diretta, né che un device relay sia invisibile ai nodi adiacenti.
+## 9. Global traffic analysis
 
-## 10. Global traffic analysis
-
-Un avversario globale può correlare:
+Un osservatore ampio può correlare:
 
 - timing;
 - volume;
 - direzione;
-- durata delle connessioni;
-- pattern di rendezvous;
-- ingressi/uscite relay.
+- durata;
+- rendezvous;
+- ingressi/uscite relay;
+- ingressi/uscite Gateway.
 
-E2EE protegge il contenuto ma non elimina automaticamente questi metadati.
+E2EE non elimina automaticamente questi metadata.
 
-Multi-hop, padding, batching o transport camouflage possono ridurre alcuni segnali, ma non sono garanzia di anonimato contro un global passive adversary.
+Multi-hop, padding, batching e transport camouflage possono ridurre alcuni segnali ma non sono garanzia contro un global passive adversary.
 
-## 11. Censura e IP blocking
+## 10. Censura e firewall ostili
 
 Un avversario può bloccare:
 
-- IP noti di relay;
-- endpoint RPC;
-- domini di bootstrap;
-- provider specifici;
-- firme di protocollo rilevabili;
-- intere classi di trasporto.
+- IP relay/egress noti;
+- RPC/bootstrap;
+- DNS/domain;
+- protocol fingerprints;
+- UDP o QUIC;
+- TLS pattern selettivi;
+- classi intere di transport;
+- bridge scoperti tramite scanning/active probing;
+- traffico non appartenente a una allowlist.
+
+Mitigazioni architetturali:
+
+- RPC/provider multipli;
+- relay multipli;
+- egress multipli;
+- device/community relay come ingress/intermediate hop;
+- bridge non pubblici;
+- bootstrap multipli;
+- transport abstraction;
+- pluggable/obfuscated transports reviewati;
+- active-probing resistance quando supportata;
+- path diversity;
+- provider/ASN/geographic diversity;
+- possibilità di disabilitare direct;
+- Adaptive Defense e transport failover;
+- nessun IP/domain/protocol singolo obbligatorio.
+
+### Limite fondamentale
+
+Freedom non può promettere di attraversare ogni firewall.
+
+Un avversario che:
+
+- spegne ogni connettività;
+- consente solo una allowlist stretta senza alcun carrier utilizzabile;
+- controlla tutte le route disponibili;
+
+può impedire la comunicazione a qualunque sistema IP.
+
+Claim corretto:
+
+> **Freedom deve massimizzare la probabilità di trovare un percorso quando esiste almeno un carrier utilizzabile; non promettere bypass universale.**
+
+## 11. DPI / protocol fingerprinting
+
+Un censor può classificare traffico cifrato in base a:
+
+- handshake;
+- packet size;
+- timing;
+- ALPN/SNI/TLS features;
+- burst pattern;
+- connection lifecycle;
+- active probing.
+
+Mitigazioni future:
+
+- transport adapter differenti;
+- Web/HTTPS-like carrier;
+- transport offuscati;
+- bridge secret distribution;
+- fingerprint rotation dove sicura;
+- padding/timing defenses bounded;
+- riuso di transport anti-censura già reviewati.
+
+Non inventare obfuscation proprietaria e considerarla automaticamente sicura.
+
+## 12. Bridge enumeration
+
+Attacco:
+
+```text
+censor ottiene/scopre elenco bridge
+ -> probe
+ -> block IPs
+```
 
 Mitigazioni:
 
-- provider RPC multipli;
-- relay multipli e sostituibili;
-- device/community relay temporanei;
-- bootstrap multipli;
-- path diversity;
-- transport alternativi;
-- direct disabilitabile;
-- futuro supporto bridge/relay non facilmente enumerabili;
-- nessun IP/dominio singolo come requisito permanente.
+- pool non interamente pubblici;
+- descriptor temporanei;
+- distribuzione pairwise/out-of-band;
+- rate limit;
+- anti-enumeration;
+- active-probing-resistant transport;
+- rotazione;
+- più canali di bootstrap.
 
-Freedom mira a resistere al blocco di componenti individuali, non garantisce comunicazione se l'avversario elimina ogni connettività disponibile.
+La compromissione di un bridge non deve compromettere identity o E2EE.
 
-## 12. Adaptive interference detection
+## 13. Adaptive interference detection
 
-Dopo perdita completa del percorso, i peer possono usare slot pairwise opachi per `RecoveryBeacon` cifrati e a TTL breve.
+Dopo failure completa del data path:
 
 ```text
-connettività generale locale       OK
-almeno un registry/RPC             OK
-beacon recente del peer            OK
-data path corrente                 FAIL
+local connectivity               OK
+at least one control-plane path  OK
+peer beacon recent               OK
+current data path                FAIL
 ```
 
-Questo può giustificare `INTERFERENCE_OR_ROUTE_FAILURE_SUSPECTED` e failover automatico.
+può giustificare:
 
-Non prova:
+```text
+INTERFERENCE_OR_ROUTE_FAILURE_SUSPECTED
+```
 
-- chi causi il blocco;
-- che il blocco sia intenzionale;
-- che esista sorveglianza passiva.
+Azione:
 
-Mitigazioni dei beacon:
+- altro relay;
+- altro provider;
+- altro transport;
+- bridge;
+- Shield/multi-hop;
+- aggressive bounded retry policy.
 
-- solo dopo failure o policy esplicita;
-- TTL breve;
-- slot pairwise opachi/rotanti;
-- payload cifrato;
-- read-before-write;
-- rate limit/backoff;
-- soglie su più segnali;
-- stop write appena la sessione è ristabilita.
+Non prova chi causi il blocco o che esista sorveglianza passiva.
 
-Dettagli: [`ADAPTIVE_DEFENSE.md`](ADAPTIVE_DEFENSE.md).
+## 14. Malicious RPC
 
-## 13. Malicious RPC
+Un RPC può mentire, omettere dati, restituire stale state o censurare richieste.
 
-Un RPC può mentire, omettere dati, rispondere stale o rifiutare richieste.
-
-Difese progressive:
+Difese:
 
 - provider multipli;
-- fallback;
-- chain finality awareness;
-- proof/light-client verification dove implementata;
+- finality awareness;
+- proof/light-client verification dove disponibile;
 - cache verificata con freshness policy.
 
-L'RPC non sostituisce mai la firma dell'endpoint.
+## 15. Malicious fee relayer
 
-## 14. Malicious fee relayer
-
-Un fee relayer può rifiutare, ritardare, censurare richieste o osservare operazioni on-chain.
+Può rifiutare, ritardare, censurare o osservare operazioni on-chain.
 
 Non deve poter:
 
-- ottenere Root private material o DeviceKey;
+- ottenere RootIdentity/DeviceKey;
 - firmare come endpoint;
-- modificare silenziosamente un'operazione firmata;
-- diventare requisito unico.
+- modificare operazioni firmate;
+- diventare unico punto obbligatorio.
 
-Difese: relayer multipli, richieste autenticate, rate limiting e meccanismi alternativi compatibili.
+## 16. Malicious relay
 
-## 15. Malicious relay
-
-Un relay — incluso un `DEVICE_RELAY` — può:
+Un relay, incluso `DEVICE_RELAY`, può:
 
 - droppare;
 - ritardare;
 - correlare timing/volume;
-- rifiutare connessioni;
-- tentare replay;
-- modificare ciphertext;
-- mentire sulla capacità/disponibilità.
+- rifiutare;
+- tentare replay/modifica;
+- mentire su capacità.
 
 Non deve poter:
 
-- decifrare payload applicativi;
-- generare messaggi autenticati validi;
+- decifrare Freedom payload E2EE;
 - impersonare endpoint;
-- derivare session key.
+- derivare session keys;
+- generare ACK applicativi validi.
 
 Difese:
 
-- E2EE endpoint-to-endpoint;
+- E2EE;
 - AEAD;
 - sequence;
-- capability/token di circuito;
-- relay/path diversity;
-- possibilità di cambiare relay.
+- circuit capability;
+- relay switching;
+- diversity.
 
-Essere un dispositivo Freedom non rende il relay più fidato di un VPS anonimo.
+## 17. Relay come open proxy
 
-## 16. Relay come open proxy
-
-Il relay Freedom **non è un proxy Internet generico**.
-
-Non deve consentire arbitrariamente:
+Il relay base non deve consentire:
 
 ```text
-client -> relay -> qualsiasi IP:porta Internet
+client -> DEVICE_RELAY -> arbitrary Internet IP:port
 ```
 
-nel protocollo relay base.
+Deve accettare solo circuiti Freedom validi e bounded.
 
 Difese:
 
 - packet format obbligatorio;
-- capability di circuito;
-- next-hop controllato dal fabric/protocollo;
-- hop limit/TTL;
-- nessun arbitrary TCP CONNECT generico;
-- rate limit/circuit quotas.
+- circuit capability;
+- hop limit / TTL;
+- no generic TCP CONNECT nel relay base;
+- rate/circuit limits.
 
-Questo è particolarmente importante per `DEVICE_RELAY`: il proprietario non deve trasformare inconsapevolmente il telefono in un exit proxy.
+## 18. Gateway Egress compromise
 
-Un eventuale futuro **Gateway/Internet egress** deve essere un ruolo separato, esplicitamente opt-in e con operatori `MANAGED/PRIVATE/EGRESS`, non una conseguenza automatica di `DEVICE_RELAY`.
+Un egress Gateway può:
 
-## 17. Relay resource exhaustion
-
-Ogni relay deve imporre:
-
-- maximum frame size;
-- maximum buffer per circuit;
-- maximum total buffer;
-- maximum concurrent circuits;
-- rate limit;
-- TTL;
-- hop limit;
-- timeout inattività;
-- bandwidth quota;
-- eventuali capability/quota.
-
-Per `DEVICE_RELAY` si aggiungono batteria, charging-only opzionale, Wi-Fi only opzionale, rete metered, CPU/RAM, temperatura e background execution.
-
-## 18. Relay Contributor farming
-
-Attacchi:
-
-```text
-utente abilita relay senza contribuire
-oppure
-account controllati generano traffico artificiale
-```
+- osservare destinazione IP;
+- osservare timing/volume;
+- osservare DNS se lo risolve;
+- vedere plaintext applicativo se il protocollo finale non è cifrato;
+- droppare/modificare traffico plaintext;
+- censurare destinazioni;
+- essere monitorato dal provider/giurisdizione.
 
 Mitigazioni:
 
-- finestre di qualificazione bounded;
-- combinazione disponibilità + forwarding utile;
-- soglie minime e massime;
-- receipt/commitment opachi aggregati;
-- rate limit per RootIdentity/device epoch;
-- pattern anti-farming senza social graph pubblico;
-- scadenza periodica del benefit.
+- HTTPS/TLS dell'applicazione quando disponibile;
+- egress diversity;
+- egress health/failover;
+- multi-hop per separare client IP da egress;
+- DNS-over-tunnel policy;
+- no single managed egress requirement;
+- explicit status del current egress;
+- private/business egress per deployment controllati.
 
-La prova non deve pubblicare peer serviti, contenuto o cronologia dettagliata.
+Un egress compromesso **non deve** compromettere una conversazione Freedom Communication E2EE che non necessita di Internet egress.
 
-## 19. Chain write spam
+## 19. Egress correlation / collusion
+
+```text
+Client -> Relay A -> Egress B -> Internet
+```
+
+Target:
+
+- Relay A non conosce la destinazione Internet finale;
+- Egress B non vede direttamente l'IP originale quando il path multi-hop è corretto.
+
+Collusione, osservazione globale o timing correlation possono comunque ridurre questa separazione.
+
+Non promettere anonimato assoluto.
+
+## 20. Gateway DNS / leak
+
+Rischi:
+
+- DNS fuori tunnel;
+- IPv6 leak;
+- traffico app escluso per errore;
+- captive portal;
+- route locale non intenzionale;
+- fallback direct non autorizzato.
+
+Mitigazioni:
+
+- DNS policy esplicita;
+- kill-switch opzionale;
+- split tunneling visibile;
+- IPv4/IPv6 test;
+- connectivity self-test;
+- per-app scope verificabile;
+- Network Indicator con stato Gateway separato.
+
+## 21. Gateway abuse
+
+Egress Internet possono essere abusati per:
+
+- scanning;
+- spam;
+- scraping;
+- traffico illegale/abusivo;
+- resource exhaustion.
+
+Gli egress devono essere esplicitamente amministrati con:
+
+- authenticated capability;
+- rate/bandwidth limits;
+- circuit/connection quotas;
+- abuse controls compatibili;
+- eventuali port policy;
+- revoca;
+- logging minimizzato secondo policy/obblighi applicabili.
+
+Questi controlli non trasformano il relay messenger in un moderation server per le conversazioni E2EE.
+
+## 22. Relay resource exhaustion
+
+Ogni relay impone almeno:
+
+```text
+max_frame_size
+max_buffer_per_circuit
+max_total_buffer
+max_concurrent_circuits
+rate_limit
+idle_timeout
+packet_ttl
+hop_limit
+bandwidth_quota
+```
+
+Per `DEVICE_RELAY` anche:
+
+- battery minimum;
+- charging-only opzionale;
+- Wi-Fi only opzionale;
+- metered policy;
+- CPU/RAM/temperature limits;
+- background execution limits.
+
+## 23. Relay Contributor farming
+
+Il semplice `relay_enabled=true` non è prova di contributo.
+
+Mitigazioni:
+
+- qualification windows;
+- availability + useful forwarding bounded;
+- receipt/commitment opachi;
+- limiti per evitare incentivo al volume artificiale;
+- rate limit per RootIdentity/device/epoch;
+- benefit expiry.
+
+Nessuna prova deve pubblicare peer serviti, contenuto o social graph.
+
+## 24. Chain write spam
 
 Difese:
 
 - fee/storage economics;
-- record bounded;
+- bounded records;
 - slot aggiornabili;
 - TTL;
 - read-before-write;
 - backoff;
-- limiti contrattuali.
+- contract bounds.
 
-Recovery beacon e policy di resilienza devono rispettare gli stessi limiti.
+## 25. Contact spam
 
-## 20. Contact spam
+Conoscere un contact descriptor non deve concedere capability illimitata.
 
-Conoscere una RootIdentity o un alias non deve fornire capability illimitata di contatto.
+Usare:
 
-Il contact bootstrap usa `contact_capability` casuale, temporanea o one-shot.
+- contact capability casuale;
+- expiry/rotation/one-shot;
+- local block list;
+- request approval;
+- rate limits.
 
-Il client può applicare contacts-only, request approval, local block list e rate limits.
+## 26. QR theft/copy
 
-Non esiste una blacklist globale necessaria al protocollo.
+Contact QR copiato non consente impersonation senza private key/proof valida.
 
-## 21. QR theft/copy
+Recovery QR è invece materiale sensibile cifrato e segue policy separata.
 
-Copiare un contact QR non permette impersonation perché il QR non contiene private key. Può però fornire una bootstrap capability finché valida.
-
-Un Recovery QR è materiale sensibile cifrato e richiede la policy separata del Recovery Kit.
-
-Capability sensibili devono poter scadere/ruotare/essere one-shot.
-
-## 22. Device theft
-
-Se un attacker ottiene la DeviceKey può impersonare quel device finché il record non viene revocato/ruotato.
+## 27. Device theft
 
 Mitigazioni:
 
-- Android Keystore;
-- Secure Enclave/Keychain quando applicabile;
-- biometria/protezione schermo opzionale;
-- key rotation;
-- revocation;
-- Recovery Kit/RootIdentity per autorizzare un nuovo device senza clonare la vecchia DeviceKey.
+- Android Keystore / platform secure storage;
+- biometria/device lock opzionale;
+- key rotation/revocation;
+- Recovery Kit;
+- nuovo device con nuova DeviceKey.
 
-## 23. Client/supply-chain compromise
+## 28. Client / supply-chain compromise
 
-E2EE non protegge contro un client legittimamente firmato ma malevolo che legge plaintext o private key prima/dopo cifratura.
-
-Mitigazioni:
-
-- protezione signing key;
-- review codice;
-- build riproducibili dove praticabile;
-- distribuzione verificabile;
-- update firmati;
-- release manifest verificabile;
-- minimizzazione dipendenze privilegiate.
-
-Il controllo di relay/RPC non equivale al controllo del client; supply-chain compromise è un livello di minaccia più grave.
-
-## 24. Key compromise
-
-Root keys, DeviceKey, session keys e media keys devono essere separate.
-
-Ogni sessione usa nuovo materiale effimero. Una futura ratchet construction può migliorare forward secrecy/post-compromise properties; la scelta deve essere standard e reviewata.
-
-## 25. Downgrade
-
-Versione e suite sono parte del transcript autenticato. Un attacker non deve poter forzare suite/versione inferiore senza authentication failure.
-
-## 26. Eclipse / peer isolation
+E2EE non protegge contro un client legittimamente firmato ma malevolo che legge plaintext o private key.
 
 Mitigazioni:
 
-- fonti bootstrap multiple;
-- peer/relay diversity;
+- signing key protection;
+- code review;
+- reproducible builds dove praticabile;
+- release manifest;
+- artifact verification;
+- signed updates;
+- dependency minimization.
+
+## 29. Key compromise
+
+Separare:
+
+- RootIdentity material;
+- DeviceKey;
+- session keys;
+- route control keys;
+- media keys;
+- Gateway tunnel keys.
+
+Una futura ratchet construction deve usare primitive standard e reviewate.
+
+## 30. Downgrade
+
+Versione e suite sono parte del transcript autenticato.
+
+Un attacker non deve poter forzare una versione/suite inferiore senza failure.
+
+Per Gateway, la policy deve impedire silent fallback da Shield/tunnel a direct Internet quando l'utente ha richiesto kill-switch/strict mode.
+
+## 31. Eclipse / peer isolation
+
+Mitigazioni:
+
+- bootstrap multiple;
+- relay/bridge diversity;
 - cache indipendenti;
-- confronto informazioni;
-- verifica control-plane separata dal routing;
-- nessun provider unico richiesto.
+- provider diversity;
+- controllo separato identity vs routing;
+- confronto di stato.
 
-## 27. Network reachability failures
+## 32. Network reachability failures
 
-Freedom deve degradare attraverso più classi di percorso consentite dalla policy:
+Freedom degrada attraverso classi di path/transport consentite dalla policy:
 
 ```text
-direct / NAT traversal / relay / shielded path -> rendezvous recovery
+known path
+ -> alternative endpoint
+ -> alternative relay
+ -> alternative provider
+ -> alternative transport
+ -> bridge
+ -> shielded/multi-hop
+ -> pairwise recovery
 ```
 
-Nessuna tecnica garantisce comunicazione senza connettività sufficiente.
+Se nessun carrier è disponibile, stato finale `UNAVAILABLE`.
 
-## 28. Offline recipient e synchronous delivery
+## 33. Principio anti-overclaim
 
-Se il destinatario non è raggiungibile o non esiste una sessione autenticata attiva, il protocollo base non accoda il messaggio per consegna futura e non lo replica su peer casuali, relay persistenti o blockchain.
+Freedom deve distinguere sempre:
 
-Questo limita retention, storage exhaustion e proliferazione di ciphertext. Il trade-off è intenzionale: la consegna richiede presenza contemporanea.
+```text
+SECURITY CLAIM
+  proprietà crittografica verificabile
 
-## 29. Live mode
+REACHABILITY CLAIM
+  probabilità/strategia di trovare un percorso
 
-Live può evitare la persistenza locale della cronologia e distruggere stato effimero quando termina la sessione.
+INFERENCE
+  interpretazione di segnali di rete
+```
 
-Questa proprietà riguarda il client locale e non impedisce a peer remoto, OS compromesso, screenshot o registrazione di conservare contenuto ricevuto.
+Claim vietati senza evidenza:
 
-## 30. Logging
+- "passa ogni firewall";
+- "impossibile da bloccare";
+- "non tracciabile";
+- "rileva la sorveglianza";
+- "Gateway ha la stessa E2EE della chat Freedom".
 
-Production client e relay non devono loggare di default:
+Claim corretto:
 
-- plaintext;
-- Root private material;
-- DeviceKey privata;
-- session/media keys;
-- pair/rendezvous secret;
-- intero contact graph;
-- mapping identity/IP non necessari;
-- contenuti Live destinati a non essere persistiti.
-
-## 31. Non-goals
-
-Freedom non pretende di:
-
-- nascondere ogni metadato a un avversario globale;
-- rendere un direct connection invisibile ai due peer;
-- garantire disponibilità in assenza completa di connettività;
-- impedire a un destinatario legittimo di copiare ciò che riceve;
-- essere impossibile da censurare in senso assoluto;
-- rilevare in modo affidabile sorveglianza passiva invisibile.
-
-Obiettivo concreto:
-
-> **nessun singolo server, relay, RPC, fee relayer, provider, IP, global DeviceID o percorso deve costituire da solo un punto unico dal quale controllare, correlare facilmente o interrompere Freedom.**
+> **Freedom Communication protegge la conversazione endpoint-to-endpoint; Freedom Gateway e Adaptive Defense aumentano la resilienza del percorso quando esistono alternative di rete utilizzabili.**
