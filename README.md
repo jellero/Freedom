@@ -25,7 +25,7 @@ Esempi:
 
 - giornalisti, ricercatori e operatori in reti soggette a filtraggio o blocchi;
 - attivisti e comunità che vogliono ridurre i single points of control;
-- professionisti che desiderano comunicazioni live e una modalità locale realmente effimera;
+- professionisti che vogliono comunicazioni live senza dipendere da mailbox o consegna differita;
 - organizzazioni che vogliono poter utilizzare relay e infrastruttura compatibile propri;
 - utenti che preferiscono identità/contatti espliciti tramite QR/link invece di un numero telefonico obbligatorio;
 - utenti che vogliono poter condividere anche l'app stessa da persona a persona attraverso artifact verificati.
