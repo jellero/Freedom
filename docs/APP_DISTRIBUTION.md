@@ -452,7 +452,7 @@ Client esistente:
 ```text
 Share Freedom
 
-Freedom 1.4.2
+Freedom Communication 1.4.2
 Release       VERIFIED
 Security      ACTIVE
 Artifact      9a34…7bc1
@@ -465,7 +465,7 @@ Share link    expires in 10 min
 Verifier sul nuovo dispositivo:
 
 ```text
-Freedom Messenger
+Freedom Communication
 Version        1.4.2
 Release signer VERIFIED
 APK signer     VERIFIED
