@@ -1,43 +1,43 @@
 # Freedom — Adaptive Defense
 
+Status: **canonical design draft**
+
+Normative security rules: [`SECURITY_INVARIANTS.md`](SECURITY_INVARIANTS.md).
+Control-plane proof model: [`CONTROL_PLANE_SECURITY.md`](CONTROL_PLANE_SECURITY.md).
+Advanced test lab: [`ADVANCED_DEVELOPMENT.md`](ADVANCED_DEVELOPMENT.md).
+
 ## 1. Obiettivo
 
-Freedom deve poter distinguere, per quanto tecnicamente possibile, tra:
+Freedom distingue, per quanto possibile:
 
-- peer realmente offline;
-- perdita normale della route/NAT mapping;
-- failure di un relay/RPC/provider;
-- probabile filtraggio, blocco o interferenza del data path.
+- peer offline;
+- normale route/NAT failure;
+- relay/provider/control-plane failure;
+- probabile filtering/interference del data path.
 
-Il protocollo non deve dichiarare di poter rilevare una sorveglianza passiva: un osservatore può monitorare il traffico senza produrre un segnale osservabile dall'endpoint.
+Non dichiara di rilevare sorveglianza passiva invisibile.
 
-Freedom può invece rilevare **incoerenze di raggiungibilità** e usare il registro/rendezvous come control-plane di emergenza per coordinare un cambio percorso.
+> **peer activity verificata + data path indisponibile può giustificare `INTERFERENCE_OR_ROUTE_FAILURE_SUSPECTED`, non attribuzione.**
 
-> **se entrambi i peer dimostrano attività recente sul control-plane ma il data-plane tra loro non funziona, Freedom deve trattare il caso come probabile route failure/interferenza e tentare automaticamente percorsi indipendenti.**
+## 2. Control-plane signal deve essere verificato
 
-Questa informazione non deve restare nascosta nel motore di rete: il client deve poterla spiegare all'utente in modo comprensibile e tecnicamente onesto.
-
-## 2. Control-plane e data-plane
+Non basta:
 
 ```text
-CONTROL PLANE
-Root/device authorization / pairwise rendezvous / recovery coordination
-
-DATA PLANE
-messaggi / file / audio / video / session frames
+RPC returned a beacon
 ```
 
-Il registro distribuito non trasporta traffico applicativo e non è nel packet hot path.
+Serve:
 
-In condizioni normali, una sessione attiva usa il data-plane e non produce heartbeat blockchain continui.
+```text
+VerifiedControlPlaneCheckpoint
++ state proof
++ fresh pairwise RecoveryBeacon
+```
 
-## 3. Recovery / liveness beacon
+Un RPC malevolo non deve poter fabbricare `SUSPECTED` facendo credere che il peer sia recentemente attivo.
 
-Freedom non deve pubblicare una presenza globale leggibile del tipo `global identity -> online`.
-
-Dopo il primo contatto autenticato, i peer possiedono un `PairRendezvousSecret`. Da questo derivano slot pairwise opachi e rotanti.
-
-Quando il data path fallisce, un endpoint può pubblicare nello slot previsto un beacon cifrato a TTL breve:
+## 3. RecoveryBeacon
 
 ```text
 RecoveryBeacon {
@@ -51,38 +51,30 @@ RecoveryBeacon {
 }
 ```
 
-`state` può rappresentare:
+- pairwise;
+- encrypted/authenticated;
+- opaque slot;
+- short TTL;
+- no root/device/IP plaintext when avoidable;
+- no continuous heartbeat.
+
+## 4. Bounded active state
+
+TTL logico non basta. Beacon/rendezvous devono usare overwrite/ring/prune/lease/reclaim concreto e convergere a un active-state bound.
+
+Il recovery engine smette di scrivere appena una sessione valida viene ristabilita.
+
+## 5. Detection condition
 
 ```text
-SEEKING_PATH
-TRYING_ALTERNATIVE
+local connectivity                    OK
+verified control-plane checkpoint     OK
+fresh peer beacon proof               OK
+current data path                     FAIL
+independent path/transport evidence    optional/additional
 ```
 
-Il beacon:
-
-- è cifrato/autenticato per il peer previsto;
-- vive in uno slot opaco derivato dal secret di coppia;
-- non espone in chiaro RootIdentity, DeviceRecordCommitment, pairwise alias, IP o motivo del recovery quando evitabile;
-- ha TTL breve;
-- prova **attività recente**, non presenza assoluta in tempo reale;
-- non viene scritto continuamente durante il normale funzionamento.
-
-Dettagli identità: [`IDENTITY_MODEL.md`](IDENTITY_MODEL.md).
-
-## 4. Rilevamento di probabile interferenza
-
-Un singolo timeout non è sufficiente per concludere che esiste censura o filtraggio.
-
-```text
-connettività Internet locale          OK
-accesso ad almeno un registry/RPC     OK
-beacon recente del peer               OK
-route diretta                         FAIL
-relay/path corrente                   FAIL
-percorso alternativo                  OK / disponibile
-```
-
-Quando entrambi i peer pubblicano beacon recenti ma non riescono a stabilire il data-plane attraverso il percorso corrente, Freedom può classificare:
+può produrre:
 
 ```text
 PEER_RECENTLY_ACTIVE
@@ -90,231 +82,140 @@ DATA_PATH_UNAVAILABLE
 INTERFERENCE_OR_ROUTE_FAILURE_SUSPECTED
 ```
 
-Il client non deve mostrare claim come "sei sorvegliato" o attribuzioni a un attore specifico senza evidenza.
+Un singolo timeout non basta.
 
-Messaggio UX corretto:
-
-> **Interferenza o anomalia di rete rilevata. Freedom sta usando un percorso alternativo.**
-
-## 5. Adaptive Defense Engine
+## 6. State machine
 
 ```text
 NORMAL
-  |
-  | route failures oltre soglia
-  v
-VERIFYING_REACHABILITY
-  |
-  | peer recentemente attivo via control-plane
-  | ma data-plane indisponibile
-  v
-INTERFERENCE_SUSPECTED
-  |
-  v
-ALTERNATIVE_PATH_SEARCH
-  |
-  +-> altro direct/NAT candidate
-  +-> relay differente
-  +-> transport differente
-  +-> shielded path
-  +-> bridge/non-public candidate quando supportato
-  |
-  v
-RECOVERED
-  |
-  +-> stop recovery writes
-  +-> beacon scade naturalmente
+ -> VERIFYING_REACHABILITY
+ -> INTERFERENCE_SUSPECTED
+ -> ALTERNATIVE_PATH_SEARCH
+ -> RECOVERED
 ```
 
-Il motore deve applicare backoff, limiti e soglie per evitare loop, consumo batteria e chain-write spam.
-
-## 6. Coordinamento attraverso il rendezvous
+Alternative:
 
 ```text
-Alice                           Bob
-  |                              |
-  |-- RecoveryBeacon_A --------->|  registry
-  |<--------- RecoveryBeacon_B --|
-  |                              |
-  |  entrambi recentemente attivi
-  |  current path non funziona
-  |                              |
-  |==== tentativo route B ======>|
-  |<=== authenticated E2EE =====>|
+different endpoint
+relay with different provenance
+provider/RPC path
+transport family
+bridge
+Shield circuit
 ```
 
-Il payload cifrato può includere nuovi candidate o hint di trasporto, ma deve rispettare metadata minimization e record bounded.
-
-Il registro non deve diventare una chat di controllo ad alta frequenza.
+Retry/probing/backoff sono bounded.
 
 ## 7. Failure classes
 
-### Peer offline probabile
-
-- nessuna sessione;
-- nessun beacon recente;
-- rendezvous scaduto;
-- nessun altro segnale di attività.
-
-Azione: nessuna consegna asincrona; send fallisce/scarta secondo la semantica Freedom.
-
-### Route failure probabile
-
-- peer recentemente attivo;
-- current candidate fallisce;
-- altri candidate funzionano o diventano disponibili.
-
-Azione: route switch.
-
-### Provider/RPC failure
-
-- un RPC fallisce;
-- altri RPC indipendenti rispondono e verificano stato coerente.
-
-Azione: provider rotation.
-
-### Interferenza/filtraggio sospetto
-
-- peer recentemente attivo;
-- connettività generale disponibile;
-- classi specifiche di route/transport falliscono ripetutamente;
-- un percorso indipendente riesce oppure il pattern si ripete oltre soglia.
-
-Azione: transport/path diversity più aggressiva.
-
-## 8. Freedom Network Indicator
-
 ```text
-NORMAL       percorso funzionante
-SHIELDED     percorso protetto/shielded attivo
-DEGRADED     degradazione o fallback
-SUSPECTED    interferenza/filtraggio o route failure selettiva sospetta
-UNAVAILABLE  peer recentemente attivo ma nessun percorso valido trovato
+PEER_OFFLINE_PROBABLE
+PATH_FAILURE
+CONTROL_PLANE_PROVIDER_FAILURE
+CONTROL_PLANE_PROOF_FAILURE
+PROTOCOL_BLOCK_SUSPECTED
+DPI_OR_FILTERING_SUSPECTED
+BRIDGE_UNREACHABLE
+SHIELD_PATH_FAILURE
 ```
 
-Quando viene rilevato `SUSPECTED` o `UNAVAILABLE`, il pannello può aprirsi automaticamente una volta per incidente e spiegare:
+`CONTROL_PLANE_PROOF_FAILURE` non viene trasformato in “peer online/offline”: significa che il signal non è verificabile.
 
-- fatti osservati;
-- inferenza corrente;
-- percorso fallito;
-- contromisure tentate;
-- percorso alternativo eventualmente attivo;
-- livello di protezione.
+## 8. RPC failure
 
-Il colore non deve essere l'unico segnale. Testo e icona devono accompagnarlo.
+```text
+RPC A unavailable -> try B
+RPC A stale       -> reject rollback/proof mismatch
+RPC A lies        -> proof verification fails
+```
 
-Dettagli UX: [`NETWORK_STATUS_UI.md`](NETWORK_STATUS_UI.md).
+Provider rotation è availability; state proof è authenticity.
 
-## 9. Privacy e metadata trade-off
+## 9. Network Indicator
 
-Usare il registro per liveness/recovery crea inevitabilmente un pattern temporale osservabile a livello chain/provider.
+```text
+NORMAL
+SHIELDED
+DEGRADED
+SUSPECTED
+UNAVAILABLE
+```
 
-Per questo:
+`SHIELDED` richiede vero circuit state secondo `SHIELD.md`, non semplicemente due proxy/relay.
 
-- niente presenza globale continua;
-- beacon solo dopo failure o modalità esplicita;
-- slot pairwise opachi e rotanti;
-- payload cifrati;
-- TTL breve;
-- frequenza limitata;
+`SUSPECTED` = inference. Il client mostra fatti osservati separati dall'inferenza.
+
+## 10. NAT / route dynamics
+
+Adaptive Defense deve distinguere NAT rebinding/handover da censorship inference quando possibile.
+
+Scenario minimi:
+
+- Wi-Fi -> mobile;
+- mobile IP change;
+- NAT mapping change;
+- relay failure;
+- transport-specific blocking;
+- control-plane provider block;
+- verified peer activity with all current data paths failing.
+
+## 11. Privacy trade-off
+
+Recovery writes possono produrre timing metadata osservabili.
+
+Mitigazioni:
+
+- no global presence;
+- pairwise rotating slots;
+- encrypted payload;
 - read-before-write;
-- nessuna cancellazione necessaria dopo recovery;
-- evitare RootIdentity, DeviceRecordCommitment, pairwise alias e IP in chiaro;
-- provider/RPC multipli;
-- valutare batching/padding solo se il beneficio giustifica costo/complessità.
+- bounded frequency;
+- no identity/IP plaintext;
+- stop writes after recovery.
 
-Il control-plane può ridurre l'ambiguità tra offline e percorso bloccato, ma non elimina traffic analysis.
+Non elimina traffic analysis.
 
-## 10. Gas e costi
+## 12. Core / premium
 
-```text
-messaggio normale                 -> 0 chain writes
-sessione attiva                   -> 0 heartbeat writes
-route valida                      -> 0 recovery writes
-perdita completa route            -> recovery beacon possibile
-interferenza sospetta             -> recovery coordination possibile
-```
+Core Free mantiene:
 
-Fee relayer indipendenti possono sponsorizzare il gas senza possedere l'identità dell'utente. Un singolo fee relayer non deve essere necessario per attivare il recovery.
+- meaningful route health;
+- provider/relay fallback;
+- pairwise recovery;
+- same diagnostic truth;
+- Free alternatives before commercial prompt.
 
-## 11. Core, Emergency Shield e Freedom Pro
+Premium può comprare capacità/path diversity più costosa, non una classificazione tecnica più favorevole.
 
-La capacità minima di rilevare route failure e cambiare provider/percorso è una proprietà di resilienza del protocollo e non deve essere rimossa dal core gratuito.
+## 13. Test lab
 
-### Core
-
-- route health checks;
-- fallback RPC/provider;
-- fallback relay/path;
-- pairwise recovery rendezvous;
-- rilevamento `peer recently active + data path unavailable`;
-- cambio route automatico quando esiste alternativa compatibile;
-- stessa informazione significativa mostrata agli utenti Free e Pro.
-
-### Emergency Shield Free
-
-Quando community/direct/fallback gratuiti non bastano e l'infrastruttura gestita può superare il blocco, il client ufficiale può offrire una quota limitata di capacità Shield gratuita.
-
-Il numero definitivo deve essere deciso solo dopo misure reali di costo e abuso.
-
-Freedom non deve lasciare deliberatamente offline un utente Free dopo aver rilevato una probabile interferenza solo per creare un paywall.
-
-### Freedom Pro — Shield
-
-Il piano Pro può monetizzare capacità infrastrutturale e contromisure più costose:
-
-- **Always-Shielded mode** senza direct IP;
-- maggiore pool di relay gestiti;
-- budget Shield molto superiore;
-- multi-hop gestito;
-- path diversity più ampia;
-- pre-warming candidate;
-- failover parallelo più rapido;
-- transport rotation più aggressiva;
-- bridge/non-public relay pool quando disponibile;
-- padding/metadata protection opzionale;
-- **Maximum Resilience** con percorsi indipendenti pronti prima del failure.
-
-Il piano Pro non compra una cifratura più forte, una classificazione tecnica più favorevole o informazioni diagnostiche fondamentali migliori.
-
-## 12. Maximum Resilience
+Automatizzare in Docker/scenario simulator:
 
 ```text
-Maximum Resilience
-  direct path optional/off
-  multiple relay candidates
-  multiple RPC/providers
-  alternate transports preselected
-  recovery slots ready
-  fast failover
+NAT rebinding
+relay ban/block
+provider block
+stale RPC
+fabricated RPC state with invalid proof
+packet loss/reorder
+UDP/QUIC block
+DNS/SNI filter
+bridge probing
+clock skew
+Shield hop failure
 ```
 
-L'obiettivo è ridurre il tempo necessario a recuperare da blocco o perdita di un singolo percorso. Non è garanzia di anonimato o incensurabilità assoluta.
-
-## 13. Anti-dark-pattern
-
-Adaptive Defense non deve essere usato come leva di paura commerciale.
-
-Il client non deve:
-
-- elevare artificialmente `DEGRADED` a `SUSPECTED` per vendere Pro;
-- cambiare classificazione tecnica in base al tier;
-- nascondere agli utenti Free il fatto che un peer risulta recentemente attivo;
-- attribuire sorveglianza/censura a un attore specifico senza evidenza;
-- degradare route Free funzionanti;
-- mostrare un paywall prima delle contromisure Free disponibili durante un incidente critico.
+Dettagli: [`ADVANCED_DEVELOPMENT.md`](ADVANCED_DEVELOPMENT.md).
 
 ## 14. Invarianti
 
-- E2EE resta endpoint-to-endpoint;
-- il registro non trasporta messaggi/media;
-- nessuna presenza globale leggibile necessaria;
-- nessun global DeviceID necessario;
-- rendezvous e recovery sono pairwise;
-- nessun heartbeat on-chain continuo nel funzionamento normale;
-- nessun singolo RPC, relay, bridge, transport o fee relayer obbligatorio;
-- un beacon prova attività recente, non "online" in senso assoluto;
-- il sistema può rilevare interferenza/route failure, non sorveglianza passiva invisibile;
-- il recovery smette di scrivere appena una sessione valida viene ristabilita;
-- il costo on-chain dipende da eventi di recovery, non dal volume della conversazione;
-- stato e spiegazioni fondamentali restano visibili anche nel tier Free.
+- no messages/media on control-plane;
+- no global presence;
+- peer-activity signal security-sensitive deve essere proof-verified;
+- no single RPC trust;
+- no continuous heartbeat;
+- no censorship/surveillance attribution without evidence;
+- recovery state physically reclaimable/bounded;
+- `SHIELDED` only after actual Shield circuit gate;
+- same core diagnostics for Free/paid tiers.
