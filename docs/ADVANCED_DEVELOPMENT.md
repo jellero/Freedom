@@ -39,6 +39,7 @@ Censor/firewall
 NAT A / NAT B
 Clock-fault node
 Release mirror
+Pairwise backup mirror
 ```
 
 ## 3. Codex come orchestratore
@@ -53,9 +54,10 @@ Gli agenti possono proporre cambiamenti alla specifica ma non devono autonomamen
 
 - MUST/MUST NOT;
 - trust assumptions;
-- signing domains;
+- cryptographic domain registry;
 - canonical signed schemas;
 - revocation/freshness semantics;
+- pairwise-backup freshness semantics;
 - recovery/governance/rekey state machines.
 
 Queste modifiche richiedono human review esplicita prima di essere considerate canonical/main-ready.
@@ -77,11 +79,23 @@ agent/reviewer
 
 Reviewer agent prima produce criticità/failure riproducibili; fixer agent separato applica la patch.
 
-## 6. Canonical schema
+## 6. Canonical schema / crypto domains
 
 `spec/freedom.cddl` è la source of truth dei field name/object shape.
 
-Test devono verificare deterministic encoding + signing domain. Evitare simulator-specific struct divergenti.
+`spec/crypto-domains.txt` è la source of truth dei fixed SIGN/MAC/AEAD/HASH/KDF purpose constants.
+
+Test devono verificare deterministic encoding + domain binding. Evitare simulator-specific struct o crypto label divergenti.
+
+Negative matrix minima:
+
+```text
+valid signature, wrong object domain      -> reject
+valid signature, wrong network context    -> reject
+valid MAC, wrong rekey/handshake domain   -> reject
+valid ciphertext, wrong AEAD frame domain -> reject
+same raw input, wrong HASH/KDF purpose     -> unrelated output / reject as applicable
+```
 
 ## 7. Target modulare
 
@@ -101,6 +115,7 @@ sim/
   nat/
   censor/
   clock/
+  backup/
   scenario/
   oracle/
 
@@ -144,6 +159,8 @@ rpc-malicious
 control-plane-mock
 chaos-proxy
 release-mirror
+backup-mirror-latest
+backup-mirror-stale
 ```
 
 ## 10. Due livelli di tempo
@@ -267,32 +284,54 @@ Migliaia/milioni logici di create/renew/expire/prune/overwrite.
 
 Assert active storage bound, bounded refunds/bounties e assenza message/media state.
 
-## 18. Identity/recovery simulation
+## 18. Identity/root-recovery simulation
 
 ```text
 normal restore
 lost device
 DeviceAuthorizationKey compromise
 RootRecoveryKey compromise without recovery policy
-RootRecoveryKey compromise with valid recovery quorum
+invalid duplicate recovery-key policy
+threshold 0 / threshold > distinct keys
+RootRecoveryKey compromise with valid independent recovery quorum
 competing malicious old-root transition
 recovery delay
 UserRootRotation
-pairwise backup rollback
-pairwise restore + future-state rotation
 ```
 
-## 19. Contact bootstrap attacks
+Il laboratorio distingue key count da custody-domain independence: cinque key files nello stesso secret store non vengono trattati automaticamente come cinque independent recovery factors.
+
+## 19. Pairwise recovery simulation
+
+Scenari obbligatori:
+
+```text
+surviving-device transfer -> latest state
+latest bundle + latest PairwiseRecoveryAnchor -> accept
+old valid bundle + newer anchor -> reject
+same generation + wrong bundle hash -> reject
+same bundle hash + wrong state commitment -> reject
+anchor rollback below verified state -> reject
+all devices lost + no anchor -> integrity-only, no latest-freshness claim
+root-compromise restore -> RecoveryStateKey rotation
+post-restore -> peer re-auth + future rendezvous/recovery-state rotation
+```
+
+Il `backup-mirror-stale` deve poter servire deliberatamente un ciphertext vecchio ma integro.
+
+Oracle: **integrity != freshness**.
+
+## 20. Contact bootstrap attacks
 
 Copied/replayed/expired/substituted descriptor, wrong RootIdentity proof, valid attacker descriptor substituted for Bob, colluding contacts.
 
-## 20. Handshake matrix
+## 21. Handshake matrix
 
 Combinare versions, suite offers, transport semantics, certificate epochs, revocation freshness e route changes.
 
 Negative tests: offer stripping, wrong relationship, stale/revoked cert, replayed ephemeral, transcript mismatch.
 
-## 21. Rekey matrix
+## 22. Rekey matrix
 
 Testare almeno:
 
@@ -308,25 +347,26 @@ route switch during rekey
 old-key in-flight grace
 old-key send after Ack
 required-rekey timeout
+wrong MAC domain
 ```
 
 No split-brain epoch silenzioso.
 
-## 22. Transport semantic tests
+## 23. Transport semantic tests
 
 `RELIABLE_ORDERED_STREAM` e `UNRELIABLE_DATAGRAM` hanno suite separate. Media loss/reorder non blocca control/text.
 
-## 23. Relay Sybil/provenance
+## 24. Relay Sybil/provenance
 
 Generare molti relay IDs dello stesso adversary, false self-declared metadata e provenance attestations duplicate/collusive.
 
 Oracle: N IDs o N attestazioni dello stesso issuer domain non equivalgono automaticamente a N operatori indipendenti.
 
-## 24. Shield simulation
+## 25. Shield simulation
 
 Vero circuit setup, per-hop keys, layered forwarding, compromise/collusion, rebuild, provenance-aware selection. Due proxy TCP non contano.
 
-## 25. Release/governance simulation
+## 26. Release/governance simulation
 
 ```text
 valid threshold release
@@ -342,7 +382,7 @@ StateMigrationProof valid/invalid
 malicious first-install source
 ```
 
-## 26. Differential control-plane testing
+## 27. Differential control-plane testing
 
 Il `control-plane-mock` è utile solo se non diverge semanticamente dal `ChainAdapter` reale.
 
@@ -358,13 +398,14 @@ Assert equivalenza su:
 - accepted/rejected transition;
 - resulting canonical object/state root semantics;
 - revocation behavior;
+- pairwise recovery-anchor update semantics;
 - expiry/height behavior;
 - storage reclaim;
 - failure class.
 
 Una feature non viene dichiarata corretta soltanto perché passa nel mock.
 
-## 27. Test levels
+## 28. Test levels
 
 ```text
 L0 pure/unit + canonical vectors
@@ -376,7 +417,7 @@ L5 physical devices / real Wi-Fi/mobile/CGNAT
 L6 external security/interoperability review
 ```
 
-## 28. Automatic loop
+## 29. Automatic loop
 
 ```text
 spec/task
@@ -390,11 +431,11 @@ spec/task
  -> merge only when required gates pass
 ```
 
-## 29. Android gates
+## 30. Android gates
 
 APK/emulator/device obbligatorio per Keystore, process death, Doze/background, permissions, actual Android sockets/handover, camera/QR, package signing/update e `VpnService`.
 
-## 30. Evidence artifacts
+## 31. Evidence artifacts
 
 Ogni scenario produce:
 
@@ -410,6 +451,12 @@ redacted logs
 result
 ```
 
-## 31. Definition of done
+## 32. Repository seed for the simulator
+
+`sim/` contains the first versioned lab fixtures/scenario contracts. They are not a second protocol implementation: production core/state machines must be reused as they become available.
+
+The seed exists so Codex can advance from documentation to executable simulation incrementally without inventing scenario semantics ad hoc in every task.
+
+## 33. Definition of done
 
 Una feature security/network è done quando esistono spec, positive/negative tests, adversarial scenario, resource bound, replay/rollback behavior, safe logs e platform gate se necessario.

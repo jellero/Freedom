@@ -5,13 +5,15 @@ Status: **canonical design draft**.
 Normative security: [`SECURITY_INVARIANTS.md`](SECURITY_INVARIANTS.md).
 Control-plane: [`CONTROL_PLANE_SECURITY.md`](CONTROL_PLANE_SECURITY.md).
 Revocation: [`REVOCATION.md`](REVOCATION.md).
+Pairwise recovery: [`PAIRWISE_RECOVERY.md`](PAIRWISE_RECOVERY.md).
 Schema: [`../spec/freedom.cddl`](../spec/freedom.cddl).
+Crypto domains: [`../spec/crypto-domains.txt`](../spec/crypto-domains.txt).
 
 ## 1. Ruolo
 
 NEAR Testnet è la prima implementazione `ChainAdapter`; non è Freedom Protocol.
 
-La chain è control-plane distribuito/verificabile per piccoli oggetti di identity/revocation/rendezvous/entitlement/release/governance. Chat, media, Gateway payload e APK restano off-chain.
+La chain è control-plane distribuito/verificabile per piccoli oggetti di identity/revocation/rendezvous/recovery anchor/entitlement/release/governance. Chat, media, full pairwise backup bundles, Gateway payload e APK restano off-chain.
 
 ## 2. Identity separation
 
@@ -22,6 +24,7 @@ DeviceAuthorization    -> endpoint authorization chain
 DeviceRecordCommitment -> opaque device record lookup
 DeviceControlKey       -> scoped record rotation/revocation
 PairRendezvousSecret   -> pairwise write-key derivation
+RecoveryStateKey       -> encrypted pairwise-backup state
 ```
 
 No global DeviceID network-facing.
@@ -69,6 +72,8 @@ readRendezvousProof
 writeRendezvous
 readRecoveryBeaconProof
 writeRecoveryBeacon
+readPairwiseRecoveryAnchorProof
+writePairwiseRecoveryAnchor
 pruneExpired
 
 resolveEntitlementProof
@@ -133,6 +138,8 @@ Control-plane-visible slot:
 slot_id = H("Freedom/RendezvousSlot" || network_id || write_public_key)
 ```
 
+Il fixed hash purpose è registrato in `spec/crypto-domains.txt`.
+
 Write accepted only when:
 
 ```text
@@ -144,19 +151,62 @@ size/expiry bounds valid
 
 Il contract non necessita di conoscere direction/epoch e chi osserva lo slot non ottiene overwrite authority.
 
-## 10. Active storage bounded
+## 10. Pairwise recovery anchor
+
+Il full `PairwiseRecoveryBundle` non viene messo on-chain.
+
+Per il profilo rollback-detectable dopo perdita totale dei device, il control-plane conserva soltanto il canonical `pairwise-recovery-anchor`:
+
+```text
+root_control_commitment
+anchor_epoch
+latest_backup_generation
+latest_bundle_hash
+latest_state_commitment
+recovery_key_epoch
+updated_at_height
+authorization_proof
+```
+
+Update requirements:
+
+```text
+anchor_epoch == previous + 1
+latest_backup_generation increases
+root_control_commitment remains in the same recovery lineage
+recovery_key_epoch never rolls back
+authorization proof valid under current recovery-state authority
+```
+
+L'anchor update richiede finality + resulting-state proof.
+
+La source che conserva il ciphertext del bundle resta non fidata e non può ridefinire l'anchor.
+
+L'anchor non pubblica contact list/plaintext, ma rende osservabile il timing degli update della stessa opaque recovery lineage. Questo trade-off è esplicito.
+
+## 11. Active storage bounded
 
 Temporary objects implementano overwrite/ring/prune/lease/reclaim. TTL alone non basta.
 
 Repeated renew/expire must converge to a configured active-state bound. Chain archival history may remain observable.
 
-## 11. Root control / recovery lineage
+`pairwise-recovery-anchor` è current monotonic state per lineage, non una nuova key infinita per ogni backup generation.
+
+## 12. Root control / recovery lineage
 
 Compromise-recovery users possono registrare un opaque `root_control_commitment` con current root epoch/commitment, recovery-policy commitment e optional pending recovery hash.
 
 Questo handle non è network identity ma rende correlabili gli eventi della stessa recovery lineage sul control-plane; trade-off esplicito.
 
-## 12. Sticky UserRecoveryPolicy
+## 13. UserRecoveryPolicy
+
+Una policy valida usa recovery-key commitments distinti e:
+
+```text
+1 <= threshold <= number of distinct recovery keys
+```
+
+Il profilo production che dichiara independent compromise recovery dovrebbe mantenere il quorum fuori da un unico custody/device domain.
 
 Normal root rotation:
 
@@ -168,7 +218,7 @@ root_epoch + 1
 
 La current root da sola non può rimuovere/sostituire la policy. V1 non supporta arbitrary recovery-policy mutation.
 
-## 13. Compromise recovery race
+## 14. Compromise recovery race
 
 Una valid quorum-authorized `COMPROMISE_RECOVERY` può targettare la latest current root state della stessa root-control lineage.
 
@@ -188,7 +238,7 @@ fino all'activation height:
 
 Questo impedisce alla root rubata di evadere dalla recovery policy con una normal-rotation race.
 
-## 14. Governance
+## 15. Governance
 
 Production minimum:
 
@@ -202,11 +252,11 @@ GovernanceRootRotation >= 3-of-5 + recovery
 
 Threshold eliminates a unilateral single key, not quorum collusion. Custody/operator domains should be separated/audited.
 
-## 15. Contract upgrade
+## 16. Contract upgrade
 
 Immutable security core or threshold/timelocked/code-hash-pinned upgrade. No silent contract-address swap or single Full Access production upgrade key.
 
-## 16. Chain migration
+## 17. Chain migration
 
 ```text
 ChainMigrationManifest
@@ -215,23 +265,25 @@ ChainMigrationManifest
 
 Proof binds source finalized/export state, migration program and target imported root. Governance authorizes the migration rule, not arbitrary replacement state.
 
-## 17. Payments / quotas
+## 18. Payments / quotas
 
 Voucher/nullifier can reduce payment→entitlement linkage. Timing correlation may remain.
 
 Contact/device commercial limits V1 do not justify public social/device graph.
 
-## 18. Mainnet acceptance
+## 19. Mainnet acceptance
 
-- deterministic schema/signing-domain vectors;
+- deterministic schema + crypto-domain vectors;
 - checkpoint/finality/state proofs against honest/stale/forked/malicious RPC;
 - fresh-install floor;
 - revocation proof/freshness;
 - rendezvous overwrite/front-run/replay;
+- pairwise recovery-anchor update/rollback/mismatch;
 - active-state convergence;
 - DeviceControlKey/recovery revocation;
+- recovery-policy distinct-key/threshold validation;
 - sticky recovery policy + latest-lineage race/timelock;
 - signer custody/quorum tests/documentation;
 - contract rollback;
 - StateMigrationProof;
-- no mailbox/message/media state.
+- no mailbox/message/media/full-pairwise-backup state.

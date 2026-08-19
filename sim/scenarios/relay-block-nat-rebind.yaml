@@ -1,0 +1,35 @@
+version: 1
+name: relay-block-and-nat-rebind
+seed: 1001
+clock: virtual
+nodes:
+  - alice
+  - bob
+  - relay_a
+  - relay_b
+steps:
+  - at: 0s
+    action: connect
+    from: alice
+    to: bob
+    via: relay_a
+
+  - at: 10s
+    action: block
+    target: relay_a
+
+  - at: 12s
+    action: nat_rebind
+    target: alice
+
+  - at: 20s
+    assert: session_recovered
+
+  - at: 20s
+    assert: peer_identity_unchanged
+
+  - at: 20s
+    assert: no_mailbox_write
+
+  - at: 20s
+    assert: route_is_not_authentication_authority

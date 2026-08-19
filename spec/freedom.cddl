@@ -6,7 +6,7 @@
 ; Objects not present here are not frozen for public interoperability.
 ; Security semantics: docs/SECURITY_INVARIANTS.md and subsystem docs.
 ; Encoding target: deterministic CBOR with frozen positive/negative vectors.
-; Signed objects use spec/README.md domain separation.
+; Cryptographic domains: spec/crypto-domains.txt.
 
 uint64 = uint
 bytes16 = bstr .size 16
@@ -170,12 +170,30 @@ recovery-beacon = {
 
 pairwise-recovery-bundle = {
   version: uint,
+  bundle_id: bytes32,
   state_epoch: uint64,
+  backup_generation: uint64,
+  previous_bundle_hash: bytes32 / null,
   created_at_height: uint64,
   recovery_key_epoch: uint64,
   contacts_metadata_ciphertext: bstr,
   pairwise_state_ciphertext: bstr,
+  state_commitment: bytes32,
   integrity: bstr
+}
+
+; Optional monotonic freshness anchor for rollback-detectable recovery after total device loss.
+; The full pairwise bundle remains off-chain/on user-chosen untrusted storage.
+pairwise-recovery-anchor = {
+  version: uint,
+  root_control_commitment: bytes32,
+  anchor_epoch: uint64,
+  latest_backup_generation: uint64,
+  latest_bundle_hash: bytes32,
+  latest_state_commitment: bytes32,
+  recovery_key_epoch: uint64,
+  updated_at_height: uint64,
+  authorization_proof: bstr
 }
 
 ; ---- Routing / relay / Shield ---------------------------------------------------------------

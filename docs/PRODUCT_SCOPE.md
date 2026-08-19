@@ -5,8 +5,10 @@ Status: **canonical product scope**.
 Normative security rules: [`SECURITY_INVARIANTS.md`](SECURITY_INVARIANTS.md).
 Control-plane: [`CONTROL_PLANE_SECURITY.md`](CONTROL_PLANE_SECURITY.md).
 Revocation: [`REVOCATION.md`](REVOCATION.md).
+Pairwise recovery: [`PAIRWISE_RECOVERY.md`](PAIRWISE_RECOVERY.md).
 Advanced development: [`ADVANCED_DEVELOPMENT.md`](ADVANCED_DEVELOPMENT.md).
 Schema: [`../spec/freedom.cddl`](../spec/freedom.cddl).
+Crypto domains: [`../spec/crypto-domains.txt`](../spec/crypto-domains.txt).
 
 ## 1. Obiettivo
 
@@ -20,13 +22,14 @@ La prima release pubblica è 1:1 e richiede:
 - DeviceAuthorizationDelegation;
 - DeviceCertificate verificabile offline;
 - opaque DeviceRecord + scoped DeviceControlKey;
-- canonical deterministic encoding/signing domains;
+- canonical deterministic encoding + registered crypto domains;
 - verified control-plane checkpoint/state proof;
 - canonical revocation/freshness semantics;
 - BootstrapFreshnessFloor per fresh install;
 - contact bootstrap + `BOOTSTRAP_UNVERIFIED`/`CONTACT_VERIFIED`;
 - pairwise identity/rendezvous con write authorization;
 - pairwise encrypted backup/device transfer;
+- explicit pairwise-backup freshness semantics (`PairwiseRecoveryAnchor` when rollback-detectable total-device-loss recovery is claimed);
 - expected-contact handshake;
 - both-offer-set anti-downgrade;
 - forward secrecy;
@@ -67,6 +70,8 @@ Managed Gateway/Shield/egress capacity remains a more enforceable commercial sur
 
 Normal Recovery Kit restore handles device loss. Claiming recovery after complete RootRecoveryKey compromise requires a precommitted `UserRecoveryPolicy` with independent recovery quorum + delay.
 
+Policy validation rejects duplicate recovery keys and invalid thresholds. A production independent-compromise-recovery profile should not keep the complete recovery quorum in the same custody domain as the active root/device environment.
+
 If such a policy is not configured, the client/documentation must not claim compromise recovery.
 
 ## 5. Session security gate
@@ -75,7 +80,7 @@ Before public V1:
 
 ```text
 expected-contact auth
-canonical signing domains
+canonical encoding + crypto domains
 DeviceCertificate parent-scope validation
 revocation proof/freshness
 fresh-install bootstrap floor
@@ -96,7 +101,23 @@ Blockers:
 - map state grows forever despite TTL;
 - write generation rollback/replay accepted.
 
-## 7. Control-plane gate
+## 7. Pairwise recovery freshness gate
+
+After total device loss, an untrusted backup source may serve a valid but stale bundle.
+
+If Freedom claims rollback-detectable recovery, it requires either:
+
+```text
+surviving authorized device state
+or
+verified monotonic PairwiseRecoveryAnchor
+```
+
+With anchor enabled, bundle generation/hash/state commitment must match the latest verified anchor. Without surviving state/anchor, integrity may be verified but `LATEST_VERIFIED_BACKUP` freshness is not claimed.
+
+Post-restore peer re-authentication and future rendezvous/recovery-state rotation are mandatory.
+
+## 8. Control-plane gate
 
 Security read:
 
@@ -120,7 +141,7 @@ submit
 
 RPC response/tx hash alone never enough.
 
-## 8. Governance gate
+## 9. Governance gate
 
 Production:
 
@@ -134,13 +155,13 @@ GovernanceRootRotation >= 3-of-5 + recovery
 
 Signer custody/operator independence is an explicit trust assumption. A single organization controlling a quorum cannot be marketed as absence of a single administrative actor merely because there are five key files.
 
-## 9. Shield
+## 10. Shield
 
 True Freedom Shield remains post-core until `SHIELD.md` circuit setup/per-hop/layered-forwarding/provenance gates pass.
 
 `SHIELDED` label is unavailable before that.
 
-## 10. Gateway
+## 11. Gateway
 
 Post-V1 capability:
 
@@ -150,7 +171,7 @@ app -> local Gateway -> Freedom path -> explicit Egress -> Internet
 
 Target managed Free capacity can remain 100 MB/day as a product target, separate from Communication.
 
-## 11. Release / first install
+## 12. Release / first install
 
 ```text
 untrusted bytes
@@ -164,13 +185,13 @@ untrusted bytes
  -> install
 ```
 
-## 12. Development gates
+## 13. Development gates
 
 Protocol/control-plane/routing development is simulator-first according to `ADVANCED_DEVELOPMENT.md`.
 
 Before public V1, at least L0/L1/L2/L3 coverage exists for core protocol/control-plane behavior; Android gates are added for platform-specific properties.
 
-## 13. Non-blockers for V1
+## 14. Non-blockers for V1
 
 - groups;
 - group media;
@@ -182,15 +203,18 @@ Before public V1, at least L0/L1/L2/L3 coverage exists for core protocol/control
 - tokenized relay economy;
 - embedded browser.
 
-## 14. Launch blockers
+## 15. Launch blockers
 
-- canonical schema drift between docs/code;
-- ad-hoc non-domain-separated signatures;
+- canonical schema/domain drift between docs/code;
+- ad-hoc non-domain-separated signatures/MAC/AEAD/HASH/KDF purposes;
 - stale fresh-install checkpoint accepted below floor;
 - RPC `not found` interpreted as non-revoked;
 - rendezvous overwrite/front-run without write key;
 - active state not reclaimable;
 - root-compromise claim without independent recovery policy;
+- invalid/duplicate recovery quorum accepted;
+- pairwise total-device-loss recovery called latest without surviving state/verified anchor;
+- pairwise restore does not rotate future rendezvous/recovery authority;
 - rekey split-brain/loss behavior undefined;
 - first-contact substitution ignored;
 - signer quorum operationally centralized while marketed as no single actor;
