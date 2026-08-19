@@ -4,223 +4,85 @@
 
 Freedom Messenger non deve competere al lancio sulla quantità di feature. Deve dimostrare in modo affidabile la proposta centrale di Freedom Protocol: **comunicazione privata live, autenticata E2EE, sincrona, senza mailbox centrale e senza dipendenza permanente da un singolo percorso o provider.**
 
-La priorità del prodotto è quindi:
-
-```text
-semplicità di onboarding
- -> contatto verificabile
- -> sessione affidabile
- -> messaggi immediati
- -> media
- -> chiamata audio
- -> videochiamata
- -> modalità Live
- -> trasparenza sullo stato di rete quando serve
-```
-
-Una feature non deve entrare nel launch scope se aumenta in modo rilevante complessità, superficie d'attacco o instabilità senza rafforzare direttamente questa esperienza.
-
 Principio UX:
 
 > **Semplice quando tutto funziona. Trasparente quando qualcosa cerca di impedirti di comunicare.**
 
-Freedom non deve necessariamente nascondere ogni dettaglio di rete per assomigliare a un messenger generalista. È un prodotto anche per utenti che hanno bisogno di capire quando la propria capacità di comunicare viene limitata.
-
----
+Freedom è anche un prodotto per utenti che hanno bisogno di capire lo stato reale della propria capacità di comunicare.
 
 ## 2. Launch scope — V1
 
-La prima versione destinata a Founder Cohort, reviewer, creator e successivamente pubblico deve concentrarsi sulle comunicazioni **1:1**.
+La prima release pubblica è focalizzata sul **1:1**.
 
-### 2.1 Funzioni essenziali
+Funzioni essenziali:
 
-- inizializzazione automatica dell'identità Freedom;
-- aggiunta contatto tramite QR/link e altri bootstrap espliciti supportati;
-- sessione autenticata E2EE senza configurazione manuale di IP, wallet o blockchain;
-- chat testuale 1:1;
-- foto, video e file;
+- RootIdentity + DeviceIdentity inizializzate localmente;
+- Recovery Kit esportabile: QR/bundle cifrato + recovery code;
+- registrazione sponsorizzata quando serve, senza wallet NEAR obbligatorio;
+- aggiunta contatto tramite QR/link;
+- **10 contatti attivi nel piano Free**;
+- **1 device attivo nel piano Free**;
+- sessione autenticata E2EE;
+- text 1:1;
+- foto/video/file;
 - messaggi vocali;
 - chiamata audio 1:1;
 - videochiamata 1:1;
-- modalità **Live/effimera**;
-- stato comprensibile di peer/sessione: online, sessione attiva, non raggiungibile;
-- riconnessione automatica quando esiste un percorso valido;
-- route selection coerente con la privacy policy scelta;
-- possibilità di evitare il direct path quando la protezione dell'endpoint è prioritaria;
-- rilevamento base di route failure e fallback tra percorsi/provider disponibili;
-- **Freedom Network Indicator** sempre accessibile;
-- apertura automatica del pannello Network quando viene rilevata un'anomalia significativa;
-- blocco contatto e funzioni minime richieste dai client ufficiali/store.
+- Live/ephemeral mode;
+- stato peer/sessione comprensibile;
+- route selection/privacy policy;
+- Adaptive Defense base;
+- Freedom Network Indicator;
+- Emergency Shield Free con quota da dimensionare con dati reali;
+- blocco contatto e requisiti store minimi.
 
-### 2.2 Esperienza target
+L'utente non deve essere obbligato a comprendere account NEAR, gas, RPC, NAT, relay o primitive crittografiche nell'uso normale.
 
-L'obiettivo UX è:
+## 3. Recovery e multi-device
 
-```text
-installa Freedom
- -> identità inizializzata automaticamente
- -> scansiona il QR dell'altra persona
- -> peer autenticato
- -> apri chat
- -> messaggio live con latenza normale di rete
- -> chiamata audio/video
-```
-
-L'utente non deve essere obbligato a comprendere:
-
-- account NEAR;
-- gas;
-- RPC;
-- NAT;
-- relay;
-- chiavi crittografiche;
-- blockchain adapter.
-
-Questi sono dettagli del protocollo/control plane e devono rimanere invisibili nell'uso normale.
-
-Quando però si verifica un problema di rete, Freedom deve poter spiegare in modo leggibile i fatti osservati e le contromisure attivate.
-
----
-
-## 3. Cosa NON blocca il lancio
-
-Non sono prerequisiti della prima release pubblica:
-
-- gruppi testuali;
-- chiamate di gruppo;
-- videochiamate di gruppo;
-- community pubbliche;
-- canali broadcast;
-- bot platform;
-- feed/social graph;
-- mailbox offline;
-- sincronizzazione cloud della cronologia;
-- modalità Pro Maximum Resilience completa;
-- pool bridge/non-public avanzato;
-- padding/metadata protection avanzato.
-
-Freedom deve preferire un core 1:1 estremamente affidabile a una suite ampia ma fragile.
-
----
-
-## 4. Live Groups — V1.5
-
-I gruppi sono previsti, ma devono preservare la semantica sincrona di Freedom.
-
-Non devono diventare una mailbox condivisa che conserva e recapita automaticamente la cronologia agli assenti.
-
-Esempio:
+Il reset del telefono non deve distruggere ownership/licenza se l'utente possiede il Recovery Kit.
 
 ```text
-Freedom Live Group
-
-Alice  online
-Bob    online
-Carlo  online
-David  offline
+Recovery Kit
+ -> RootIdentity
+ -> NEW DeviceKey
+ -> device activation
+ -> entitlement restore
 ```
 
-Se Alice invia un messaggio durante la sessione:
+La chain fa rispettare `max_devices`; il restore non deve permettere di usare una licenza su telefoni illimitati.
+
+Dettagli: [`ACCOUNT_RECOVERY_LICENSES.md`](ACCOUNT_RECOVERY_LICENSES.md).
+
+## 4. Contatti Free
+
+Il limite Free è **10 contatti attivi**.
+
+- non è un limite lifetime;
+- eliminare/disattivare un contatto libera uno slot;
+- la lista contatti resta locale e cifrata;
+- non pubblicare social graph in chiaro;
+- eventuale enforcement anti-tampering deve usare commitment/slot opachi.
+
+## 5. Pagamenti e Pro
+
+Freedom supporta payment adapter multipli:
 
 ```text
-Alice -> Bob    delivered
-      -> Carlo  delivered
-      -> David  not delivered
+PayPal
+crypto/stablecoin
+future providers
 ```
 
-David, tornando online, **non riceve automaticamente i messaggi persi** dal protocollo base.
+PayPal può essere aperto dall'app senza API pubblica Freedom; worker privati outbound-only verificano il pagamento e pubblicano l'attestazione. Crypto verificabile on-chain può attivare direttamente l'entitlement.
 
-### 4.1 Scope iniziale gruppi
+Il callback client non è prova autoritativa di pagamento e nessun merchant secret deve stare nell'APK.
 
-V1.5 può introdurre:
+Dettagli: [`PAYMENTS.md`](PAYMENTS.md).
 
-- piccoli gruppi testuali;
-- media nei piccoli gruppi;
-- invito tramite QR/link/capability;
-- membership autenticata;
-- presenza/session state limitata al necessario;
-- modalità effimera;
-- chiusura della stanza con eliminazione dello stato locale secondo policy.
+## 6. Adaptive Defense e Network Indicator
 
-La dimensione massima iniziale deve essere determinata da test reali di rete, CPU, memoria e battery usage.
-
----
-
-## 5. Freedom Live Rooms
-
-Il concetto di gruppo consigliato per il prodotto è **Live Room**.
-
-Una Live Room è una sessione privata multi-party che esiste per la comunicazione presente, non una mailbox permanente.
-
-Principio:
-
-> **La stanza serve le persone presenti adesso; non conserva automaticamente la conversazione per chi arriva dopo.**
-
-Possibili proprietà:
-
-```text
-Live Room
----------
-invito esplicito
-membership autenticata
-E2EE
-history optional/off
-Live mode
-nessuna mailbox server-side
-nessuna consegna offline automatica
-room state eliminabile a fine sessione
-```
-
-Le policy del client possono consentire cronologia locale persistente quando esplicitamente scelta, ma questo non deve cambiare il comportamento del protocollo base né introdurre storage centrale necessario.
-
----
-
-## 6. Multi-party voice/video — V2
-
-Voce e video di gruppo non devono essere implementati come semplice mesh P2P non limitata.
-
-Una mesh completa cresce rapidamente con il numero di partecipanti e aumenta banda, CPU, battery usage e complessità di rete.
-
-Per gruppi più grandi Freedom può usare infrastruttura di forwarding media specializzata, ad esempio nodi SFU compatibili con il trust model.
-
-Vincoli:
-
-- il nodo media non deve diventare un trust anchor dell'identità;
-- il nodo media non deve possedere plaintext quando è tecnicamente evitabile con il design E2EE scelto;
-- devono poter esistere più nodi/operatori;
-- il blocco di un singolo nodo non deve rendere il protocollo inutilizzabile;
-- il client deve poter cambiare infrastruttura/percorso;
-- nessun SFU specifico deve diventare requisito permanente di Freedom Protocol.
-
-La progettazione E2EE multi-party deve essere definita e reviewata separatamente prima dell'implementazione production.
-
----
-
-## 7. Adaptive Defense e Freedom Shield
-
-Freedom deve poter usare il control-plane di rendezvous come segnale di recovery quando il data-plane fallisce.
-
-Non deve esistere una presenza globale pubblica. Dopo una failure, i peer possono pubblicare beacon pairwise opachi e a TTL breve per dimostrare **attività recente**.
-
-Esempio prodotto:
-
-```text
-peer recentemente attivo       yes
-current data path               fail
-altro RPC/control-plane         reachable
-```
-
-Il client può quindi mostrare:
-
-> **Interferenza o anomalia di rete rilevata. Freedom sta usando un percorso alternativo.**
-
-Non deve mostrare claim come "sei sorvegliato" o attribuire il blocco a un soggetto specifico senza evidenza.
-
-### 7.1 Freedom Network Indicator
-
-Il client deve mostrare un indicatore di rete piccolo, sempre accessibile e cliccabile.
-
-Stati concettuali:
+Il client deve mostrare uno stato rete sempre accessibile:
 
 ```text
 NORMAL
@@ -230,90 +92,142 @@ SUSPECTED
 UNAVAILABLE
 ```
 
-Una UI può rappresentarli con un pallino multicolore, ma colore, testo e icona devono comunicare insieme lo stato.
+In caso di incidente significativo il pannello può aprirsi automaticamente e distinguere fatti osservati da inferenze.
 
-Quando lo stato passa a `SUSPECTED` o `UNAVAILABLE`, il pannello Network può aprirsi automaticamente una volta per incidente e mostrare:
-
-- attività recente del peer;
-- stato del registry/control-plane;
-- classe di route corrente;
-- failure osservate;
-- fallback attivo o tentato;
-- livello di protezione;
-- distinzione tra fatto osservato e inferenza.
-
-Dettagli: [`NETWORK_STATUS_UI.md`](NETWORK_STATUS_UI.md).
-
-### 7.2 Core gratuito
-
-La resilienza minima resta nel core:
+Core Free:
 
 - route health;
-- provider/RPC fallback;
+- RPC/provider fallback;
 - relay/path fallback;
 - recovery rendezvous;
-- rilevamento `peer recently active + data path unavailable`;
-- route switch automatico quando esiste un'alternativa;
-- stesso stato di rete significativo mostrato agli utenti Free e Pro;
-- quota limitata di **Emergency Shield** gestito quando necessaria per superare un blocco e quando disponibile.
+- `peer recently active + data path unavailable`;
+- route switch automatico;
+- stessa diagnosi tecnica di Pro;
+- quota Emergency Shield quando disponibile.
 
-Freedom non deve rilevare una probabile censura e lasciare intenzionalmente l'utente offline per creare un paywall.
+Pro/Shield può aggiungere Always-Shielded, multi-hop, relay gestiti multipli, candidate pre-warmed, parallel failover, transport rotation aggressiva e Maximum Resilience.
 
-La quota gratuita può essere rappresentata nell'UX come messaggi/sessioni di emergenza, ma il limite interno deve essere progettato in base ai costi reali di banda, relay, voce/video e abuso. Il numero definitivo non va fissato prima delle misurazioni.
+## 7. Emergency bulletin e secure updates
 
-### 7.3 Freedom Pro — Shield
+Freedom deve poter ricevere bulletin firmati globali o geolocalizzati. Il matching geografico avviene localmente senza pubblicare la posizione dell'utente on-chain.
 
-Il piano Pro può offrire capacità più costose:
+Gli aggiornamenti usano `FreedomRelease` firmati con hash/versione/signing fingerprint. L'APK resta off-chain e può essere scaricato da store, mirror temporanei, peer/relay Freedom o altri transport compatibili.
 
-- Always-Shielded mode senza direct IP;
-- relay gestiti multipli;
-- multi-hop;
-- path diversity più ampia;
-- candidate alternativi pre-warmed;
-- failover parallelo rapido;
-- transport rotation più aggressiva;
-- pool bridge/non-public quando disponibile;
-- padding/metadata protection opzionale;
-- **Maximum Resilience** con più percorsi indipendenti pronti prima del failure;
-- budget Shield gestito molto superiore al Free.
+Una `SecurityPolicy` critica può disabilitare selettivamente funzioni/versioni vulnerabili, mantenendo recovery/update quando sicuro. Non deve esistere un kill-switch commerciale arbitrario.
 
-La sicurezza crittografica di base, la classificazione tecnica degli eventi e la spiegazione all'utente non devono dipendere dal piano Pro.
+Dettagli: [`EMERGENCY_UPDATES.md`](EMERGENCY_UPDATES.md).
 
-Il client non deve usare paura o falsi positivi per spingere l'upgrade.
+## 8. Cosa NON blocca il primo lancio
 
-Dettagli: [`ADAPTIVE_DEFENSE.md`](ADAPTIVE_DEFENSE.md) e [`NETWORK_STATUS_UI.md`](NETWORK_STATUS_UI.md).
+Non sono prerequisiti della prima release pubblica:
 
----
+- gruppi testuali;
+- group voice/video;
+- community pubbliche;
+- bot/feed/social graph;
+- mailbox offline;
+- cloud history sync;
+- Maximum Resilience completa;
+- bridge/non-public pool avanzato;
+- padding avanzato;
+- update swarm completo se esiste già un canale sicuro di distribuzione V1.
 
-## 8. Roadmap prodotto
+## 9. Live Groups — V1.5
+
+I gruppi devono preservare la semantica sincrona:
+
+```text
+Alice online  -> delivered
+Bob online    -> delivered
+David offline -> not delivered
+```
+
+Nessuna mailbox condivisa automatica per gli assenti.
+
+Scope iniziale:
+
+- piccoli gruppi testuali;
+- media;
+- membership autenticata;
+- invito QR/link/capability;
+- presenza minima;
+- modalità effimera.
+
+## 10. Freedom Live Rooms
+
+Una **Live Room** è una sessione privata multi-party che serve le persone presenti adesso, non una mailbox permanente.
+
+```text
+explicit invite
+authenticated membership
+E2EE
+history optional/off
+Live mode
+no server-side mailbox
+no automatic offline delivery
+```
+
+## 11. Multi-party voice/video — V2
+
+Non usare mesh P2P illimitata per gruppi grandi. Per media multi-party usare forwarding scalabile/SFU compatibile con il trust model:
+
+- nodo media non è identity trust anchor;
+- più operatori/nodi;
+- sostituibile;
+- nessun singolo SFU requisito permanente;
+- design E2EE multi-party reviewato separatamente.
+
+## 12. Registrazione ed economia Free
+
+L'installazione non produce automaticamente una write on-chain.
+
+Sponsored registration:
+
+```text
+RootIdentity
+ -> anti-abuse proof / adaptive PoW
+ -> sponsorship unused
+ -> relayer rate limit
+ -> bounded global budget
+ -> register
+```
+
+Messaggi/chiamate non devono essere limitati per pagare il gas blockchain. Il costo chain deve dipendere da eventi rari del control-plane.
+
+Dettagli: [`REGISTRATION_ECONOMICS.md`](REGISTRATION_ECONOMICS.md).
+
+## 13. Roadmap prodotto
 
 ```text
 V1 — Launch
-  1:1 text
-  1:1 media / file
+  RootIdentity + Recovery Kit
+  sponsored registration
+  1 active device Free
+  10 active contacts Free
+  1:1 text/media/file
   voice messages
-  audio call
-  video call
+  audio/video call
   Live mode
   QR/link contacts
-  automatic identity/bootstrap
-  route/privacy policy
-  basic route failure detection/fallback
-  Freedom Network Indicator
+  basic Adaptive Defense
+  Network Indicator
+  payment/entitlement foundation
+
+Security plane
+  emergency bulletin
+  signed release manifest
+  secure update sources
+  selective security policy
 
 V1.5 — Live Groups
-  small group text
-  group media
+  small group text/media
   ephemeral Live Rooms
   authenticated membership
-  QR/link room invite
 
 V2 — Multi-party realtime
-  group voice
-  group video
+  group voice/video
   scalable media forwarding
   replaceable/distributed SFU or equivalent
-  multi-party privacy hardening
 
 Pro evolution — Freedom Shield
   Always-Shielded
@@ -322,35 +236,21 @@ Pro evolution — Freedom Shield
   Maximum Resilience
 ```
 
----
+## 14. Launch quality gate
 
-## 9. Launch quality gate
+Blocker prima del Creator Pilot:
 
-Prima del Creator Pilot il V1 deve essere stabile sul percorso principale.
-
-Blocker:
-
-- messaggi con latenza sistematica anomala;
-- onboarding che richiede IP o configurazione tecnica manuale;
+- latenza sistematica anomala dei messaggi;
+- onboarding con configurazione tecnica manuale;
 - crash riproducibili;
-- session establishment poco affidabile;
-- perdita/corruzione identità;
-- chiamate 1:1 non sufficientemente stabili per una demo reale;
-- differenza poco chiara tra online, sessione attiva e non raggiungibile;
-- Network Indicator che genera falsi allarmi sistematici;
-- privacy claim non ancora implementati;
-- dipendenza hardcoded da credenziali personali o singola infrastruttura non sostituibile.
+- session establishment inaffidabile;
+- perdita/corruzione RootIdentity/DeviceIdentity;
+- Recovery Kit non verificato end-to-end;
+- chiamate 1:1 instabili;
+- Network Indicator con falsi allarmi sistematici;
+- privacy claim non implementati;
+- dipendenza hardcoded da credenziali personali/singola infrastruttura;
+- merchant secret nell'APK;
+- meccanismo update non autenticato.
 
-Gruppi, multi-party media e Shield avanzato **non devono ritardare il lancio** se il V1 1:1 soddisfa questi criteri.
-
----
-
-## 10. Principio di prodotto
-
-Freedom deve resistere alla tentazione di diventare un messenger generalista prima di aver dimostrato il proprio modello.
-
-Priorità:
-
-> **prima rendere impeccabile una comunicazione privata live tra due persone; poi estendere la stessa semantica a più persone e rafforzare progressivamente la resilienza di rete.**
-
-Freedom deve essere semplice nell'uso quotidiano senza nascondere agli utenti che ne hanno bisogno informazioni importanti sulla salute e sulle interferenze della rete.
+Gruppi e Shield avanzato non devono ritardare il lancio se il V1 soddisfa questi criteri.
