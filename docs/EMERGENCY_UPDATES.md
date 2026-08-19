@@ -304,7 +304,7 @@ Le private key di release devono restare fuori dai client e, idealmente, fuori d
 ## 17. UX
 
 ```text
-Freedom Messenger 1.4.2
+Freedom Communication 1.4.2
 Release signer  VERIFIED
 APK signer      VERIFIED
 Artifact hash   VERIFIED
