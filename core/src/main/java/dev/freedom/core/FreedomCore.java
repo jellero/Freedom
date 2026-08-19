@@ -166,6 +166,43 @@ public final class FreedomCore {
         public String lastReason() { return lastReason; }
     }
 
+    /**
+     * Canonical client-side acceptance rule for a control-plane write.
+     * Submission/tx hash alone never transitions local state to success.
+     */
+    public static final class MutationVerificationState {
+        private boolean committed;
+        private String lastReason;
+        private long committedVersion;
+
+        public boolean verify(
+                boolean finalityProofValid,
+                boolean executionSucceeded,
+                boolean resultingStateProofValid,
+                boolean exactTransitionMatched,
+                long resultingVersion) {
+            if (!finalityProofValid) return reject("CONTROL_PLANE_PROOF_INVALID");
+            if (!executionSucceeded) return reject("CONTROL_PLANE_EXECUTION_FAILED");
+            if (!resultingStateProofValid) return reject("CONTROL_PLANE_PROOF_INVALID");
+            if (!exactTransitionMatched) return reject("CONTROL_PLANE_STATE_MISMATCH");
+            if (resultingVersion < committedVersion) return reject("CONTROL_PLANE_ROLLBACK");
+            committed = true;
+            committedVersion = resultingVersion;
+            lastReason = null;
+            return true;
+        }
+
+        private boolean reject(String reason) {
+            committed = false;
+            lastReason = reason;
+            return false;
+        }
+
+        public boolean committed() { return committed; }
+        public String lastReason() { return lastReason; }
+        public long committedVersion() { return committedVersion; }
+    }
+
     public static final class RekeyState {
         public enum Phase { STABLE, INIT_SENT, NEW_KEY_PENDING_ACK }
 
@@ -214,6 +251,7 @@ public final class FreedomCore {
         public final RouteState route = new RouteState();
         public final PairwiseRecoveryState recovery = new PairwiseRecoveryState();
         public final BootstrapFreshnessState controlPlane = new BootstrapFreshnessState();
+        public final MutationVerificationState mutation = new MutationVerificationState();
         public final RekeyState rekey = new RekeyState();
     }
 
