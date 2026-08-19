@@ -1,10 +1,11 @@
 # Freedom — App Distribution / Share Freedom
 
-Status: **canonical design draft**
+Status: **canonical design draft**.
 
 Normative security rules: [`SECURITY_INVARIANTS.md`](SECURITY_INVARIANTS.md).
-Release/security governance: [`EMERGENCY_UPDATES.md`](EMERGENCY_UPDATES.md).
+Release governance: [`EMERGENCY_UPDATES.md`](EMERGENCY_UPDATES.md).
 Control-plane verification: [`CONTROL_PLANE_SECURITY.md`](CONTROL_PLANE_SECURITY.md).
+Canonical schema: [`../spec/freedom.cddl`](../spec/freedom.cddl).
 
 ## 1. Principio
 
@@ -14,65 +15,95 @@ download capability      != release signature
 filename / URL           != authenticity
 RPC response             != verified security state
 first-install bootstrap  != peer trust
+old valid checkpoint     != necessarily current checkpoint
 ```
 
-L'obiettivo è impedire a un verifier conforme di confondere byte falsi/stale con una release Freedom autorizzata corrente.
-
 ## 2. Artifact esterno
-
-Il client non incorpora di default un secondo APK completo.
 
 ```text
 Alice genuine Freedom
  -> Share Freedom / Install QR
  -> Bob bootstrap verifier
- -> artifact from peer/relay/mirror/store
+ -> bytes from peer/relay/mirror/store
  -> verify
  -> Android installer
 ```
 
-## 3. Filename / locator
+Source dei byte è non fidata.
 
-```text
-freedom-r42-<opaque-locator>.apk
-```
+## 3. Schema canonico
 
-Locator/filename può aiutare discovery ma non è trust.
+Object shapes per `FreedomInstallDescriptor`, `FreedomRelease`, `ReleaseStatus`, `BootstrapTrustAnchor` e `BootstrapFreshnessFloor` devono essere allineati a `spec/freedom.cddl`; quando un oggetto non è ancora presente nel CDDL non è congelato per interoperabilità.
 
 ## 4. PeerTransferCapability
 
-```text
-PeerTransferCapability {
-    transfer_nonce
-    release_id
-    artifact_sha256
-    source_endpoint
-    expires_at
-    max_downloads?
-}
-```
+Una capability temporanea autorizza download di byte specifici, non release authority. Deve essere TTL/download/bandwidth bounded.
 
-Capability autorizza trasferimento, non release.
+## 5. Verifica pre-install
 
-## 5. Install descriptor
+Verifier MUST:
 
 ```text
-FreedomInstallDescriptor {
-    version
-    channel
-    package_id
-    release_id
-    release_locator_hash
-    release_manifest_hash
-    source_hints[]
-    peer_transfer_capability?
-    expires_at
-}
+1. compute exact artifact SHA-256
+2. resolve canonical FreedomRelease
+3. verify signer-set epoch/transition
+4. verify threshold release signatures
+5. verify ReleaseStatus as control-plane proof
+6. reject status/policy/signer rollback
+7. verify package/version/size/hash
+8. verify Android signer/authorized lineage
+9. verify SecurityPolicy as control-plane proof
+10. enforce BootstrapFreshnessFloor
+11. verify BootstrapTrustAnchor on first sideload
+12. invoke installer
 ```
 
-Non può ridefinire signer root, Android signer anchor o control-plane anchor.
+Mismatch -> fail closed.
 
-## 6. Decentralized Release Network
+## 6. Fresh-install freeze resistance
+
+Un device nuovo non ha `highest_seen`. Il verifier incorpora un floor minimo di checkpoint/signer/policy.
+
+Un attacker che controlla RPC/peer non può far scendere il client sotto quel floor.
+
+Ma se **anche il verifier autentico è molto vecchio**, ottenuto soltanto da un canale attacker-controlled, nessun protocollo può dedurre da solo l'esistenza di stato più recente. L'utente deve ottenere il verifier/anchor da almeno un canale indipendente abbastanza recente per l'assurance desiderata.
+
+## 7. First install
+
+`BootstrapTrustAnchor` include package ID, release signer root, Android signing anchor, accepted control-plane anchor e bootstrap freshness floor.
+
+QR/peer/mirror non può modificarli.
+
+## 8. Anti-rollback locale
+
+Persistire:
+
+```text
+highest_verified_checkpoint
+highest_signer_set_epoch
+highest_policy_epoch
+highest_release_status_epoch
+accepted_contract_lineage
+```
+
+Vecchio stato validamente firmato non retrocede stato già osservato.
+
+## 9. Android signing
+
+Barriere indipendenti:
+
+```text
+threshold FreedomRelease
++ exact hash
++ Android signer/lineage
++ verified ReleaseStatus
++ verified SecurityPolicy
++ bootstrap trust/freshness
+```
+
+## 10. Decentralized Release Network
+
+Sorgenti:
 
 ```text
 PEER_LOCAL
@@ -85,193 +116,36 @@ STORE
 future transport
 ```
 
-```text
-artifact key = SHA-256(APK bytes)
-manifest key = SHA-256(canonical FreedomRelease)
-```
+Content addressing usa exact artifact hash e canonical release manifest hash.
 
-## 7. FreedomRelease canonico
+## 11. Offline / degraded
 
-```text
-FreedomRelease {
-    manifest_version
-    release_id
-    version_code
-    version_name
-    package_id
-    artifact_sha256
-    artifact_size
-    signing_cert_fingerprint
-    signing_lineage_commitment?
-    min_supported_version
-    min_secure_version
-    criticality
-    release_locator_hash
-    issued_at
-    signer_set_epoch
-    signatures[]
-}
-```
+Cache verificata può essere usata entro policy. Release security-sensitive con state troppo stale fallisce esplicitamente o richiede refresh.
 
-Un solo schema.
-
-## 8. ReleaseStatus
-
-```text
-ReleaseStatus {
-    release_id
-    artifact_sha256
-    status
-    status_epoch
-    min_secure_version
-    policy_epoch
-    reason_hash?
-    remediation_release?
-    issued_at
-    signer_set_epoch
-    signatures[]
-}
-```
-
-`ACTIVE / DEPRECATED / REVOKED`.
-
-Nessuna write per installazione.
-
-## 9. Verifica pre-install
-
-Verifier **MUST**:
-
-```text
-1. compute exact artifact SHA-256
-2. obtain canonical FreedomRelease
-3. verify current signer-set transition/epoch
-4. verify threshold release signatures
-5. obtain ReleaseStatus as verified control-plane state proof
-6. reject rollback below highest-seen status/policy/signer epochs
-7. verify ReleaseStatus != REVOKED
-8. verify package_id/version/size/hash
-9. verify Android signer / authorized lineage
-10. obtain SecurityPolicy as verified state proof
-11. verify current-enough policy + anti-downgrade
-12. verify BootstrapTrustAnchor on first sideload
-13. invoke installer
-```
-
-Mismatch -> fail closed.
-
-## 10. Control-plane proof
-
-`ReleaseStatus`, `SecurityPolicy`, `SignerSet` e transition non diventano `VERIFIED` perché restituiti da un RPC.
-
-```text
-VerifiedControlPlaneCheckpoint
-+ inclusion/non-inclusion proof
-+ canonical object
-```
-
-sono richiesti nel modello production.
-
-## 11. Anti-rollback local state
-
-Verifier conserva:
-
-```text
-highest_verified_checkpoint
-highest_signer_set_epoch
-highest_policy_epoch
-highest_release_status_epoch
-accepted_contract_lineage
-```
-
-Una release/policy/status vecchia ma validamente firmata non può retrocedere stato già osservato.
-
-## 12. Android signing
-
-Barriere indipendenti:
-
-```text
-threshold FreedomRelease
-+ exact hash
-+ Android signer/lineage
-+ verified ReleaseStatus
-+ verified SecurityPolicy
-```
-
-## 13. First install
-
-```text
-BootstrapTrustAnchor {
-    verifier_policy_version
-    expected_package_id
-    release_signer_set_root_commitment
-    governance_recovery_set_commitment?
-    android_signing_root_or_lineage_anchor
-    minimum_manifest_version
-    accepted_contract_or_controlplane_anchor
-}
-```
-
-Source/QR/mirror non può modificarlo.
-
-Un device vergine non può derivare la vera root se tutto gli arriva da un singolo attacker: l'anchor indipendente è inevitabile.
-
-## 14. Offline / degraded
-
-Cache verificata conserva signer/status/policy + checkpoint/epoch.
-
-Se freshness è troppo vecchia per una release sensibile, verifier richiede stato più recente o fallisce esplicitamente.
-
-Wall clock locale non è unico time authority; usare verified height/time anchor.
-
-## 15. Peer-local transfer
-
-Endpoint temporaneo, read-only, capability-protected, bounded per tempo/download/banda.
-
-Source compromise causa availability failure, non valid release creation.
-
-## 16. Verified mutation
-
-Pubblicare manifest/status/policy/transition:
-
-```text
-submit
- -> finality proof
- -> execution success
- -> resulting state proof
- -> exact expected hash/epoch
- -> accepted
-```
-
-Tx hash != success.
-
-## 17. Threats
+## 12. Threats
 
 Resistere a:
 
 - modified bytes;
 - old release replay;
-- signer-set rollback;
-- policy/status rollback;
-- locator copying;
-- source poisoning;
-- single signer compromise;
+- fresh-install old-checkpoint freeze rispetto al floor;
+- signer/policy/status rollback;
 - malicious/stale/forked RPC;
-- malicious first-install peer;
+- source poisoning;
+- first-install malicious peer;
 - revocation withholding;
-- silent contract/control-plane anchor substitution.
+- silent contract/control-plane substitution.
 
-## 18. Invarianti
+## 13. Invarianti
 
 - APK off-chain;
-- source/filename/locator non è trust;
-- release private key mai nel client;
-- canonical release schema;
-- threshold release/revocation governance;
-- anti-rollback signer/policy/status state;
-- control-plane security objects proof-verified;
-- first install con pinned independent anchor;
-- Android signer separate verification;
-- exact hash;
-- no per-install chain write;
+- no per-install write;
+- source/filename/locator not trust;
+- release private key never client-side;
+- canonical schema source in `spec/`;
+- threshold governance;
+- fresh-install floor;
+- independent first-install anchor;
+- Android signer separately verified;
 - tx hash != success;
 - fail closed.
