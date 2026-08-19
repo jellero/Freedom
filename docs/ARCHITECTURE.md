@@ -2,109 +2,158 @@
 
 ## 1. Definizione
 
-Freedom è un protocollo decentralizzato di comunicazione sincrona. L'architettura separa sei responsabilità:
+Freedom è un protocollo decentralizzato di comunicazione sincrona. L'architettura separa sette responsabilità:
 
-1. **identity** — chi è il device;
-2. **verifiable registry** — come viene risolta e aggiornata l'identità;
-3. **rendezvous** — come due device online si ritrovano quando non hanno più un percorso valido;
-4. **routing/transport** — come i pacchetti attraversano la rete;
-5. **secure session** — come gli endpoint si autenticano e derivano chiavi;
-6. **application** — messaggi, file, audio e video.
+1. **ownership identity** — chi possiede e recupera l'identità Freedom;
+2. **device authorization** — quali DeviceKey sono attualmente autorizzate;
+3. **verifiable control-plane** — come vengono verificati rotation/revocation, entitlement, recovery e policy;
+4. **pairwise rendezvous** — come due contatti online si ritrovano quando non hanno più un percorso valido;
+5. **routing/transport** — come i pacchetti attraversano la rete;
+6. **secure session** — come gli endpoint si autenticano e derivano chiavi;
+7. **application** — messaggi, file, audio e video.
 
-La prima implementazione del registro usa una blockchain, ma il traffico applicativo rimane sempre off-chain.
+La prima implementazione del control-plane usa una blockchain, ma il traffico applicativo rimane sempre off-chain.
 
-## 2. Componenti
+## 2. Vista d'insieme
 
 ```text
-                    +----------------------+
-                    | Verifiable Registry  |
-                    | Device Registry      |
-                    | Fallback Rendezvous  |
-                    +----------+-----------+
-                               |
-                      verify / rendezvous
-                               |
-      +------------------------+------------------------+
-      |                                                 |
-+-----v------+                                    +-----v------+
-| Device A   |                                    | Device B   |
-| Freedom    |                                    | Freedom    |
-+-----+------+                                    +-----+------+
-      |                                                 |
-      | direct / NAT / relay / shielded path           |
-      +================ E2EE ===========================+
-                               |
-                     optional relay nodes
-            VPS / server / VM / community / device
+                  DISTRIBUTED / VERIFIABLE CONTROL PLANE
+      +---------------------------------------------------------+
+      | Root identity / device authorization                    |
+      | key rotation / revocation                               |
+      | pairwise rendezvous / recovery                          |
+      | entitlement / sponsorship                               |
+      | emergency / security / release manifests                |
+      +----------------------------+----------------------------+
+                                   |
+                           only when needed
+                                   |
+
++---------------------+                               +---------------------+
+| Alice               |                               | Bob                 |
+| RootIdentity        |                               | RootIdentity        |
+| DeviceKey           |                               | DeviceKey           |
+| device commitment   |                               | device commitment   |
++----------+----------+                               +----------+----------+
+           |                                                     |
+           +----------- pairwise authenticated state ------------+
+                                   |
+                              route selector
+                                   |
+            +----------------------+----------------------+
+            |                      |                      |
+         DIRECT                  RELAY                 SHIELDED
+                              /         \
+                         VPS/server   device/community
+                                   |
+                       authenticated E2EE live session
+                                   |
+                          text / file / voice / video
 ```
 
-Il registro è fondamentale come **funzione distribuita e verificabile** del trust model attuale. NEAR è soltanto la prima implementazione tramite `ChainAdapter` e deve essere sostituibile.
+Il registro/control-plane è fondamentale come **funzione distribuita e verificabile** del trust model attuale. NEAR è soltanto la prima implementazione tramite `ChainAdapter` e deve essere sostituibile.
 
 ## 3. Identity plane
 
-Ogni installazione possiede un `DeviceID` stabile e una identity key custodita localmente.
+Freedom non usa un `DeviceID` globale come identità pubblica o identificatore di trasporto.
+
+```text
+RootIdentity             -> ownership / recovery / entitlement
+DeviceKey                -> chiave operativa del device
+DeviceRecordCommitment   -> handle opaco del control-plane
+PairwiseContactAlias     -> alias specifico della relazione
+TransportToken           -> token temporaneo di route/circuito
+Session keys             -> materiale effimero E2EE
+```
+
+Il `DeviceRecordCommitment` serve per lookup, key rotation e revocation ma non è username, contact ID o indirizzo di rete.
+
+Dettagli: [`IDENTITY_MODEL.md`](IDENTITY_MODEL.md).
+
+## 4. Device authorization
+
+Ogni device genera localmente una DeviceKey e un commitment opaco.
 
 ```text
 DeviceRecord {
     version
-    device_id
-    identity_public_key
+    device_record_commitment
+    device_public_key
     key_epoch
     status
-    updated_at
+    protocol_version
+    authorization_proof
 }
 ```
 
-La private key non viene pubblicata né trasferita.
-
-Il `DeviceID` non deriva direttamente dalla current public key, perché la chiave deve poter ruotare senza cambiare identità.
-
-Gli stati minimi previsti sono:
+La RootIdentity autorizza l'attivazione:
 
 ```text
-ACTIVE
-REVOKED
+ActivateDevice {
+    root_commitment
+    device_record_commitment
+    device_public_key
+    entitlement_epoch
+    nonce
+    root_signature
+}
 ```
 
-Una rotazione incrementa `key_epoch`. Un client deve rifiutare prove firmate con un epoch revocato o superato quando il registro indica una chiave più recente.
+Gli stati minimi sono `ACTIVE` e `REVOKED`.
 
-Il `DeviceID` è un'identità protocollare, non deve essere trattato come indirizzo di rete né esposto inutilmente ai trasporti.
+Una rotazione incrementa `key_epoch`. Il commitment tecnico può restare stabile durante la rotazione, ma non viene esposto come global network identity.
 
-## 4. Contact bootstrap
+## 5. Contact bootstrap
+
+La rubrica rappresenta persone/RootIdentity, non singoli telefoni.
+
+```text
+Bob / RootIdentity
+  |- Phone
+  |- Tablet
+  `- Desktop
+```
 
 Il contatto viene scambiato intenzionalmente tramite QR, link, NFC o altro canale esterno.
 
 ```text
 FreedomContact {
     version
-    network
-    device_id
-    rendezvous_capability
+    network_id
+    root_identity_proof
+    contact_capability
+    bootstrap_device_certificate?
+    bootstrap_route_hints[]?
     expires_at?
 }
 ```
 
-La `rendezvous_capability` è un valore casuale ad alta entropia. Può essere one-shot oppure temporanea.
+La `contact_capability` è casuale ad alta entropia e può essere one-shot o temporanea.
 
-Serve al primo contatto per creare un rendezvous opaco senza dover pubblicare una relazione leggibile `sender_device_id -> recipient_device_id`.
+Il bootstrap non pubblica una relazione leggibile tra identità, device e route.
 
-## 5. Pair rendezvous secret
+## 6. Pairwise identity / rendezvous secret
 
-Dopo il primo handshake autenticato, i due endpoint derivano e persistono localmente:
+Dopo il primo handshake autenticato, i due contatti derivano e persistono localmente:
 
 ```text
+PairSecret_AB
+PairwiseContactAlias_AB
 PairRendezvousSecret_AB
 ```
 
-Da questo vengono derivati slot opachi e rotanti. Il secret non viene pubblicato.
+Gli alias sono specifici della relazione:
 
-Gli slot sono direzionali, così A e B possono pubblicare offerte indipendenti senza collisione.
+```text
+Alice <-> Bob     alias X
+Alice <-> Carol   alias Y
+```
 
-## 6. Rendezvous rule
+Da `PairRendezvousSecret` vengono derivati slot opachi e rotanti. Il secret non viene pubblicato.
 
-Il registro non è una tabella di routing continuamente aggiornata.
+## 7. Rendezvous rule
 
-Viene usato solo quando non esiste più alcun percorso Freedom valido tra due endpoint che devono comunicare.
+Il control-plane non è una tabella di routing continuamente aggiornata.
 
 Per A che vuole ritrovare B:
 
@@ -121,9 +170,7 @@ Per A che vuole ritrovare B:
 
 La regola è **read-before-write**.
 
-## 7. Rendezvous record
-
-Ogni rendezvous è autosufficiente e non richiede uno storico di revisioni precedenti.
+## 8. Rendezvous record
 
 ```text
 RendezvousRecord {
@@ -133,11 +180,12 @@ RendezvousRecord {
 }
 ```
 
-Il payload cifrato può contenere:
+Payload cifrato:
 
 ```text
 RendezvousPayload {
-    sender_device_id
+    sender_pairwise_alias
+    sender_device_proof
     sender_key_epoch
     rendezvous_nonce
     route_candidates[]
@@ -146,11 +194,9 @@ RendezvousPayload {
 }
 ```
 
-Il record ha TTL breve. Freshness e validità dipendono dallo slot atteso, dallo stato verificato del registro, da `expires_at`, dal nonce e dall'autenticazione del payload; non esiste una `sequence` storica del rendezvous.
+Il record pubblico non espone una relazione leggibile RootIdentity/device/route. Ha TTL breve e non richiede uno storico di revisioni.
 
-## 8. Route candidates
-
-Un indirizzo IP da solo non rappresenta un'identità né un percorso completo.
+## 9. Route candidates
 
 ```text
 RouteCandidate {
@@ -163,13 +209,11 @@ RouteCandidate {
 }
 ```
 
-`endpoint` può includere IP e porta; `candidate_type` può distinguere local, observed, direct, relay o tipi futuri.
+Un IP non rappresenta un'identità Freedom. `candidate_type` può distinguere local, observed, direct, relay o tipi futuri.
 
-Freedom deve monitorare la raggiungibilità del percorso, non soltanto il cambio IP.
+## 10. Route maintenance
 
-## 9. Route maintenance
-
-Dopo che A e B hanno una sessione valida, gli aggiornamenti di rete passano dentro la sessione E2EE.
+Dopo che A e B hanno una sessione valida, gli aggiornamenti di rete passano dentro la sessione E2EE:
 
 ```text
 RouteUpdate {
@@ -180,13 +224,9 @@ RouteUpdate {
 }
 ```
 
-Non viene effettuata alcuna scrittura blockchain per un semplice cambio IP/porta se esiste ancora almeno un percorso attraverso cui gli endpoint possono scambiarsi l'aggiornamento.
+Non viene effettuata alcuna write blockchain per un semplice cambio IP/porta se esiste ancora almeno un percorso valido.
 
-Il registro torna in gioco solo dopo la perdita di tutti i percorsi conosciuti.
-
-## 10. Path selection e privacy
-
-La selezione del path è locale e dipende dalla policy dell'utente/client.
+## 11. Path selection e privacy
 
 Possibili classi:
 
@@ -195,16 +235,17 @@ DIRECT
 NAT_TRAVERSAL
 RELAY
 SHIELDED / MULTI-HOP
+future / obfuscated transport
 ```
 
-Il direct path è efficiente ma espone gli endpoint di rete ai peer. Per questo non deve essere obbligatorio: un client deve poter preferire relay o percorsi schermati quando la privacy di rete è prioritaria.
+Il direct path è efficiente ma espone gli endpoint di rete ai peer. Non deve essere obbligatorio.
 
 Il path selector può usare:
 
 - policy privacy;
 - RTT;
 - stabilità recente;
-- costo del relay;
+- costo/capacità del relay;
 - disponibilità del trasporto;
 - durata prevista del mapping;
 - rischio di censura/blocco;
@@ -212,9 +253,22 @@ Il path selector può usare:
 
 Nessuna autorità centrale decide il percorso.
 
-## 11. Path diversity e censorship resistance
+## 12. Transport identity
 
-Freedom mira a evitare single points of control.
+Routing e identità restano separati.
+
+Il network layer usa capability temporanee:
+
+```text
+TransportToken
+RelayCircuitToken
+NextHopToken
+RouteCapability
+```
+
+Un relay non dovrebbe ricevere RootIdentity o DeviceRecordCommitment quando gli basta un token di circuito.
+
+## 13. Path diversity e censorship resistance
 
 ```text
 direct blocked      -> altro route
@@ -230,11 +284,9 @@ Un IP, dominio o endpoint specifico non deve essere requisito permanente del pro
 
 Freedom non può garantire disponibilità se il dispositivo perde ogni forma di connettività, né anonimato assoluto contro un avversario globale capace di osservare l'intera rete.
 
-### 11.1 Adaptive recovery control-plane
+## 14. Adaptive recovery control-plane
 
-Il registro/rendezvous può essere usato come **control-plane di emergenza** quando il data-plane non passa.
-
-Freedom non pubblica una presenza globale continua. Dopo la perdita completa del path, A e B possono pubblicare negli slot pairwise opachi un `RecoveryBeacon` cifrato e a TTL breve:
+Dopo la perdita completa del path, A e B possono pubblicare negli slot pairwise opachi un `RecoveryBeacon` cifrato e a TTL breve:
 
 ```text
 RecoveryBeacon {
@@ -250,35 +302,33 @@ RecoveryBeacon {
 
 Un beacon valido prova attività recente, non presenza assoluta in tempo reale.
 
-Se:
-
 ```text
 A control-plane reachable        yes
 B beacon recent                  yes
 current A<->B data path          fail
+        |
+        v
+INTERFERENCE_OR_ROUTE_FAILURE_SUSPECTED
+        |
+        v
+alternate route / relay / transport
 ```
-
-A può classificare il caso come `INTERFERENCE_OR_ROUTE_FAILURE_SUSPECTED` e attivare route/relay/transport alternativi. B applica la stessa logica.
-
-Il recovery può anche coordinare candidate alternativi attraverso il payload cifrato del rendezvous.
 
 Vincoli:
 
-- nessun heartbeat on-chain continuo durante una sessione valida;
+- niente heartbeat on-chain continui;
 - slot pairwise opachi e rotanti;
 - payload cifrato;
 - TTL breve;
-- backoff e rate limit;
-- stop delle write appena una sessione viene ristabilita;
-- nessun claim che il sistema abbia rilevato sorveglianza passiva.
+- backoff/rate limit;
+- stop delle write appena la sessione è ristabilita;
+- nessun claim di rilevamento della sorveglianza passiva.
 
 Dettagli: [`ADAPTIVE_DEFENSE.md`](ADAPTIVE_DEFENSE.md).
 
-## 12. Relay architecture
+## 15. Relay architecture
 
-Un relay Freedom è **una macchina o un dispositivo che esegue software di forwarding Freedom**.
-
-Può essere fisicamente:
+Un relay Freedom è una macchina o un dispositivo che esegue software di forwarding.
 
 ```text
 VPS / VM
@@ -290,14 +340,14 @@ private organization node
 telefono / tablet / desktop Freedom opt-in
 ```
 
-Un normale dispositivo Freedom può quindi svolgere due ruoli contemporanei ma logicamente separati:
+Un normale dispositivo Freedom può svolgere due ruoli separati:
 
 ```text
 ENDPOINT  -> sessioni del proprio utente
 RELAY     -> inoltro ciphertext di altri circuiti
 ```
 
-Il ruolo relay non concede accesso alle chiavi E2EE delle sessioni inoltrate.
+Il ruolo relay non concede accesso alle chiavi E2EE.
 
 ```text
 RelayCandidate {
@@ -313,7 +363,7 @@ RelayCandidate {
 
 Classi iniziali: `DEDICATED`, `COMMUNITY`, `DEVICE`, `PRIVATE`, `MANAGED`.
 
-Un `DEVICE` relay non richiede necessariamente una porta pubblica permanente. Può essere utile tramite NAT mapping, trasporti compatibili o connessioni outbound/circuiti già stabiliti.
+Un `DEVICE` relay non richiede necessariamente una porta pubblica permanente. Può essere utile tramite NAT mapping, transport compatibili o connessioni outbound/circuiti già stabiliti.
 
 ```text
 RelayPacket {
@@ -328,36 +378,27 @@ RelayPacket {
 
 Requisiti:
 
-- il payload applicativo resta E2EE;
+- payload applicativo E2EE;
 - niente mailbox persistenti;
-- niente storage indefinito;
-- buffer limitati;
-- TTL breve;
+- buffer/TTL bounded;
 - quote per peer/connessione;
 - possibilità di interrompere il servizio localmente;
-- nessuna fiducia necessaria per l'autenticità del contenuto;
-- `DEVICE_RELAY` opt-in e bounded da policy batteria/rete/CPU/RAM/banda.
-
-Un relay può osservare metadati necessari al forwarding e può droppare o ritardare pacchetti. Per questo non viene trattato come componente fidato.
-
-### 12.1 Relay Contributor
-
-Policy iniziale Free:
-
-```text
-Free                    10 contatti attivi
-Free + Relay Contributor 20 contatti attivi
-```
-
-Il bonus di +10 contatti è temporaneo e richiede contributo relay utile secondo policy verificabile; il semplice toggle non è sufficiente.
-
-La prova deve essere privacy-preserving e non pubblicare peer serviti, social graph o contenuto inoltrato. La scadenza del bonus non cancella automaticamente i contatti sopra quota; impedisce nuove aggiunte finché la quota effettiva non torna sufficiente.
+- nessuna fiducia necessaria per autenticità del contenuto;
+- `DEVICE_RELAY` opt-in e bounded da policy batteria/rete/CPU/RAM/banda;
+- nessun arbitrary Internet proxy nel protocollo relay base.
 
 Dettagli: [`RELAYS.md`](RELAYS.md).
 
-## 13. Synchronous delivery
+## 16. Relay Contributor
 
-Freedom è sincrono by design.
+```text
+Free                     10 contatti attivi
+Free + Relay Contributor 20 contatti attivi
+```
+
+Il bonus di +10 è temporaneo e richiede contributo relay utile. La prova deve essere privacy-preserving e non pubblicare peer serviti, social graph o contenuto inoltrato.
+
+## 17. Synchronous delivery
 
 ```text
 active authenticated session?
@@ -365,69 +406,62 @@ active authenticated session?
   no  -> discard / fail locally
 ```
 
-Il protocollo base non crea una mailbox locale di consegna futura e non replica automaticamente messaggi su blockchain o relay.
+Il protocollo base non crea mailbox di consegna futura e non replica automaticamente messaggi su blockchain o relay.
 
-Un messaggio perso perché la sessione cade durante l'invio non viene trasformato implicitamente in un messaggio asincrono.
+## 18. Live / ephemeral client mode
 
-## 14. Live / ephemeral client mode
+Un client può offrire una modalità Live che evita persistenza locale della cronologia, backup/preview plaintext e distrugge session state/key al termine.
 
-Un client può offrire una modalità Live in cui:
+Questa proprietà riguarda il client locale e non può impedire al peer remoto o a un dispositivo compromesso di conservare ciò che ha ricevuto.
 
-- i messaggi non entrano nella cronologia persistente;
-- i contenuti non vengono inclusi nei backup automatici;
-- uscita dalla chat/chiusura app/termine sessione elimina lo stato locale previsto dalla policy;
-- le chiavi effimere di sessione vengono distrutte al termine;
-- notifiche e preview non devono introdurre copie persistenti del plaintext.
+## 19. Secure session
 
-Questa proprietà non può impedire a un peer remoto o a un dispositivo compromesso di conservare autonomamente ciò che ha ricevuto.
+Trovare un endpoint non significa aver autenticato il peer.
 
-## 15. Secure session
+L'handshake verifica:
 
-Trovare un endpoint non significa aver autenticato il device.
+1. RootIdentity/contact identity attesa;
+2. autorizzazione della DeviceKey corrente;
+3. possesso della DeviceKey;
+4. transcript effimero della sessione.
 
-A risolve il `DeviceRecord` di B tramite `ChainAdapter` e ottiene la public key attesa. B fa lo stesso con A.
-
-L'handshake deve dimostrare bilateralmente il possesso delle private key e legare:
+Il transcript deve legare almeno:
 
 ```text
 protocol_version
 network_id
-A_device_id
-B_device_id
-A_key_epoch
-B_key_epoch
-A_ephemeral_key
-B_ephemeral_key
-A_nonce
-B_nonce
+pairwise aliases
+current device authorization proofs
+key epochs
+ephemeral keys
+nonces
 negotiated_suite
 session_id
 ```
 
-Una modifica di uno di questi campi deve invalidare il transcript.
+Una modifica deve invalidare il transcript.
 
-## 16. Session lifecycle
+## 20. Session lifecycle
 
 Ogni nuova connessione genera materiale effimero nuovo.
 
-La specifica deve mantenere separati almeno:
+Separare almeno:
 
 - messaging/session keys;
 - route control keys;
-- media keys per chiamate.
+- media keys.
 
-La rotazione interna delle chiavi deve poter avvenire senza blockchain finché l'identity key del registro non cambia.
+La rotazione interna delle session keys non richiede blockchain.
 
-## 17. Chain adapter
-
-Il core non chiama direttamente API NEAR.
+## 21. Chain adapter
 
 ```text
 interface ChainAdapter {
-    registerDevice(...)
-    resolveDevice(...)
+    registerRoot(...)
+    registerDeviceRecord(...)
+    resolveDeviceRecord(...)
     rotateDeviceKey(...)
-    revokeDevice(...)
+    revokeDeviceRecord(...)
     readRendezvous(...)
     writeRendezvous(...)
     verifyState(...)
@@ -436,33 +470,25 @@ interface ChainAdapter {
 
 La prima implementazione è `NearChainAdapter` su NEAR Testnet.
 
-La funzione di registro/rendezvous è parte del trust model; l'implementazione concreta deve poter cambiare.
-
-## 18. Gas e fee relayer
-
-Le operazioni on-chain rare possono essere sponsorizzate da fee relayer indipendenti.
+## 22. Gas e fee relayer
 
 Un fee relayer:
 
 - paga il gas;
-- non possiede la identity key del device;
-- non può firmare come DeviceID;
+- non possiede RootIdentity o DeviceKey;
+- non può firmare come endpoint;
 - non deve essere unico o obbligatorio;
 - può essere sostituito senza cambiare identità o wire protocol.
 
-La private key di un fee relayer non deve mai essere incorporata nel client distribuito.
+Recovery beacon e coordinamento anti-failure possono produrre write solo quando il data-plane è perso o una policy di resilienza le richiede.
 
-Recovery beacon e coordinamento anti-failure possono produrre write aggiuntive solo quando il data-plane è perso o una policy di resilienza le richiede; non devono diventare heartbeat continui.
+## 23. Bootstrap della rete
 
-## 19. Bootstrap della rete
+Un client può usare più fonti iniziali per trovare peer, relay o RPC, ma nessuna di esse autentica l'identità.
 
-Freedom distingue bootstrap dalla fiducia.
+L'autenticità deriva dalle firme, dall'identità pairwise attesa e dallo stato verificabile del control-plane.
 
-Un client può usare più fonti iniziali per trovare peer, relay o RPC, ma nessuna di esse autentica un DeviceID. L'autenticità deriva dal registro verificato e dalle firme.
-
-Le fonti bootstrap devono essere multiple e sostituibili.
-
-## 20. Applicazione
+## 24. Applicazione
 
 Sopra la sessione sicura vivono:
 
@@ -479,30 +505,44 @@ session control
 
 Il registro distribuito non è nel packet hot path.
 
-## 21. Monetizzazione e indipendenza
+I frame applicativi evitano identificatori globali stabili quando il session context basta a identificare il mittente/destinatario.
 
-I servizi commerciali ufficiali possono offrire capacità relay gestita, percorsi privacy, Freedom Shield/Maximum Resilience, funzionalità Plus, SDK, deployment e supporto Business.
+## 25. Monetizzazione e indipendenza
 
-I device/community relay possono contribuire capacità best-effort alla rete; un utente Free qualificato come Relay Contributor riceve +10 slot contatto senza diventare Pro.
+I servizi commerciali possono offrire capacità relay gestita, Shield/Maximum Resilience, SDK, deployment e supporto Business.
 
-Questi servizi e incentivi non devono diventare requisiti del protocollo. Un client compatibile deve poter continuare a stabilire e recuperare sessioni Freedom anche se l'infrastruttura commerciale ufficiale non è disponibile, quando esiste un percorso compatibile.
+I device/community relay possono contribuire capacità best-effort; un Free qualificato come Relay Contributor riceve +10 slot contatto.
 
-Vedi [`MONETIZATION.md`](MONETIZATION.md) e [`RELAYS.md`](RELAYS.md).
+Questi servizi non devono diventare requisiti del protocollo.
 
-## 22. Proprietà architetturali
+## 26. Share Freedom / distribution
+
+La distribuzione dell'app è separata dalla comunicazione applicativa.
+
+```text
+peer / relay / mirror / store
+        -> artifact bytes
+        -> verify FreedomRelease/hash/signer
+        -> install via platform
+```
+
+La sorgente dei byte non è un trust anchor. Dettagli: [`APP_DISTRIBUTION.md`](APP_DISTRIBUTION.md).
+
+## 27. Proprietà architetturali
 
 Freedom mira a mantenere queste invarianti:
 
-- identità indipendente dal percorso;
-- nessun IP come identità stabile;
-- percorso indipendente dalla sessione applicativa;
+- RootIdentity indipendente dal percorso;
+- nessun `DeviceID` globale necessario al network layer;
+- DeviceRecordCommitment opaco e solo control-plane;
+- contatto logico = persona/RootIdentity, non singolo device;
+- alias pairwise tra contatti;
+- token di trasporto temporanei;
 - sessione autenticata indipendentemente dal relay;
 - comunicazione sincrona senza mailbox di rete;
-- registro distribuito non necessario per ogni pacchetto o ogni cambio route;
+- registro distribuito non necessario per ogni pacchetto o cambio route;
 - relay incapace di leggere il contenuto;
-- relay eseguibile anche da dispositivi Freedom senza ottenere autorità sull'identità;
 - direct path non obbligatorio;
-- componenti di bootstrap, RPC, relay e fee relayer sostituibili;
-- recovery beacon pairwise e temporanei, non presenza globale continua;
-- reward relay privacy-preserving e non farmabile tramite semplice toggle;
-- scritture on-chain proporzionali agli eventi di identità e ai casi di perdita completa del route/recovery, non al volume della comunicazione.
+- bootstrap, RPC, relay e fee relayer sostituibili;
+- recovery beacon pairwise/temporanei;
+- scritture on-chain proporzionali a identity/control events e recovery, non al volume della comunicazione.
