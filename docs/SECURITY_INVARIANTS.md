@@ -5,9 +5,11 @@ Status: **canonical / normative design rules**.
 Queste proprietà sono MUST/MUST NOT per una implementazione Freedom compatibile.
 
 Canonical schema: [`../spec/freedom.cddl`](../spec/freedom.cddl).
+Canonical cryptographic domains: [`../spec/crypto-domains.txt`](../spec/crypto-domains.txt).
 Canonical encoding/signing: [`../spec/README.md`](../spec/README.md).
 Control-plane: [`CONTROL_PLANE_SECURITY.md`](CONTROL_PLANE_SECURITY.md).
 Revocation/freshness: [`REVOCATION.md`](REVOCATION.md).
+Pairwise recovery: [`PAIRWISE_RECOVERY.md`](PAIRWISE_RECOVERY.md).
 
 ## 1. Trust separation
 
@@ -23,6 +25,7 @@ DeviceRecordCommitment          -> opaque device-state handle
 DeviceControlKey                -> scoped device-record rotation/revocation
 PairwiseContactAlias            -> relationship identity
 PairRendezvousSecret            -> pairwise rendezvous authority
+RecoveryStateKey                -> encrypted pairwise-backup authority
 TransportToken                  -> temporary route/circuit identity
 Session keys                    -> ephemeral E2EE
 VerifiedControlPlaneCheckpoint  -> verified control-plane state root
@@ -51,7 +54,8 @@ Freedom Protocol MUST NOT introdurre:
 - `RPC not found == non-revoked`;
 - silent downgrade da strict/Shield policy;
 - temporary active state che cresce senza reclaim;
-- ad-hoc/undomain-separated signatures per security objects.
+- ad-hoc/undomain-separated signatures, MAC, AEAD contexts, protocol hashes o KDF labels per security objects;
+- claim `LATEST_VERIFIED_BACKUP` quando la freshness di un pairwise backup non è dimostrabile.
 
 ## 3. Synchronous Communication
 
@@ -62,9 +66,11 @@ no active authenticated session -> fail/discard now
 
 No automatic future delivery.
 
-## 4. Canonical objects / signing domains
+## 4. Canonical objects / cryptographic domains
 
 Object fields/shapes congelati vengono da `spec/freedom.cddl`.
+
+I cryptographic purpose/domain constants vengono da `spec/crypto-domains.txt`.
 
 Ogni signed security object lega almeno:
 
@@ -76,7 +82,7 @@ schema/object version
 canonical deterministic bytes
 ```
 
-No JSON dump/language object serialization ad-hoc.
+Handshake/rekey authentication, AEAD associated data, protocol hashes e KDF purpose labels usano domain constants differenti e registrati. No JSON dump/language object serialization ad-hoc.
 
 Child authority cannot exceed parent:
 
@@ -172,6 +178,8 @@ Public slot:
 slot_id = H("Freedom/RendezvousSlot" || network_id || write_public_key)
 ```
 
+The concrete hash purpose is fixed by `spec/crypto-domains.txt`.
+
 The control-plane verifies slot binding, write signature, monotonic generation and bounds. Observing a slot/public key does not grant overwrite authority.
 
 ## 13. Verified time
@@ -184,7 +192,15 @@ A stolen sole RootRecoveryKey makes owner and attacker cryptographically indisti
 
 Freedom only claims `ROOT_COMPROMISE` recovery when a `UserRecoveryPolicy` with independent recovery authority was committed **before** the incident.
 
-Without that, Freedom can recover ordinary device loss/backup loss but cannot prove which holder of the stolen root secret is legitimate.
+A valid recovery policy has distinct recovery-key commitments and:
+
+```text
+1 <= threshold <= number of distinct recovery keys
+```
+
+A production profile claiming independent compromise recovery SHOULD use threshold >= 2 with recovery shares/custody domains separated from the active root/device environment. Multiple key files under one compromised operator are not independent recovery.
+
+Without independent precommitment, Freedom can recover ordinary device loss/backup loss but cannot prove which holder of the stolen root secret is legitimate.
 
 ## 15. Opaque root recovery lineage
 
@@ -226,9 +242,9 @@ until activation:
 
 This prevents a compromised root from escaping its precommitted recovery policy by racing normal rotations.
 
-## 18. Pairwise recovery
+## 18. Pairwise recovery / backup freshness
 
-Pairwise state is not reconstructed from public control-plane data.
+Pairwise state is not reconstructed from public social-graph data.
 
 Recovery paths:
 
@@ -238,9 +254,28 @@ or
 encrypted PairwiseRecoveryBundle from user-chosen untrusted storage
 ```
 
-After backup restore, re-authenticate peers and rotate/re-derive future rendezvous/session state. An old backup must not remain indefinite future authority.
+**Integrity is not freshness.** After total loss of all devices, an untrusted mirror can serve an older but valid encrypted bundle unless the client has an independent monotonic freshness source.
+
+The rollback-detectable profile therefore uses `PairwiseRecoveryAnchor`:
+
+```text
+root_control_commitment
+anchor_epoch
+latest_backup_generation
+latest_bundle_hash
+latest_state_commitment
+recovery_key_epoch
+```
+
+The anchor contains no contact list or pairwise plaintext, but its updates can correlate backup activity with the opaque recovery lineage. This privacy trade-off is explicit.
+
+With anchor enabled, a candidate backup MUST match the latest verified anchor or fail closed. Without surviving device/anchor, the client may verify bundle integrity but MUST NOT claim the bundle is the latest state.
+
+After backup restore, re-authenticate peers and rotate/re-derive future rendezvous/recovery/session state. An old backup must not remain indefinite future authority.
 
 If no device/backup survives, ownership may recover but contacts require re-bootstrap.
+
+Full lifecycle: `PAIRWISE_RECOVERY.md`.
 
 ## 19. First-contact substitution
 
@@ -338,13 +373,13 @@ Contact/device V1 quotas and Relay Contributor bonuses are product/service polic
 
 ## 30. Security labels
 
-`VERIFIED`, `E2EE`, `ACTIVE`, `REVOKED`, `SHIELDED` derive from implemented verification/state.
+`VERIFIED`, `E2EE`, `ACTIVE`, `REVOKED`, `SHIELDED`, `LATEST_VERIFIED_BACKUP` derive from implemented verification/state.
 
 `SUSPECTED` is a network inference, not proof of censorship/surveillance.
 
 ## 31. Normative-spec human gate
 
-Agents may propose changes to security invariants, control-plane/revocation/identity/protocol docs and canonical schema, but they MUST NOT autonomously weaken MUST/MUST NOT rules, trust assumptions, signing domains, signed schemas or security state machines simply to make tests pass.
+Agents may propose changes to security invariants, control-plane/revocation/pairwise-recovery/identity/protocol docs and canonical schema/domain registry, but they MUST NOT autonomously weaken MUST/MUST NOT rules, trust assumptions, cryptographic domains, signed schemas or security state machines simply to make tests pass.
 
 Such changes require explicit human review before becoming canonical/main-ready.
 
@@ -352,8 +387,10 @@ Such changes require explicit human review before becoming canonical/main-ready.
 
 Before public interoperability:
 
-- deterministic encoding/signing-domain vectors;
+- deterministic encoding vectors;
+- complete `spec/crypto-domains.txt` registry vectors including cross-object/network negative cases;
 - delegation scope/expiry negative vectors;
+- recovery-policy threshold/distinct-key/custody validation;
 - revocation/non-revocation/freshness vectors;
 - fresh-install stale-checkpoint tests;
 - rendezvous overwrite/front-run tests;
@@ -363,7 +400,7 @@ Before public interoperability:
 - control-plane finality/state-proof tests;
 - storage convergence tests;
 - sticky recovery-policy/race/timelock tests;
-- pairwise backup rollback/post-restore rotation tests;
+- pairwise backup anchor rollback/mismatch/post-restore rotation tests;
 - signer quorum/custody tests/documentation;
 - contract/migration rollback proof tests;
 - release/bootstrap freshness tests;
