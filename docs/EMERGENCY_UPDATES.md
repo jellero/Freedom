@@ -1,153 +1,84 @@
 # Freedom — Emergency Bulletins & Secure Updates
 
-Status: **canonical design draft**
+Status: **canonical design draft**.
 
 Normative security rules: [`SECURITY_INVARIANTS.md`](SECURITY_INVARIANTS.md).
 Control-plane governance: [`CONTROL_PLANE_SECURITY.md`](CONTROL_PLANE_SECURITY.md).
-Distribution details: [`APP_DISTRIBUTION.md`](APP_DISTRIBUTION.md).
+Distribution: [`APP_DISTRIBUTION.md`](APP_DISTRIBUTION.md).
+Canonical schema: [`../spec/freedom.cddl`](../spec/freedom.cddl).
 
-## 1. Obiettivo
-
-Freedom distribuisce avvisi, policy e release verificabili senza una singola source obbligatoria.
-
-Il control-plane conserva manifest, locator, signer-set state, revoche e policy piccoli/verificabili. APK/artifact pesanti restano off-chain.
+## 1. Principio
 
 ```text
 source of bytes != release authority
 filename/URL    != authenticity
 RPC response    != verified state
+old valid state != necessarily current state
 ```
+
+APK/artifact restano off-chain.
 
 ![Freedom Release Network](assets/freedom-release-network.svg)
 
-## 2. EmergencyBulletin
+## 2. Schema
+
+`FreedomRelease`, `ReleaseStatus`, `SecurityPolicy`, `SignerSetTransition`, `BootstrapTrustAnchor` e `BootstrapFreshnessFloor` usano i field name canonici di `spec/freedom.cddl`.
+
+I Markdown non sono una seconda source of truth per i field name.
+
+## 3. Release verification
 
 ```text
-EmergencyBulletin {
-    version
-    bulletin_id
-    severity
-    issued_at
-    expires_at
-    geographic_scope?
-    topic?
-    min_app_version?
-    min_protocol_version?
-    payload_hash
-    issuer_set_epoch
-    signatures[]
-}
+candidate bytes
+ -> exact SHA-256
+ -> canonical FreedomRelease
+ -> signer-set epoch/transition verified
+ -> threshold release signatures
+ -> ReleaseStatus proof + anti-rollback
+ -> SecurityPolicy proof + anti-rollback
+ -> package/version/size/hash
+ -> Android signer/authorized lineage
+ -> bootstrap freshness floor
+ -> INSTALL
 ```
 
-Matching geografico locale; posizione utente non scritta on-chain per il solo matching.
+Mismatch -> fail closed.
 
-## 3. Wake/discovery
+## 4. BootstrapFreshnessFloor
+
+Ogni verifier/release recente incorpora almeno:
 
 ```text
-app open / periodic check
-peer gossip / Freedom transport
-optional platform push hint
+minimum_checkpoint_height
+minimum_checkpoint_hash?
+minimum_signer_set_epoch
+minimum_policy_epoch
+issued_in_release_id
 ```
 
-Push è solo hint; bulletin/policy sono verificati crittograficamente.
+Un fresh install rifiuta control-plane state sotto il floor della propria release/verifier.
 
-## 4. FreedomRelease canonico
+Questo impedisce freeze su stato vecchio rispetto al verifier corrente.
+
+Limite esplicito: se il verifier stesso è una copia autentica ma molto obsoleta ottenuta soltanto tramite canali attacker-controlled, non può sapere dal nulla che esista una release/floor più recente. First-install freshness richiede un canale/bootstrap anchor indipendente per il verifier stesso.
+
+## 5. BootstrapTrustAnchor
+
+Contiene almeno:
 
 ```text
-FreedomRelease {
-    manifest_version
-    release_id
-    version_code
-    version_name
-    package_id
-    artifact_sha256
-    artifact_size
-    signing_cert_fingerprint
-    signing_lineage_commitment?
-    min_supported_version
-    min_secure_version
-    criticality
-    release_locator_hash
-    issued_at
-    signer_set_epoch
-    signatures[]
-}
+expected_package_id
+release_signer_set_root_commitment
+governance_recovery_set_commitment?
+android_signing_root_or_lineage_anchor
+minimum_manifest_version
+accepted_contract_or_controlplane_anchor
+bootstrap_freshness_floor
 ```
 
-Un solo schema normativo.
+Peer/QR/mirror non può ridefinire queste root/floor.
 
-## 5. FreedomReleaseLocator
-
-```text
-FreedomReleaseLocator {
-    locator_version
-    release_id
-    release_nonce
-    manifest_hash
-    artifact_sha256
-    package_id
-    version_code
-    channel
-    issued_at
-    expires_at?
-    signer_set_epoch
-    signatures[]
-}
-```
-
-Filename/nonce sono locator/anti-enumeration hint, non trust.
-
-## 6. ReleaseStatus
-
-```text
-ReleaseStatus {
-    release_id
-    artifact_sha256
-    status
-    status_epoch
-    min_secure_version
-    policy_epoch
-    reason_hash?
-    remediation_release?
-    issued_at
-    signer_set_epoch
-    signatures[]
-}
-```
-
-```text
-ACTIVE
-DEPRECATED
-REVOKED
-```
-
-Nessuna write per singola installazione.
-
-## 7. SignerSet
-
-```text
-SignerSet {
-    signer_set_epoch
-    role
-    public_keys[]
-    threshold
-    valid_from_height
-    expires_after_height?
-    previous_set_commitment?
-    governance_recovery_set_commitment?
-}
-```
-
-Ruoli separati:
-
-```text
-RELEASE_AUTHORIZATION
-RELEASE_REVOCATION
-CRITICAL_SECURITY_POLICY
-CONTRACT_UPGRADE
-GOVERNANCE_ROOT_ROTATION
-EMERGENCY_ADVISORY
-```
+## 6. Signer-set governance
 
 Production minima:
 
@@ -156,261 +87,105 @@ ReleaseAuthorization   >= 3-of-5
 ReleaseRevocation      >= 3-of-5
 CriticalSecurityPolicy >= 3-of-5
 ContractUpgrade        >= 3-of-5 + timelock
-GovernanceRootRotation >= 3-of-5 + recovery procedure
+GovernanceRootRotation >= 3-of-5 + recovery
 ```
 
-## 8. SignerSetTransition
+Signer-set transition è cross-authorized e monotonic; old set non può riattivarsi.
 
-Un nuovo signer set non è valido perché auto-firmato.
+## 7. Quorum trust assumption
 
-```text
-SignerSetTransition {
-    role
-    previous_epoch
-    next_epoch
-    previous_set_commitment
-    next_set_commitment
-    activation_height
-    previous_set_threshold_signatures[]
-    next_set_acceptance_signatures[]
-}
-```
+`3-of-5` significa che nessuna **singola chiave** basta. Non dimostra automaticamente indipendenza organizzativa.
 
-Regole:
+Production deve separare custody/operator domains per quanto praticabile:
 
-```text
-next_epoch = previous_epoch + 1
-previous set authorizes
-next set accepts
-activation height monotonic
-highest-seen epoch persisted
-old set cannot reactivate itself
-```
+- signer hardware/offline distinti;
+- account/secret-manager differenti;
+- nessuna singola credential in grado di estrarre un quorum;
+- public transition/transparency records;
+- periodic custody audit.
 
-## 9. Quorum-loss recovery
+Se un singolo soggetto controlla unilateralmente tre signer, il sistema conserva threshold crittografico ma non può descriverlo come “nessun singolo attore amministrativo”.
 
-Recovery governance deve essere pinned prima dell'incidente:
+## 8. Quorum-loss recovery
+
+Recovery governance è pinned prima dell'incidente, threshold/timelocked e distinta dalle emergency advisory keys.
+
+Una singola emergency key non può installare codice o nuove release arbitrarie.
+
+## 9. Anti-rollback
+
+Persistire almeno:
 
 ```text
-GovernanceRecoveryManifest {
-    role
-    failed_signer_set_epoch
-    recovery_set_commitment
-    next_set_commitment
-    activation_height
-    recovery_timelock
-    recovery_threshold_signatures[]
-}
-```
-
-Richiede threshold/timelock più forte e non equivale a una singola emergency key.
-
-## 10. Anti-rollback
-
-Verifier conserva almeno:
-
-```text
+highest_verified_checkpoint
 highest_signer_set_epoch
 highest_policy_epoch
 highest_release_status_epoch
-highest_verified_checkpoint
 accepted_contract_lineage
 ```
 
-Una policy/status/signer set validamente firmata ma più vecchia non sovrascrive stato più recente già osservato.
+Oggetti validamente firmati ma inferiori al floor/highest-seen rilevante sono rifiutati.
 
-## 11. Contract upgrade governance
+## 10. Contract upgrade
 
-L'upgrade del security/control-plane core fa parte di “nessun super-admin”.
+Immutable security core oppure threshold-governed upgrade con code hash, migration hash, timelock, activation height, accepted lineage e rollback floor.
 
-```text
-ContractUpgradeManifest {
-    governance_epoch
-    current_code_hash
-    new_code_hash
-    migration_hash
-    activation_height
-    rollback_floor
-    signatures[]
-}
-```
+No silent contract swap.
 
-Requisiti:
+## 11. Chain migration
 
-- threshold >= CriticalSecurityPolicy;
-- timelock non-emergency;
-- code hash verificabile;
-- migration versionata;
-- client accepted lineage;
-- no silent contract-address swap;
-- emergency key non installa codice arbitrario da sola.
+`ChainMigrationManifest` da solo non basta. Serve `StateMigrationProof` che renda verificabile la derivazione del target imported root dal source finalized state secondo una migration rule/code hash deterministico.
 
-Una singola Full Access key production capace di cambiare il contratto viola il modello.
+## 12. Share Freedom
 
-## 12. Decentralized Release Network
+`PeerTransferCapability` autorizza solo il trasferimento dei byte di una release già identificata, non release authority.
 
-```text
-STORE
-PEER_LOCAL
-PEER_NETWORK
-COMMUNITY / UPDATE RELAY
-MANAGED UPDATE NODE
-PRIVATE / HTTPS MIRROR
-future transport
-```
+Source può negare availability ma non creare una release valida.
 
-```text
-artifact key = SHA-256(APK bytes)
-manifest key = SHA-256(canonical FreedomRelease)
-```
-
-Qualunque source può servire byte; nessuna source decide validità.
-
-## 13. Verifica pre-install
-
-```text
-candidate bytes
- -> exact SHA-256
- -> canonical FreedomRelease
- -> verified signer-set transition/epoch
- -> threshold release signatures
- -> ReleaseStatus proof + anti-rollback
- -> package_id/version/size/hash
- -> Android signer/lineage
- -> SecurityPolicy proof + freshness/anti-rollback
- -> INSTALL
-```
-
-Mismatch -> fail closed.
-
-## 14. Control-plane proof requirement
-
-Per `SignerSet`, `ReleaseStatus` e `SecurityPolicy`, una risposta RPC non provata non basta.
-
-```text
-VerifiedControlPlaneCheckpoint
-+ inclusion/non-inclusion proof
-+ canonical object
-```
-
-sono richiesti per lo stato production security-sensitive.
-
-## 15. Share Freedom
-
-```text
-PeerTransferCapability {
-    transfer_nonce
-    release_id
-    artifact_sha256
-    source_endpoint
-    expires_at
-    max_downloads?
-}
-```
-
-Capability riguarda il trasferimento, non la release authority.
-
-## 16. Android signing
+## 13. Android signing
 
 Barriere indipendenti:
 
 ```text
-Freedom threshold release signatures
+Freedom threshold signatures
 + exact artifact hash
-+ Android package signer / authorized lineage
-+ ReleaseStatus
-+ SecurityPolicy
++ Android signer/lineage
++ verified ReleaseStatus
++ verified SecurityPolicy
++ bootstrap freshness/anchor
 ```
 
-## 17. First-install trust
+## 14. Offline/degraded
 
-```text
-BootstrapTrustAnchor {
-    verifier_policy_version
-    expected_package_id
-    release_signer_set_root_commitment
-    governance_recovery_set_commitment?
-    android_signing_root_or_lineage_anchor
-    minimum_manifest_version
-    accepted_contract_or_controlplane_anchor
-}
-```
+Cache verificata può sostenere funzionamento degradato entro freshness policy. Se una release security-sensitive richiede state più recente, fail explicit invece di installare ciecamente.
 
-Peer/QR/mirror non può ridefinire queste root.
-
-## 18. Offline/control-plane degraded
-
-Cache verificata conserva object + checkpoint + highest-seen epochs.
-
-Se freshness/revocation è troppo stale per la policy corrente, install/update sensibile fallisce esplicitamente o richiede stato più recente.
-
-Wall clock locale non è authority esclusiva: usare `VerifiedTimeAnchor`, height/epoch e monotonic time.
-
-## 19. SecurityPolicy
-
-```text
-SecurityPolicy {
-    policy_epoch
-    latest_version
-    min_supported_version
-    min_secure_version
-    vulnerable_versions[]
-    disabled_features[]
-    severity
-    reason_hash
-    remediation_release
-    issued_at
-    expires_at?
-    signer_set_epoch
-    signatures[]
-}
-```
-
-Critical policy richiede threshold governance.
-
-## 20. Niente kill-switch commerciale
-
-Disabilitare superficie vulnerabile quando possibile, preservando recovery/export/update se tecnicamente sicuri.
-
-Emergency authority ha scope limitato/TTL e non può creare una nuova release arbitraria.
-
-## 21. Verified control-plane mutation
-
-```text
-submit
- -> finality proof
- -> execution success
- -> resulting state proof
- -> exact expected transition
- -> ACTIVE/REVOKED/CURRENT
-```
-
-Transaction hash != success.
-
-## 22. UX
+## 15. UX
 
 ```text
 Freedom Communication 1.4.2
 Release signatures  VERIFIED 3/5
 Signer set epoch     VERIFIED
-APK signer           VERIFIED
 Artifact hash        VERIFIED
+APK signer           VERIFIED
 Release status       ACTIVE
 Policy freshness     CURRENT
+Checkpoint floor     SATISFIED
 Source               PEER / RELAY / MIRROR / STORE
 ```
 
-## 23. Invarianti
+Label solo se derivate da verifiche implementate.
+
+## 16. Invarianti
 
 - APK off-chain;
 - no write per install;
-- release keys mai nel client;
-- source/filename/URL non sono trust;
-- one canonical FreedomRelease schema;
-- signer-set transitions monotonic/cross-authorized;
-- old signer set/policy/status non può rollback highest-seen state;
-- quorum recovery pinned/threshold/timelocked;
-- contract upgrade è threshold-governed o security core immutable;
-- first install usa pinned trust anchors;
-- security-sensitive control-plane objects richiedono verified state proof;
-- transaction hash != success.
+- source/filename non trust;
+- canonical schema in CDDL;
+- threshold governance + explicit quorum trust assumption;
+- signer/policy/status anti-rollback;
+- fresh install bootstrap floor;
+- verifier-staleness limit dichiarato;
+- Android signer separate verification;
+- exact hash;
+- security-sensitive state proof-verified;
+- tx hash != success.
