@@ -1,14 +1,14 @@
 # Freedom — Product Scope
 
+Status: **canonical product scope**
+
+Normative security rules: [`SECURITY_INVARIANTS.md`](SECURITY_INVARIANTS.md).
+
 ## 1. Obiettivo
 
-Freedom Communication non deve competere al lancio sulla quantità di feature. Deve dimostrare in modo affidabile la proposta centrale di Freedom Protocol: **comunicazione privata live, autenticata E2EE, sincrona, senza mailbox centrale e senza dipendenza permanente da un singolo percorso o provider.**
-
-Principio UX:
+Freedom Communication deve dimostrare la proposta centrale di Freedom Protocol: **comunicazione privata live, autenticata E2EE, sincrona, senza mailbox centrale e senza dipendenza permanente da un singolo percorso/provider.**
 
 > **Semplice quando tutto funziona. Trasparente quando qualcosa cerca di impedirti di comunicare.**
-
-Freedom è anche un prodotto per utenti che hanno bisogno di capire lo stato reale della propria capacità di comunicare.
 
 ## 2. Launch scope — V1
 
@@ -16,152 +16,193 @@ La prima release pubblica è focalizzata sul **1:1**.
 
 Funzioni essenziali:
 
-- RootIdentity + DeviceKey inizializzate localmente;
-- DeviceRecordCommitment opaco per authorization/revocation, senza global DeviceID di rete;
-- Recovery Kit esportabile: QR/bundle cifrato + recovery code;
+- RootIdentity inizializzata localmente;
+- DeviceKey + DeviceRecordCommitment opaco;
+- **DeviceCertificate verificabile offline**;
+- Recovery Kit esportabile;
 - registrazione sponsorizzata quando serve, senza wallet NEAR obbligatorio;
-- aggiunta contatto-persona tramite QR/link con alias pairwise dopo handshake;
-- **Share Freedom / Install QR** per permettere a un nuovo utente di ottenere l'app partendo da un client esistente;
-- build Direct capace di indicare/servire un artifact verificato tramite peer locale, relay o mirror;
-- build Play che usa il percorso di install/update conforme allo store;
-- **10 contatti attivi nel piano Free**;
-- **1 device attivo nel piano Free**;
-- sessione autenticata E2EE;
-- text 1:1;
-- foto/video/file;
-- messaggi vocali;
-- chiamata audio 1:1;
-- videochiamata 1:1;
-- Live/ephemeral mode;
-- stato peer/sessione comprensibile;
-- route selection/privacy policy;
+- verified finality/state per operazioni control-plane;
+- contatto-persona via QR/link;
+- pairwise identity/rendezvous;
+- expected-contact authenticated handshake;
+- **forward secrecy tra sessioni**;
+- **bounded key lifetime + rekey**;
+- 1 active device Free;
+- 10 active contacts Free;
+- synchronous 1:1 text/media/file/voice/video;
+- Live mode;
 - relay forward-only;
-- possibilità opt-in per un dispositivo Freedom di contribuire come relay;
-- **Relay Contributor: +10 contatti attivi** per utenti Free qualificati;
+- device relay opt-in;
+- Relay Contributor +10 contacts;
 - Adaptive Defense base;
-- Freedom Network Indicator;
-- Emergency Shield Free con quota da dimensionare con dati reali;
-- blocco contatto e requisiti store minimi.
+- Network Indicator;
+- Emergency Shield bounded;
+- Share Freedom / Install QR;
+- **BootstrapTrustAnchor pinned per first sideload**;
+- threshold-verified release/security policy;
+- block/report/store-compliance essentials.
 
-L'utente non deve essere obbligato a comprendere account NEAR, gas, RPC, NAT, relay, commitment o primitive crittografiche nell'uso normale.
+L'utente non deve conoscere gas, RPC, NAT, commitment o primitive crittografiche nell'uso normale.
 
-Dettagli identità: [`IDENTITY_MODEL.md`](IDENTITY_MODEL.md).
+## 3. Identity / recovery
 
-## 3. Recovery e multi-device
+```text
+RootIdentity
+ -> DeviceAuthorizationCommitment
+ -> DeviceRecordCommitment + DeviceKey
+ -> verified activation
+ -> DeviceCertificate
+```
+
+Restore:
 
 ```text
 Recovery Kit
  -> RootIdentity
  -> NEW DeviceKey
  -> NEW DeviceRecordCommitment
- -> device activation
- -> entitlement restore
+ -> verified activation/finality
+ -> NEW DeviceCertificate
+ -> resolve domain-separated entitlement
 ```
 
-La chain fa rispettare `max_devices`; il restore non deve permettere di usare una licenza su telefoni illimitati.
+Il restore non clona la vecchia DeviceKey.
 
-Un contatto nella rubrica rappresenta una persona/RootIdentity. Se la stessa persona autorizza più device, non consuma più contact slot.
+## 4. Contact = persona
 
-Dettagli: [`ACCOUNT_RECOVERY_LICENSES.md`](ACCOUNT_RECOVERY_LICENSES.md).
-
-## 4. Contatti Free e Relay Contributor
-
-Il limite Free base è **10 contatti attivi**.
-
-- non è un limite lifetime;
-- eliminare/disattivare un contatto libera uno slot;
-- un contatto rappresenta una persona, non ogni device;
-- la lista contatti resta locale e cifrata;
-- non pubblicare social graph in chiaro;
-- eventuale enforcement anti-tampering deve usare commitment/slot opachi.
-
-Un utente Free che abilita e mantiene un contributo `DEVICE_RELAY` utile alla rete ottiene **10 slot aggiuntivi**:
+Un contatto rappresenta una persona/RootIdentity, non ogni device.
 
 ```text
-Free                     10 active contacts
-Free + Relay Contributor 20 active contacts
+FreedomContact
+ -> expected RootIdentity/contact proof
+ -> bootstrap DeviceCertificate optional
+ -> first authenticated handshake
+ -> PairSecret / PairwiseContactAlias / PairRendezvousSecret
 ```
 
-Il bonus non è permanente solo perché il toggle relay è stato acceso una volta. Deve essere collegato a una policy minima di contributo verificabile e privacy-preserving.
+Nessun global DeviceID network-facing.
 
-Se il benefit scade, Freedom non cancella automaticamente i contatti sopra quota; blocca soltanto l'aggiunta di nuovi contatti finché l'utente non torna entro il limite o riqualifica il relay.
+## 5. Session security gate
 
-Dettagli: [`RELAYS.md`](RELAYS.md).
-
-## 5. Device Relay
-
-Un telefono/tablet/desktop Freedom può agire anche come nodo di forwarding per altri peer.
-
-La funzione è opt-in nei client ufficiali e deve rispettare limiti configurabili di batteria, rete, CPU, RAM, banda e numero di circuiti.
-
-Un device relay non deve necessariamente avere un IP pubblico: può essere utile tramite NAT mapping, transport alternativi o connessioni outbound già stabilite verso il fabric Freedom.
-
-Essere relay non concede accesso a plaintext o session keys. Il relay usa token/capability di circuito temporanei e non deve ricevere RootIdentity/device commitment quando non necessari.
-
-Un `DEVICE_RELAY` non diventa automaticamente un Internet egress: il Gateway usa solo egress espliciti managed/private/business.
-
-## 6. Share Freedom / distribuzione peer-to-peer dell'app
-
-Un client già installato deve poter mostrare un QR dedicato all'installazione:
+Prima del V1 pubblico devono essere implementati:
 
 ```text
-Alice: Share Freedom
-        -> [Install QR]
-
-Bob:   camera di sistema
-        -> download
-        -> verifica release
-        -> installazione
+expected-contact authentication
+DeviceCertificate validation
+DeviceKey possession proof
+revocation/freshness policy
+forward secrecy
+bounded traffic-key lifetime
+rekey
+replay protection
+downgrade protection
 ```
 
-Il QR non è il Contact QR e deve funzionare anche quando Bob non ha ancora Freedom installato.
+Una chiave che si autofirma correttamente ma non appartiene al contatto atteso non è autenticata.
 
-Sorgenti possibili:
+## 6. Synchronous semantics
 
 ```text
-STORE
-PEER_LOCAL
-RELAY
-MIRROR
-PEER_NETWORK
+active authenticated session -> transmit now
+no active authenticated session -> fail/discard
 ```
 
-La build Direct può mantenere opzionalmente in cache un **APK standalone già verificato** e servirlo tramite endpoint temporaneo/capability. Non è necessario incorporare una seconda copia dell'APK dentro il client.
+Vietato introdurre per comodità:
 
-La sorgente del file non è la sorgente di fiducia. Prima dell'installazione devono concordare almeno:
+- mailbox on-chain;
+- relay inbox persistente;
+- automatic retry queue per peer offline;
+- store-and-forward automatico.
+
+## 7. Contatti Free / Relay Contributor
 
 ```text
-FreedomRelease signatures
-artifact SHA-256
-package ID
-version code
-signing certificate / authorized lineage
-SecurityPolicy
+FREE                     10 active contacts
+FREE + RELAY CONTRIBUTOR 20 active contacts
 ```
 
-Per il primo sideload deve esistere un trust anchor indipendente dal peer/relay: store, bootstrap autenticato, release root verificato out-of-band o verifier con root pinned.
+Rubrica locale/cifrata; no social graph pubblico.
 
-Dettagli: [`APP_DISTRIBUTION.md`](APP_DISTRIBUTION.md).
+Benefit relay richiede contributo reale e privacy-preserving. Scadenza benefit non cancella contatti o sessioni.
 
-## 7. Pagamenti e Pro
+## 8. Device Relay
 
-Freedom supporta payment adapter multipli:
+Device relay è opt-in e resource-bounded.
+
+Non concede plaintext/session keys e non diventa Internet egress.
 
 ```text
-PayPal
-crypto/stablecoin
-future providers
+DEVICE_RELAY != INTERNET_EGRESS
 ```
 
-PayPal può essere aperto dall'app senza API pubblica Freedom; worker privati outbound-only verificano il pagamento e pubblicano l'attestazione. Crypto verificabile on-chain può attivare direttamente l'entitlement.
+## 9. Share Freedom / release security
 
-Il callback client non è prova autoritativa di pagamento e nessun merchant secret deve stare nell'APK.
+```text
+Alice -> Install QR
+Bob -> bootstrap verifier
+    -> peer/relay/mirror/store bytes
+    -> exact SHA-256
+    -> threshold FreedomRelease signatures
+    -> Android signer lineage
+    -> ReleaseStatus / SecurityPolicy
+    -> install
+```
 
-Dettagli: [`PAYMENTS.md`](PAYMENTS.md).
+First sideload usa root pinned indipendente dal peer/source:
 
-## 8. Adaptive Defense e Network Indicator
+```text
+expected_package_id
+release_signer_set_root_commitment
+android_signing_root_or_lineage_anchor
+minimum verifier policy
+```
 
-Il client deve mostrare uno stato rete sempre accessibile:
+La source dei byte non è trust.
+
+## 10. No super-admin gate
+
+Prima della distribuzione production delle release:
+
+```text
+ReleaseAuthorization   >= 3-of-5
+ReleaseRevocation      >= 3-of-5
+CriticalSecurityPolicy >= 3-of-5
+RootRotation           >= 3-of-5 + recovery
+```
+
+Emergency advisory keys sono separate, scoped e TTL-bounded.
+
+Una singola production key non può autorizzare release arbitrarie o modificare ogni policy critica.
+
+## 11. Verified control-plane gate
+
+Nessuna operazione viene considerata riuscita dal solo transaction hash.
+
+```text
+submit
+ -> acceptable finality
+ -> execution success
+ -> read resulting state
+ -> exact state verification
+ -> UX/local transition
+```
+
+Vale per identity/device, entitlement, sponsorship, payment, release/policy e recovery state.
+
+## 12. Commitment privacy
+
+Stato stabile usa commitment domain-separated:
+
+```text
+DeviceAuthorizationCommitment
+EntitlementCommitment
+PaymentBindingCommitment
+SponsorshipCommitment
+```
+
+Non usare un `root_commitment` unico come global account correlator quando evitabile.
+
+## 13. Adaptive Defense / Network Indicator
 
 ```text
 NORMAL
@@ -171,260 +212,116 @@ SUSPECTED
 UNAVAILABLE
 ```
 
-In caso di incidente significativo il pannello può aprirsi automaticamente e distinguere fatti osservati da inferenze.
+Core Free riceve la stessa diagnosi tecnica fondamentale di Pro.
 
-Core Free:
+`SUSPECTED` = inferenza di rete, non prova di censura/sorveglianza.
 
-- route health;
-- RPC/provider fallback;
-- relay/path fallback;
-- recovery rendezvous pairwise;
-- `peer recently active + data path unavailable`;
-- route switch automatico;
-- stessa diagnosi tecnica di Pro;
-- quota Emergency Shield quando disponibile.
+## 14. Gateway — post-V1
 
-Pro/Shield può aggiungere Always-Shielded, multi-hop, relay gestiti multipli, candidate pre-warmed, parallel failover, transport rotation aggressiva e Maximum Resilience.
+Freedom Gateway non blocca V1 Communication.
 
-## 9. Emergency bulletin e secure updates
+```text
+app -> local Gateway -> Freedom path -> explicit Egress -> Internet
+```
 
-Freedom deve poter ricevere bulletin firmati globali o geolocalizzati. Il matching geografico avviene localmente senza pubblicare la posizione dell'utente on-chain.
+Target Free iniziale quando disponibile:
 
-Gli aggiornamenti usano `FreedomRelease` firmati con hash/versione/signing fingerprint. L'APK resta off-chain e può essere scaricato da store, mirror temporanei, peer/relay Freedom o altri transport compatibili.
+```text
+100 MB/day managed Gateway capacity
+```
 
-Una `SecurityPolicy` critica può disabilitare selettivamente funzioni/versioni vulnerabili, mantenendo recovery/update quando sicuro. Non deve esistere un kill-switch commerciale arbitrario.
+Separata da messaggi/chiamate Freedom ed Emergency Shield Communication.
 
-Dettagli: [`EMERGENCY_UPDATES.md`](EMERGENCY_UPDATES.md).
+`DEVICE_RELAY` non diventa egress.
 
-## 10. Cosa NON blocca il primo lancio
+## 15. Cosa NON blocca V1
 
-Non sono prerequisiti della prima release pubblica:
+Non sono prerequisiti:
 
-- gruppi testuali;
+- groups;
 - group voice/video;
-- community pubbliche;
-- bot/feed/social graph;
+- public communities;
+- bot/feed;
 - mailbox offline;
 - cloud history sync;
-- Maximum Resilience completa;
-- bridge/non-public pool avanzato;
-- padding avanzato;
-- update swarm completo se esiste già un canale sicuro di distribuzione V1;
-- incentivi economici/tokenizzati ai relay oltre al bonus contatti;
-- browser web integrato;
-- **Freedom Gateway a livello dispositivo**.
+- full Maximum Resilience;
+- complete non-public bridge pool;
+- advanced padding;
+- tokenized relay economy;
+- embedded browser;
+- whole-device Freedom Gateway.
 
-Il Gateway è un'evoluzione post-V1 costruita sulle stesse primitive di routing/relay/Shield e non deve rallentare Freedom Communication core.
+## 16. V1.5 / V2
 
-## 11. Live Groups — V1.5
+### Live Groups
 
-I gruppi devono preservare la semantica sincrona:
+Piccoli gruppi preservano semantica sincrona: offline member = no automatic deferred delivery.
 
-```text
-Alice online  -> delivered
-Bob online    -> delivered
-David offline -> not delivered
-```
+### Multi-party media
 
-Nessuna mailbox condivisa automatica per gli assenti.
+Group voice/video richiede forwarding scalabile/SFU compatibile con il trust model e design E2EE multi-party reviewato separatamente.
 
-Scope iniziale:
-
-- piccoli gruppi testuali;
-- media;
-- membership autenticata;
-- invito QR/link/capability;
-- presenza minima;
-- modalità effimera.
-
-## 12. Freedom Live Rooms
-
-Una **Live Room** è una sessione privata multi-party che serve le persone presenti adesso, non una mailbox permanente.
+## 17. Product roadmap
 
 ```text
-explicit invite
-authenticated membership
-E2EE
-history optional/off
-Live mode
-no server-side mailbox
-no automatic offline delivery
-```
+V1
+  RootIdentity / Recovery Kit
+  DeviceCertificate + DeviceKey
+  verified control-plane finality
+  pairwise contact / rendezvous
+  expected-contact authenticated handshake
+  forward secrecy / rekey
+  1:1 text/media/voice/video
+  no mailbox/offline queue
+  relay/device relay
+  Relay Contributor
+  Network Indicator / Adaptive Defense base
+  Share Freedom + BootstrapTrustAnchor
+  threshold release/security governance
+  entitlement/payment foundations
 
-## 13. Multi-party voice/video — V2
+V1.5
+  Live Groups / small ephemeral rooms
 
-Non usare mesh P2P illimitata per gruppi grandi. Per media multi-party usare forwarding scalabile/SFU compatibile con il trust model:
+V2
+  scalable multi-party voice/video
 
-- nodo media non è identity trust anchor;
-- più operatori/nodi;
-- sostituibile;
-- nessun singolo SFU requisito permanente;
-- design E2EE multi-party reviewato separatamente.
-
-## 14. Registrazione ed economia Free
-
-L'installazione non produce automaticamente una write on-chain.
-
-```text
-RootIdentity
- -> anti-abuse proof / adaptive PoW
- -> sponsorship unused
- -> relayer rate limit
- -> bounded global budget
- -> register
-```
-
-Messaggi/chiamate non devono essere limitati per pagare il gas blockchain. Il costo chain deve dipendere da eventi rari del control-plane.
-
-Dettagli: [`REGISTRATION_ECONOMICS.md`](REGISTRATION_ECONOMICS.md).
-
-## 15. Roadmap prodotto
-
-```text
-V1 — Launch
-  RootIdentity + DeviceKey + opaque device record
-  pairwise contacts / aliases
-  Recovery Kit
-  sponsored registration
-  Share Freedom / Install QR
-  verified peer/relay app bootstrap (Direct build)
-  1 active device Free
-  10 active contacts Free
-  device/community relay
-  Relay Contributor +10 contact slots
-  1:1 text/media/file
-  voice messages
-  audio/video call
-  Live mode
-  basic Adaptive Defense
-  Network Indicator
-  payment/entitlement foundation
-
-Security plane
-  emergency bulletin
-  signed release manifest
-  secure update sources
-  selective security policy
-  first-install release-root verification
-
-V1.5 — Live Groups
-  small group text/media
-  ephemeral Live Rooms
-  authenticated membership
-
-V2 — Multi-party realtime
-  group voice/video
-  scalable media forwarding
-  replaceable/distributed SFU or equivalent
-
-Pro evolution — Freedom Shield
+Pro evolution
   Always-Shielded
-  multi-hop managed paths
-  aggressive path/transport diversity
+  multi-hop
   Maximum Resilience
 
-Post-V1 — Freedom Gateway
-  explicit managed/private/business egress
-  selected-app Android Gateway
-  whole-device Gateway
-  DNS/leak controls
-  managed Free target: 100 MB/day
-  egress diversity
-  shielded/multi-hop Gateway
-  pluggable anti-censorship transports
-  non-public bridge distribution
-  DPI/firewall test lab
+Post-V1 Gateway
+  explicit egress
+  selected-app / whole-device modes
+  100 MB/day Free target
+  transport/egress diversity
   Maximum Reachability
 ```
 
-## 16. Freedom Gateway — prodotto post-V1
-
-Freedom Gateway usa il fabric Freedom come percorso opzionale per traffico di applicazioni esterne.
-
-![Freedom Gateway architecture](assets/freedom-gateway.svg)
-
-```text
-app traffic
- -> local Gateway / Android VpnService
- -> encrypted tunnel
- -> route / relay / bridge / Shield
- -> explicit Egress
- -> Internet
-```
-
-### Garanzia diversa da Freedom Communication
-
-Il Gateway non deve essere presentato come equivalente alla sicurezza della comunicazione Freedom-to-Freedom.
-
-```text
-Freedom Communication
-  endpoint-authenticated E2EE
-  session keys only at endpoints
-
-Freedom Gateway
-  protected/adaptive path to egress
-  final application security depends also on HTTPS/app protocol
-```
-
-### Obiettivo anti-censura
-
-Il Gateway deve essere progettato per ambienti con firewall/DPI/filtraggio aggressivo mediante:
-
-- transport adapter sostituibili;
-- più provider/egress;
-- bridge pubblici e non pubblici;
-- failover automatico;
-- transport offuscati/pluggable quando reviewati;
-- active-probing resistance dove supportata;
-- path multi-hop/Shield;
-- transport health classification;
-- test reali contro firewall/DPI.
-
-Non promettere bypass universale. Se una rete applica allowlist totale o elimina ogni connettività, un protocollo IP non può garantire il passaggio.
-
-### Quota Free iniziale
-
-Quando il Gateway managed sarà disponibile, il target Free iniziale è:
-
-```text
-100 MB / giorno di managed Gateway capacity
-```
-
-È una quota di **egress gestito**, non di Freedom Communication. Non deve limitare i messaggi/chiamate Freedom diretti o su capacità community/private e non sostituisce la quota Emergency Shield destinata alla comunicazione core.
-
-Il valore deve essere ricalibrato dopo dati reali di costo, geografia, overhead anti-censura e abuso.
-
-Plus/Shield può offrire quote molto superiori, egress/provider diversity, multi-hop e Maximum Reachability. Business può usare egress privati e quote custom.
-
-### Browser
-
-Non integrare un browser generalista come requisito. Su Android è preferibile instradare Chrome/Firefox/app selezionate o l'intero device tramite `VpnService`, mantenendo il browser dell'utente separato.
-
-Dettagli: [`GATEWAY.md`](GATEWAY.md) e [`MONETIZATION.md`](MONETIZATION.md).
-
-## 17. Launch quality gate
+## 18. Launch blockers
 
 Blocker prima del Creator Pilot:
 
-- latenza sistematica anomala dei messaggi;
-- onboarding con configurazione tecnica manuale;
-- crash riproducibili;
-- session establishment inaffidabile;
-- perdita/corruzione RootIdentity/DeviceKey;
-- reintroduzione di un global DeviceID nei transport/frame senza necessità reviewata;
-- alias pairwise correlabili per errore tra contatti;
+- expected-contact authentication non verificata;
+- DeviceCertificate assente/non validato;
+- revocation/freshness behavior indefinito;
+- forward secrecy non dimostrata;
+- rekey/key-lifetime assente per sessioni lunghe;
+- global DeviceID reintrodotto nel network layer;
+- pairwise alias correlabili tra contatti;
+- on-chain message/mailbox o offline queue reintrodotti;
+- transaction Failure trattata come successo;
+- state mismatch dopo finality non rilevato;
+- single production super-admin key;
+- first sideload senza pinned independent trust anchor;
+- release non verificabile fail-closed;
+- downgrade a release vulnerabile;
 - Recovery Kit non verificato end-to-end;
-- chiamate 1:1 instabili;
-- relay che persiste payload oltre i limiti previsti;
-- device relay che consuma risorse fuori policy;
+- relay che persiste payload oltre bounds;
 - Relay Contributor facilmente farmabile;
-- Install QR che accetta una release non verificabile;
-- possibilità per peer/relay/mirror di sostituire package ID o signing root senza failure;
-- downgrade a versione dichiarata vulnerabile;
-- Network Indicator con falsi allarmi sistematici;
-- privacy claim non implementati;
-- dipendenza hardcoded da credenziali personali/singola infrastruttura;
+- Network Indicator con claim non derivati;
 - merchant secret nell'APK;
-- meccanismo update non autenticato.
+- dipendenza hardcoded da singola infrastruttura.
 
-Gruppi, Gateway e Shield avanzato non devono ritardare il lancio se il V1 soddisfa questi criteri.
+Groups, Gateway e Shield avanzato non devono ritardare il V1 se questi gate sono soddisfatti.
