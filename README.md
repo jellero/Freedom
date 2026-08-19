@@ -202,6 +202,23 @@ La blockchain/control-plane **non trasporta** chat, file, audio, video, Gateway 
 
 **NEAR non è Freedom Protocol.** È la prima implementazione del registro tramite `ChainAdapter` e deve poter essere sostituita.
 
+### Freedom Gateway architecture
+
+![Freedom Gateway architecture](docs/assets/freedom-gateway.svg)
+
+Il diagramma Gateway separa esplicitamente:
+
+```text
+apps/device
+ -> local Freedom Gateway
+ -> Adaptive Defense / transport selector
+ -> relay / bridge / optional Shield
+ -> explicit MANAGED / PRIVATE / BUSINESS egress
+ -> Internet
+```
+
+Un community/device relay può essere un hop del fabric ma **non diventa automaticamente Internet egress**.
+
 ## Identity model
 
 ```text
@@ -426,7 +443,10 @@ Dettagli: [`docs/PAYMENTS.md`](docs/PAYMENTS.md).
 - community/device relay;
 - quota bounded Emergency Shield;
 - recovery base;
-- sponsorship chain essenziale secondo anti-abuse.
+- sponsorship chain essenziale secondo anti-abuse;
+- **Freedom Gateway managed: target iniziale 100 MB/giorno quando disponibile**.
+
+I 100 MB/giorno riguardano esclusivamente il **managed Gateway egress**. Non sono un limite a messaggi/chiamate Freedom, direct path, community/device relay o infrastruttura privata dell'utente.
 
 ### Freedom Plus / Shield
 
@@ -438,13 +458,24 @@ Dettagli: [`docs/PAYMENTS.md`](docs/PAYMENTS.md).
 - candidate pre-warmed;
 - parallel failover;
 - transport rotation più aggressiva;
-- Maximum Resilience.
+- Maximum Resilience;
+- **quota Freedom Gateway molto superiore**;
+- più egress/provider/regioni;
+- multi-hop Gateway;
+- Maximum Reachability con resource budget superiore.
 
 Pro non compra una cifratura del messenger "più forte" né una diagnosi più onesta.
 
 ### Gateway
 
-La policy commerciale del Gateway verrà definita solo dopo misure reali di egress bandwidth, abuso, geografia e costi. Il core anti-censura della **Freedom Communication** non deve essere indebolito per creare un paywall Gateway.
+Target Free iniziale:
+
+```text
+FREEDOM GATEWAY FREE
+100 MB / giorno di managed egress
+```
+
+È un target da validare con costi reali, overhead dei transport anti-censura, geografia e abuso. La quota Gateway è separata da **Emergency Shield Communication**: consumare il Gateway non deve impedire a un utente di comunicare con un contatto Freedom durante un incidente.
 
 ### Business
 
@@ -452,6 +483,7 @@ La policy commerciale del Gateway verrà definita solo dopo misure reali di egre
 - deployment privati;
 - relay/Shield pool dedicati;
 - private/business egress;
+- custom Gateway quotas;
 - supporto/SLA;
 - infrastruttura compatibile gestita.
 
@@ -493,7 +525,7 @@ Le proprietà documentate devono essere dimostrate con implementazione, test su 
 - [`docs/CHAIN.md`](docs/CHAIN.md) — control-plane blockchain, identity, recovery, entitlement e manifest.
 - [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md) — minacce, limiti e mitigazioni.
 - [`docs/RELAYS.md`](docs/RELAYS.md) — relay fisici, device relay, resource bounds e Relay Contributor.
-- [`docs/GATEWAY.md`](docs/GATEWAY.md) — device Gateway, egress, anti-censura e pluggable transports.
+- [`docs/GATEWAY.md`](docs/GATEWAY.md) — device Gateway, egress, anti-censura, quote e pluggable transports.
 - [`docs/ADAPTIVE_DEFENSE.md`](docs/ADAPTIVE_DEFENSE.md) — recovery pairwise e rilevamento interferenza.
 - [`docs/NETWORK_STATUS_UI.md`](docs/NETWORK_STATUS_UI.md) — Network Indicator ed Emergency Shield.
 - [`docs/ACCOUNT_RECOVERY_LICENSES.md`](docs/ACCOUNT_RECOVERY_LICENSES.md) — RootIdentity, Recovery Kit e multi-device.
@@ -503,7 +535,7 @@ Le proprietà documentate devono essere dimostrate con implementazione, test su 
 - [`docs/APP_DISTRIBUTION.md`](docs/APP_DISTRIBUTION.md) — Share Freedom, peer APK transfer e trust del primo install.
 - [`docs/COMPETITIVE_POSITIONING.md`](docs/COMPETITIVE_POSITIONING.md) — confronto e benchmark esterni.
 - [`docs/PRODUCT_SCOPE.md`](docs/PRODUCT_SCOPE.md) — V1, Live Groups/Rooms e roadmap.
-- [`docs/MONETIZATION.md`](docs/MONETIZATION.md) — modello Free/Shield/Business.
+- [`docs/MONETIZATION.md`](docs/MONETIZATION.md) — modello Free/Shield/Gateway/Business.
 - [`docs/LAUNCH_PLAN.md`](docs/LAUNCH_PLAN.md) — validazione e lancio.
 - [`docs/STORE_COMPLIANCE.md`](docs/STORE_COMPLIANCE.md) — separazione protocollo/client e vincoli store.
 - [`ANDROID.md`](ANDROID.md) — roadmap Android.
@@ -532,10 +564,11 @@ POST-V1 GATEWAY
 G1  explicit managed/private egress
 G2  selected-app Android Gateway
 G3  whole-device Gateway + DNS/leak controls
-G4  egress diversity / multi-hop
-G5  pluggable anti-censorship transports
-G6  bridge anti-enumeration / DPI lab
-G7  Maximum Reachability
+G4  managed quota accounting + 100 MB/day Free target
+G5  egress diversity / multi-hop
+G6  pluggable anti-censorship transports
+G7  bridge anti-enumeration / DPI lab
+G8  Maximum Reachability
 ```
 
 ## Principio finale
