@@ -2,6 +2,8 @@
 
 Status: **canonical design draft / post-V1 capability**
 
+![Freedom Gateway architecture](assets/freedom-gateway.svg)
+
 ## 1. Due proprietà diverse
 
 Freedom deve distinguere chiaramente due livelli di sicurezza.
@@ -66,13 +68,15 @@ Principio:
 
 Freedom non deve diventare un browser generalista per ottenere questa funzione.
 
-Su Android il Gateway può usare `VpnService` per instradare:
+Su Android il Gateway può usare `VpnService` come API di sistema per instradare:
 
 ```text
 SELECTED_APPS
 oppure
 WHOLE_DEVICE
 ```
+
+Il prodotto e la UI si chiamano **Freedom Gateway**, non "VPN Freedom". `VpnService` è soltanto la primitive Android necessaria a creare il tunnel locale.
 
 L'utente continua quindi a usare Chrome, Firefox o le proprie app. Freedom controlla il percorso senza assumersi la superficie di sicurezza e manutenzione di un motore browser/WebView generalista.
 
@@ -89,7 +93,7 @@ SELECTED_APPS
   solo applicazioni scelte dall'utente
 
 WHOLE_DEVICE
-  tutto il traffico instradabile tramite la VPN locale
+  tutto il traffico instradabile tramite il Gateway locale
 ```
 
 Requisiti UX:
@@ -101,9 +105,10 @@ Requisiti UX:
 - stop immediato;
 - policy kill-switch opzionale;
 - split tunneling esplicito;
-- DNS instradato coerentemente per evitare leak quando la policy lo richiede.
+- DNS instradato coerentemente per evitare leak quando la policy lo richiede;
+- quota managed mostrata separatamente dal traffico Freedom Communication.
 
-Su piattaforme che consentono una sola VPN attiva, Freedom deve spiegare il conflitto con altri servizi VPN.
+Su piattaforme che consentono un solo servizio di tunnel device-level attivo, Freedom deve spiegare il conflitto con altri servizi equivalenti.
 
 ---
 
@@ -361,9 +366,82 @@ Questi controlli non devono essere applicati ai payload Freedom E2EE come meccan
 
 ---
 
-## 13. Store/platform separation
+## 13. Managed Gateway capacity e monetizzazione
 
-Su Android, `VpnService` è il meccanismo previsto per un tunnel device-level, ma la build distribuita tramite store deve rispettare le policy vigenti su dichiarazione, consenso e uso della funzionalità VPN.
+La capacità Gateway gestita ha un costo reale di egress, relay, bandwidth, IP reputation, abuse handling e geografia. È quindi una superficie legittima da monetizzare senza toccare la sicurezza crittografica di Freedom Communication.
+
+### Free — target iniziale
+
+Policy di prodotto iniziale da validare con misure reali:
+
+```text
+FREEDOM GATEWAY FREE
+managed capacity target: 100 MB / day
+reset: daily
+carry-over: no, salvo futura policy esplicita
+priority: standard
+```
+
+I **100 MB/giorno** sono un target iniziale, non un parametro immutabile del protocollo. Devono essere ricalibrati dopo misure reali di:
+
+- costo egress per regione/provider;
+- mix browsing/app traffic;
+- abuso e automazione;
+- overhead dei transport anti-censura;
+- multi-hop/Shield;
+- capacità infrastrutturale.
+
+La quota riguarda esclusivamente **managed Gateway capacity**.
+
+Non consuma automaticamente la quota Gateway:
+
+```text
+Freedom Communication direct
+Freedom Communication su community/device relay
+private relay / private egress dell'utente, secondo policy
+```
+
+Emergency Shield per Freedom Communication resta contabilizzato separatamente: il limite Gateway non deve diventare un modo per bloccare la comunicazione core durante un incidente.
+
+### Plus / Shield
+
+I tier premium possono offrire:
+
+- quota Gateway managed molto superiore;
+- maggiore egress/provider diversity;
+- priorità/capacità superiore;
+- multi-hop Gateway;
+- bridge/non-public pools;
+- transport rotation più aggressiva;
+- candidate pre-warmed;
+- `MAXIMUM_REACHABILITY` con resource budget più alto.
+
+I numeri premium definitivi devono derivare dai costi reali e non sono fissati nella specifica iniziale.
+
+### Business / Private Gateway
+
+Business può offrire:
+
+```text
+PRIVATE_EGRESS
+BUSINESS_EGRESS
+region/policy dedicated pools
+custom quotas
+SLA
+private deployment
+```
+
+Un egress privato gestito dall'organizzazione può avere una policy economica indipendente dai 100 MB/giorno del managed Gateway Free.
+
+Principio commerciale:
+
+> **Freedom Communication non diventa più sicuro pagando. Freedom Gateway monetizza capacità di rete gestita e resilienza aggiuntiva.**
+
+---
+
+## 14. Store/platform separation
+
+Su Android, `VpnService` è il meccanismo previsto per un tunnel device-level, ma la build distribuita tramite store deve rispettare le policy vigenti su dichiarazione, consenso e uso della funzionalità.
 
 Freedom mantiene quindi la separazione:
 
@@ -378,7 +456,7 @@ Una restrizione dello store può cambiare la build ufficiale senza eliminare il 
 
 ---
 
-## 14. Benchmark esterni
+## 15. Benchmark esterni
 
 Freedom Gateway non nasce in un vuoto tecnico.
 
@@ -405,7 +483,7 @@ non come claim che nessuno abbia mai costruito singole parti equivalenti.
 
 ---
 
-## 15. Roadmap
+## 16. Roadmap
 
 Gateway non deve ritardare il core messenger V1.
 
@@ -414,18 +492,19 @@ Sequenza consigliata:
 ```text
 G0  reusable path/transport abstraction
 G1  explicit managed/private egress
-G2  Android selected-app VpnService prototype
+G2  Android selected-app Gateway prototype
 G3  whole-device mode + DNS/leak controls
-G4  egress diversity / health / failover
-G5  shielded multi-hop gateway
-G6  pluggable anti-censorship transport interface
-G7  bridge distribution / anti-enumeration
-G8  active filtering tests / DPI lab
-G9  Maximum Reachability policy
-G10 independent security/censorship review
+G4  managed quota accounting + 100 MB/day Free target
+G5  egress diversity / health / failover
+G6  shielded multi-hop Gateway
+G7  pluggable anti-censorship transport interface
+G8  bridge distribution / anti-enumeration
+G9  active filtering tests / DPI lab
+G10 Maximum Reachability policy
+G11 independent security/censorship review
 ```
 
-## 16. Invarianti
+## 17. Invarianti
 
 - Freedom Communication e Freedom Gateway hanno trust model differenti;
 - il Gateway non riduce la sicurezza E2EE del core;
@@ -436,4 +515,6 @@ G10 independent security/censorship review
 - il client non promette universal firewall bypass;
 - il sistema deve reagire automaticamente a failure selettive quando esistono alternative;
 - l'assenza totale di connettività resta fuori dal potere di un protocollo IP;
-- metadata e limiti del Gateway devono essere descritti separatamente dalle garanzie della comunicazione Freedom.
+- metadata e limiti del Gateway devono essere descritti separatamente dalle garanzie della comunicazione Freedom;
+- il target Free `100 MB/day` riguarda managed Gateway capacity, non il volume di Freedom Communication;
+- quote/prezzi Gateway possono cambiare senza cambiare il wire protocol.
