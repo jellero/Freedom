@@ -1,0 +1,343 @@
+; Freedom Protocol canonical object schema
+; Status: normative schema draft
+;
+; Field names and object shapes in this file are the single source of truth.
+; Security semantics are defined by docs/SECURITY_INVARIANTS.md and subsystem docs.
+; Encoding target: deterministic CBOR profile with frozen test vectors before public interoperability.
+;
+; Every signature MUST use the domain-separated signing input documented in spec/README.md.
+
+uint64 = uint
+bytes16 = bstr .size 16
+bytes32 = bstr .size 32
+bytes64 = bstr .size 64
+network-id = tstr
+object-type = tstr
+
+; ---- Identity / device authorization ---------------------------------------------------------
+
+device-authorization-delegation = {
+  version: uint,
+  network_id: network-id,
+  root_epoch: uint64,
+  authorization_public_key: bstr,
+  authorization_epoch: uint64,
+  capabilities: [* tstr],
+  valid_from_height: uint64,
+  expires_after_height: uint64,
+  root_recovery_signature: bstr
+}
+
+device-certificate = {
+  version: uint,
+  network_id: network-id,
+  root_identity_proof: bstr,
+  root_epoch: uint64,
+  authorization_epoch: uint64,
+  device_record_commitment: bytes32,
+  device_public_key: bstr,
+  key_epoch: uint64,
+  protocol_version: uint,
+  capabilities: [* tstr],
+  issued_at_height: uint64,
+  expires_after_height: uint64,
+  certificate_id: bytes32,
+  authorization_signature: bstr
+}
+
+; The control-plane does not need to know which RootIdentity owns this record.
+; Security validity comes from the peer-verified DeviceCertificate.
+device-record = {
+  version: uint,
+  device_record_commitment: bytes32,
+  device_public_key: bstr,
+  device_control_public_key: bstr,
+  key_epoch: uint64,
+  status: "ACTIVE" / "REVOKED",
+  protocol_version: uint,
+  updated_at_height: uint64
+}
+
+device-revocation-record = {
+  version: uint,
+  device_record_commitment: bytes32,
+  revoked_key_epoch_floor: uint64,
+  revocation_epoch: uint64,
+  effective_height: uint64,
+  reason_code: uint,
+  device_control_signature: bstr
+}
+
+authorization-revocation-record = {
+  version: uint,
+  authorization_key_commitment: bytes32,
+  revoked_authorization_epoch_floor: uint64,
+  revocation_epoch: uint64,
+  effective_height: uint64,
+  recovery_or_successor_proof: bstr
+}
+
+user-recovery-policy = {
+  version: uint,
+  recovery_policy_epoch: uint64,
+  recovery_key_commitments: [2* bstr],
+  threshold: uint,
+  recovery_delay_blocks: uint64,
+  policy_commitment: bytes32
+}
+
+user-root-rotation = {
+  version: uint,
+  old_root_epoch: uint64,
+  new_root_public_key: bstr,
+  new_root_commitment: bytes32,
+  recovery_policy_epoch: uint64,
+  rotation_mode: "NORMAL" / "COMPROMISE_RECOVERY",
+  activation_height: uint64,
+  old_root_continuity_proof: bstr / null,
+  recovery_quorum_proof: bstr / null
+}
+
+; ---- Pairwise contact / rendezvous -----------------------------------------------------------
+
+freedom-contact = {
+  version: uint,
+  network_id: network-id,
+  root_identity_proof: bstr,
+  contact_capability: bstr,
+  ? bootstrap_device_certificate: device-certificate,
+  ? bootstrap_route_hints: [* route-candidate],
+  ? expires_after_height: uint64
+}
+
+; write_public_key is deterministically derived from the pairwise rendezvous secret,
+; direction and epoch. slot_id is H(domain || write_public_key || epoch || direction).
+rendezvous-record = {
+  version: uint,
+  slot_id: bytes32,
+  write_public_key: bstr,
+  generation: uint64,
+  issued_at_height: uint64,
+  expires_after_height: uint64,
+  ciphertext: bstr,
+  write_signature: bstr
+}
+
+recovery-beacon = {
+  version: uint,
+  slot_id: bytes32,
+  write_public_key: bstr,
+  generation: uint64,
+  issued_at_height: uint64,
+  expires_after_height: uint64,
+  recovery_nonce: bytes32,
+  route_generation: uint64,
+  state: "SEEKING_PATH" / "TRYING_ALTERNATIVE",
+  ciphertext: bstr,
+  write_signature: bstr
+}
+
+pairwise-recovery-bundle = {
+  version: uint,
+  state_epoch: uint64,
+  created_at_height: uint64,
+  recovery_key_epoch: uint64,
+  contacts_metadata_ciphertext: bstr,
+  pairwise_state_ciphertext: bstr,
+  integrity: bstr
+}
+
+; ---- Routing / relay -------------------------------------------------------------------------
+
+route-candidate = {
+  transport: tstr,
+  endpoint: tstr,
+  candidate_type: tstr,
+  priority: int,
+  observed_at_height: uint64,
+  expires_after_height: uint64
+}
+
+relay-descriptor = {
+  version: uint,
+  relay_public_key: bstr,
+  relay_id: bytes32,
+  relay_class: tstr,
+  endpoint: tstr,
+  transport: tstr,
+  capabilities: [* tstr],
+  ? self_declared_metadata: bstr,
+  ? observed_metadata: bstr,
+  ? provenance_attestations: [* provenance-attestation],
+  expires_after_height: uint64,
+  signature: bstr
+}
+
+provenance-attestation = {
+  version: uint,
+  issuer_id: bytes32,
+  issuer_class: tstr,
+  subject_relay_id: bytes32,
+  claim_type: tstr,
+  claim_value: bstr,
+  observed_at_height: uint64,
+  expires_after_height: uint64,
+  signature: bstr
+}
+
+relay-candidate = {
+  descriptor_hash: bytes32,
+  ? capability_token: bstr,
+  ? capacity_hint: uint64
+}
+
+; ---- Handshake / session / rekey -------------------------------------------------------------
+
+handshake-offer = {
+  version: uint,
+  network_id: network-id,
+  supported_versions: [1* uint],
+  supported_suites: [1* tstr],
+  supported_transport_semantics: [1* ("RELIABLE_ORDERED_STREAM" / "UNRELIABLE_DATAGRAM")],
+  certificate_hash: bytes32,
+  key_epoch: uint64,
+  ephemeral_public_key: bstr,
+  nonce: bytes32
+}
+
+rekey-init = {
+  version: uint,
+  session_id: bytes32,
+  current_epoch: uint64,
+  next_epoch: uint64,
+  initiator_ephemeral_public_key: bstr,
+  nonce: bytes32,
+  transcript_hash: bytes32
+}
+
+rekey-commit = {
+  version: uint,
+  session_id: bytes32,
+  next_epoch: uint64,
+  responder_ephemeral_public_key: bstr,
+  init_hash: bytes32,
+  transcript_hash: bytes32
+}
+
+rekey-ack = {
+  version: uint,
+  session_id: bytes32,
+  next_epoch: uint64,
+  commit_hash: bytes32,
+  key_confirmation: bytes32
+}
+
+; ---- Control-plane verification --------------------------------------------------------------
+
+verified-control-plane-checkpoint = {
+  version: uint,
+  network_id: network-id,
+  chain_adapter_id: tstr,
+  finalized_height: uint64,
+  finalized_block_hash: bytes32,
+  state_root: bytes32,
+  finalized_time: uint64,
+  consensus_or_finality_proof: bstr,
+  verifier_version: uint
+}
+
+bootstrap-freshness-floor = {
+  minimum_checkpoint_height: uint64,
+  ? minimum_checkpoint_hash: bytes32,
+  minimum_signer_set_epoch: uint64,
+  minimum_policy_epoch: uint64,
+  issued_in_release_id: tstr
+}
+
+state-migration-proof = {
+  version: uint,
+  source_checkpoint_hash: bytes32,
+  source_export_root: bytes32,
+  migration_program_hash: bytes32,
+  migration_input_commitment: bytes32,
+  target_imported_state_root: bytes32,
+  verification_artifact: bstr
+}
+
+; ---- Release / governance -------------------------------------------------------------------
+
+freedom-release = {
+  manifest_version: uint,
+  release_id: tstr,
+  version_code: uint64,
+  version_name: tstr,
+  package_id: tstr,
+  artifact_sha256: bytes32,
+  artifact_size: uint64,
+  signing_cert_fingerprint: bytes32,
+  ? signing_lineage_commitment: bytes32,
+  min_supported_version: uint64,
+  min_secure_version: uint64,
+  criticality: tstr,
+  release_locator_hash: bytes32,
+  issued_at_height: uint64,
+  signer_set_epoch: uint64,
+  bootstrap_freshness_floor: bootstrap-freshness-floor,
+  signatures: [* bstr]
+}
+
+release-status = {
+  version: uint,
+  release_id: tstr,
+  artifact_sha256: bytes32,
+  status: "ACTIVE" / "DEPRECATED" / "REVOKED",
+  status_epoch: uint64,
+  min_secure_version: uint64,
+  policy_epoch: uint64,
+  reason_hash: bytes32 / null,
+  remediation_release: tstr / null,
+  issued_at_height: uint64,
+  signer_set_epoch: uint64,
+  signatures: [* bstr]
+}
+
+security-policy = {
+  version: uint,
+  policy_epoch: uint64,
+  latest_version: uint64,
+  min_supported_version: uint64,
+  min_secure_version: uint64,
+  vulnerable_versions: [* uint64],
+  disabled_features: [* tstr],
+  severity: tstr,
+  reason_hash: bytes32,
+  remediation_release: tstr,
+  issued_at_height: uint64,
+  ? expires_after_height: uint64,
+  signer_set_epoch: uint64,
+  signatures: [* bstr]
+}
+
+signer-set-transition = {
+  version: uint,
+  role: tstr,
+  previous_epoch: uint64,
+  next_epoch: uint64,
+  previous_set_commitment: bytes32,
+  next_set_commitment: bytes32,
+  activation_height: uint64,
+  previous_set_threshold_signatures: [* bstr],
+  next_set_acceptance_signatures: [* bstr]
+}
+
+bootstrap-trust-anchor = {
+  version: uint,
+  verifier_policy_version: uint,
+  expected_package_id: tstr,
+  release_signer_set_root_commitment: bytes32,
+  ? governance_recovery_set_commitment: bytes32,
+  android_signing_root_or_lineage_anchor: bytes32,
+  minimum_manifest_version: uint,
+  accepted_contract_or_controlplane_anchor: bytes32,
+  bootstrap_freshness_floor: bootstrap-freshness-floor
+}
