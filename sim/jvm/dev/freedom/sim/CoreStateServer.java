@@ -10,8 +10,8 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * Tiny line-protocol bridge used by sim/simctl.py.
- * Python owns orchestration/virtual time; all security transition state lives in FreedomCore.
+ * Tiny line-protocol bridge used by sim/simctl.py and L3 differential harnesses.
+ * Python owns orchestration/virtual time; security transition state lives in FreedomCore.
  */
 public final class CoreStateServer {
     private final FreedomCore.Model model = new FreedomCore.Model();
@@ -87,6 +87,12 @@ public final class CoreStateServer {
                 boolean accepted = model.controlPlane.verifyCheckpoint(Long.parseLong(p[1]), bool(p[2]));
                 return "accepted=" + accepted + "\t" + snapshot();
             }
+            case "VERIFY_MUTATION" -> {
+                require(p, 6);
+                boolean accepted = model.mutation.verify(
+                        bool(p[1]), bool(p[2]), bool(p[3]), bool(p[4]), Long.parseLong(p[5]));
+                return "accepted=" + accepted + "\t" + snapshot();
+            }
             case "BEGIN_REKEY" -> { require(p, 2); model.rekey.begin(Long.parseLong(p[1])); return snapshot(); }
             case "REKEY_COMMIT" -> { require(p, 2); model.rekey.receiveCommit(Long.parseLong(p[1])); return snapshot(); }
             case "REKEY_ACK" -> { require(p, 2); model.rekey.acknowledge(Long.parseLong(p[1])); return snapshot(); }
@@ -112,6 +118,9 @@ public final class CoreStateServer {
         s.put("verified_height", nullString(model.controlPlane.verifiedHeight()));
         s.put("control_last_rejected", Boolean.toString(model.controlPlane.lastRejected()));
         s.put("control_last_reason", nullString(model.controlPlane.lastReason()));
+        s.put("mutation_committed", Boolean.toString(model.mutation.committed()));
+        s.put("mutation_last_reason", nullString(model.mutation.lastReason()));
+        s.put("mutation_committed_version", Long.toString(model.mutation.committedVersion()));
         s.put("key_epoch", Long.toString(model.rekey.keyEpoch()));
         s.put("pending_key_epoch", nullString(model.rekey.pendingEpoch()));
         s.put("rekey_phase", model.rekey.phase().name());
