@@ -45,7 +45,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: "temurin"
           java-version: "17"
@@ -81,13 +81,13 @@ jobs:
 
   l3-near-sandbox:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: "temurin"
           java-version: "17"
@@ -96,10 +96,18 @@ jobs:
           rustup toolchain install 1.93.0 --profile minimal
           rustup default 1.93.0
           rustup target add wasm32-unknown-unknown --toolchain 1.93.0
-          cargo install --locked --no-default-features cargo-near --version 0.22.0
           rustc --version
           cargo --version
-          cargo near --version
+      - name: Install official cargo-near binary and enforce version
+        run: |
+          curl --proto '=https' --tlsv1.2 -LsSf \
+            https://github.com/near/cargo-near/releases/latest/download/cargo-near-installer.sh | sh
+          CARGO_NEAR_VERSION="$(cargo near --version)"
+          echo "$CARGO_NEAR_VERSION"
+          case "$CARGO_NEAR_VERSION" in
+            *0.22.0*) ;;
+            *) echo "Expected cargo-near 0.22.0, got: $CARGO_NEAR_VERSION" >&2; exit 1 ;;
+          esac
       - name: Run real NEAR Sandbox differential
         env:
           NEAR_ENABLE_SANDBOX_LOG: "0"
