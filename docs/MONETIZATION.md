@@ -29,6 +29,7 @@ Policy iniziale Free:
 - messaggistica sincrona;
 - modalità Live/effimera;
 - comunicazione diretta quando disponibile;
+- possibilità opt-in di contribuire come `DEVICE_RELAY`;
 - chiamate base;
 - relay community/best-effort quando disponibili;
 - rilevamento base di route failure;
@@ -42,7 +43,26 @@ Il limite di 10 contatti riguarda contatti **attivi simultaneamente**, non il nu
 
 La rubrica resta locale e cifrata. Se serve enforcement resistente a client modificati, usare commitment/slot opachi senza pubblicare `Account -> DeviceID[]`.
 
-## 3. Freedom Plus / Shield
+## 3. Relay Contributor
+
+Un utente Free che mette a disposizione un dispositivo come relay Freedom utile alla rete riceve **10 slot contatto attivi aggiuntivi**.
+
+Policy iniziale:
+
+```text
+FREE                    10 contatti attivi
+FREE + RELAY CONTRIBUTOR 20 contatti attivi
+```
+
+Il bonus non equivale a Pro e non compra capacità Shield premium.
+
+Il reward deve dipendere da una partecipazione relay realmente utile, non dal semplice stato del toggle. La policy può usare finestre di disponibilità, circuiti accettati, traffico inoltrato bounded o receipt/commitment opachi, evitando di pubblicare social graph o dettagli dei circuiti.
+
+Se il contributo cessa, il bonus può scadere dopo una grace period. I contatti sopra il limite base non vengono cancellati automaticamente; l'utente non può aggiungerne di nuovi finché non torna entro la quota o riqualifica il relay.
+
+Dettagli: [`RELAYS.md`](RELAYS.md).
+
+## 4. Freedom Plus / Shield
 
 Il piano premium può offrire:
 
@@ -64,7 +84,7 @@ Il piano premium può offrire:
 
 Il piano Pro non compra una cifratura più forte, una diagnosi tecnica più onesta o il diritto esclusivo al recovery di base.
 
-## 4. Entitlement e recovery
+## 5. Entitlement e recovery
 
 La licenza appartiene alla `RootIdentity`, non al singolo APK/device.
 
@@ -83,9 +103,11 @@ Dopo reset/nuovo telefono, Recovery Kit -> RootIdentity -> nuova DeviceKey -> re
 
 La chain fa rispettare `active_devices <= max_devices`; il restore non deve trasformarsi in clonazione illimitata della licenza.
 
+Benefit temporanei come `Relay Contributor` possono modificare la quota contatti senza trasformarsi in licenze Pro permanenti.
+
 Dettagli: [`ACCOUNT_RECOVERY_LICENSES.md`](ACCOUNT_RECOVERY_LICENSES.md).
 
-## 5. Emergency Shield Free
+## 6. Emergency Shield Free
 
 Relay gestiti, multi-hop, voce/video shielded consumano banda e infrastruttura. È legittimo limitare la capacità commerciale gratuita.
 
@@ -103,7 +125,7 @@ weighted traffic budget
 
 Freedom deve tentare i bypass Free disponibili prima di mostrare proposte commerciali aggressive durante un incidente.
 
-## 6. Pagamenti provider-agnostic
+## 7. Pagamenti provider-agnostic
 
 L'utente compra **Freedom**, non NEAR.
 
@@ -126,7 +148,7 @@ Nessun merchant `client_secret` deve essere distribuito nell'APK.
 
 Dettagli: [`PAYMENTS.md`](PAYMENTS.md).
 
-## 7. NEAR, gas e treasury
+## 8. NEAR, gas e treasury
 
 L'utente Free non deve possedere obbligatoriamente NEAR.
 
@@ -140,7 +162,9 @@ Treasury e fee relayer indipendenti possono sponsorizzare registrazione e rare o
 
 Il costo on-chain non cresce con i messaggi: messaggi, ACK, file, audio, video e route update restano off-chain.
 
-## 8. Sponsored registration e anti-abuse
+I device/community relay possono inoltre ridurre la dipendenza da capacità relay managed, ma non devono essere trattati come infrastruttura garantita.
+
+## 9. Sponsored registration e anti-abuse
 
 La registrazione iniziale Free può essere sponsorizzata ma non illimitata.
 
@@ -159,7 +183,7 @@ L'installazione locale non produce automaticamente storage on-chain.
 
 Dettagli: [`REGISTRATION_ECONOMICS.md`](REGISTRATION_ECONOMICS.md).
 
-## 9. Anti-dark-pattern commerciale
+## 10. Anti-dark-pattern commerciale
 
 Freedom non deve:
 
@@ -168,9 +192,10 @@ Freedom non deve:
 - nascondere diagnostica fondamentale ai Free;
 - degradare route Free funzionanti;
 - usare paura o sorveglianza non dimostrata come leva commerciale;
-- mostrare un paywall prima delle contromisure Free disponibili durante un incidente critico.
+- mostrare un paywall prima delle contromisure Free disponibili durante un incidente critico;
+- cancellare contatti come punizione immediata quando scade un benefit Relay Contributor.
 
-## 10. Freedom Business
+## 11. Freedom Business
 
 Possibili servizi:
 
@@ -183,20 +208,20 @@ Possibili servizi:
 
 Pagare per infrastruttura non concede accesso al plaintext E2EE.
 
-## 11. Relay economy
+## 12. Relay economy
 
 ```text
-DIRECT                 -> nessun relay
-COMMUNITY RELAY        -> best effort
-EMERGENCY SHIELD FREE  -> capacità gestita limitata
-MANAGED RELAY          -> servizio opzionale
-SHIELDED / MULTI-HOP   -> capacità privacy premium
-MAXIMUM RESILIENCE     -> path diversity/failover premium
+DIRECT                    -> nessun relay
+DEVICE / COMMUNITY RELAY  -> best effort + incentivo Relay Contributor
+EMERGENCY SHIELD FREE     -> capacità gestita limitata
+MANAGED RELAY             -> servizio opzionale
+SHIELDED / MULTI-HOP      -> capacità privacy premium
+MAXIMUM RESILIENCE        -> path diversity/failover premium
 ```
 
-Il pagamento compra capacità, non fiducia crittografica.
+Il pagamento compra capacità, non fiducia crittografica. Il contributo relay compra un beneficio di prodotto limitato, non autorità o accesso al contenuto.
 
-## 12. Vincolo di indipendenza
+## 13. Vincolo di indipendenza
 
 La monetizzazione non deve rendere obbligatori un singolo payment provider, account server, store, RPC, relay o soggetto commerciale.
 
@@ -207,5 +232,6 @@ Riferimenti:
 - [`ACCOUNT_RECOVERY_LICENSES.md`](ACCOUNT_RECOVERY_LICENSES.md)
 - [`PAYMENTS.md`](PAYMENTS.md)
 - [`REGISTRATION_ECONOMICS.md`](REGISTRATION_ECONOMICS.md)
+- [`RELAYS.md`](RELAYS.md)
 - [`ADAPTIVE_DEFENSE.md`](ADAPTIVE_DEFENSE.md)
 - [`NETWORK_STATUS_UI.md`](NETWORK_STATUS_UI.md)
