@@ -37,16 +37,7 @@ Recovery Kit
 
 ## 3. Recovery Kit envelope
 
-Il Recovery Kit deve usare:
-
-- >=128-bit random recovery entropy;
-- >=128-bit random salt;
-- memory-hard KDF (`Argon2id` target o standard equivalente reviewato);
-- versioned KDF params;
-- standard AEAD;
-- checksum soltanto come detection/UX, non authentication.
-
-Rate limiting locale non sostituisce entropy/KDF contro brute force offline.
+Il Recovery Kit usa >=128-bit random recovery entropy, >=128-bit random salt, memory-hard KDF, versioned KDF params e standard AEAD. Local rate limiting non sostituisce entropy/KDF contro offline brute force.
 
 ## 4. Root compromise non è normal restore
 
@@ -62,17 +53,46 @@ ROOT_COMPROMISE
  -> new root epoch
 ```
 
-Se l'utente possiede soltanto una RootRecoveryKey e nessun recovery factor indipendente precommitted, Freedom non può distinguere proprietario e ladro dopo furto completo di quella secret. In quel profilo il progetto non promette compromise recovery.
+Se l'utente possiede soltanto una RootRecoveryKey e nessun recovery factor indipendente precommitted, Freedom non può distinguere proprietario e ladro dopo furto completo di quella secret. In quel profilo non promette compromise recovery.
 
-## 5. UserRecoveryPolicy
+## 5. UserRecoveryPolicy — sticky by default
 
 Schema canonico: `user-recovery-policy`.
 
-La policy può usare più recovery keys/shares distribuite tra custody domains indipendenti.
+La policy viene fissata **prima dell'incidente** e non può essere rimossa/sostituita unilateralmente dalla sola RootRecoveryKey corrente.
 
-Il policy commitment è fissato prima dell'incidente; non può essere inventato dopo che la root è già compromessa.
+V1 rule:
 
-## 6. Ripristino normale
+```text
+normal root rotation
+ -> inherits the same UserRecoveryPolicy commitment
+```
+
+Quindi una root già compromessa non può fare una rotazione normale e cancellare immediatamente l'unica authority capace di recuperarla.
+
+Una futura modifica della recovery policy richiede una state machine separata esplicitamente specificata e almeno l'autorità del recovery quorum corrente; finché tale transition object non è congelato nella specifica, **policy mutation non è una operazione V1 supportata**.
+
+## 6. Compromise-recovery race semantics
+
+`COMPROMISE_RECOVERY` può essere proposto dal recovery quorum contro **l'ultimo root epoch corrente** della stessa lineage, anche se un attacker ha già eseguito una normale root rotation usando una root rubata.
+
+Quando una valid compromise-recovery transition entra in stato pending:
+
+```text
+RECOVERY_PENDING
+```
+
+fino alla sua activation height:
+
+- nuove normal root rotations sono bloccate;
+- modifiche della recovery policy sono bloccate;
+- nuove high-risk device authorizations possono essere bloccate o marcate pending secondo policy;
+- la old/current root non può cancellare da sola la recovery transition;
+- cancellazione/sostituzione richiede la stessa independent recovery authority prevista dalla policy.
+
+Dopo il delay, se il recovery quorum proof resta valido, la transition porta al nuovo root epoch e supersede la compromised lineage state precedente.
+
+## 7. Ripristino normale
 
 ```text
 Restore
@@ -89,24 +109,16 @@ Restore
 
 Non clonare vecchie DeviceKey.
 
-## 7. Pairwise recovery
+## 8. Pairwise recovery
 
 Due path:
 
 ```text
-A. surviving authorized device
-   -> authenticated pairwise-state transfer
-
-B. encrypted PairwiseRecoveryBundle
-   -> bytes from user-chosen backup source
-   -> decrypt/verify locally
+A. surviving authorized device -> authenticated pairwise-state transfer
+B. encrypted PairwiseRecoveryBundle -> bytes from user-chosen backup source
 ```
 
-Schema canonico: `pairwise-recovery-bundle`.
-
-La source dei backup è non fidata; può essere file locale esportato, private cloud scelto dall'utente, storage dell'organizzazione o più mirror di ciphertext.
-
-Il bundle contiene `state_epoch`, `recovery_key_epoch`, `contacts_metadata_ciphertext`, `pairwise_state_ciphertext` e integrity data.
+La source del backup è non fidata.
 
 Dopo restore:
 
@@ -117,46 +129,30 @@ reject detectable rollback
  -> establish fresh session
 ```
 
-Una copia vecchia del bundle non deve diventare future rendezvous authority indefinita.
+Una vecchia copia del bundle non deve diventare future rendezvous authority indefinita.
 
-Se manca surviving device e manca backup valido, ownership/entitlement possono tornare ma i contatti richiedono re-bootstrap.
+Se manca surviving device e backup valido, ownership/entitlement possono tornare ma i contatti richiedono re-bootstrap.
 
-## 8. Device quota V1
+## 9. Device/contact quotas V1
 
-`max_devices` commerciale V1 è product/service policy del client ufficiale, non security/interoperability invariant.
+`max_devices`, `base_contact_slots` e bonus Relay Contributor sono product/service policy, non security/interoperability invariants.
 
-Un client modificato può aggirare una policy locale; questo non concede impersonation o accesso ai plaintext altrui.
+Un client modificato può aggirare una quota locale; il protocollo non pubblica social/device graph per impedirlo.
 
-Hard enforcement privacy-preserving futuro richiede credential/nullifier/ZK reviewati.
-
-## 9. Contact slots V1
-
-`base_contact_slots = 10` è anch'esso product policy locale/servizio, non protocol security primitive.
-
-No social graph pubblico per enforcement commerciale.
-
-## 10. Relay Contributor
-
-```text
-FREE                     10 product slots
-FREE + RELAY CONTRIBUTOR 20 product slots
-```
-
-È un incentivo UX/commerciale del client ufficiale, non una garanzia anti-tamper del protocollo. Il modello economico non deve dipendere esclusivamente da questo bonus.
-
-## 11. Verified state / revocation
+## 10. Verified state / revocation
 
 Activation, revocation, root rotation ed entitlement changes richiedono finality proof + execution success + resulting-state proof + anti-rollback.
 
 Freshness/revocation segue `REVOCATION.md`; `RPC not found` non è non-revocation proof.
 
-## 12. Invarianti
+## 11. Invarianti
 
-- RootRecoveryKey distinta da DeviceAuthorizationKey, DeviceControlKey e DeviceKey;
-- root-compromise recovery richiede independent precommitment;
-- recovery normale genera nuova DeviceKey;
+- RootRecoveryKey distinta da authorization/control/device keys;
+- compromise recovery richiede independent precommitment;
+- recovery policy V1 è sticky across normal root rotation;
+- compromised root alone cannot remove recovery policy or cancel pending compromise recovery;
+- normal restore genera nuova DeviceKey;
 - pairwise backup resta ciphertext;
-- post-restore pairwise future state viene ruotato/re-derivato;
-- assenza backup implica re-bootstrap;
+- post-restore future pairwise state viene ruotato/re-derivato;
 - contact/device quota V1 non è interoperability rule;
-- transaction hash != success.
+- tx hash != success.
