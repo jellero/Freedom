@@ -31,7 +31,7 @@
         "exact_transition_matched": true,
         "resulting_version": 1
       },
-      "expect": {"accepted": false, "failure": "CONTROL_PLANE_EXECUTION_FAILED"}
+      "expect": {"accepted": false, "failure": "CONTROL_PLANE_EXECUTION_FAILED", "committed_version": 0}
     },
     {
       "name": "verified-mutation",
@@ -55,7 +55,31 @@
         "exact_transition_matched": true,
         "resulting_version": 1
       },
-      "expect": {"accepted": false, "failure": "CONTROL_PLANE_ROLLBACK"}
+      "expect": {"accepted": false, "failure": "CONTROL_PLANE_ROLLBACK", "committed_version": 2}
+    },
+    {
+      "name": "successful-chain-write-with-invalid-state-proof",
+      "request": {
+        "op": "verify_mutation",
+        "finality_proof_valid": true,
+        "execution_succeeded": true,
+        "resulting_state_proof_valid": false,
+        "exact_transition_matched": true,
+        "resulting_version": 3
+      },
+      "expect": {"accepted": false, "failure": "CONTROL_PLANE_PROOF_INVALID", "committed_version": 2}
+    },
+    {
+      "name": "successful-chain-write-with-state-mismatch",
+      "request": {
+        "op": "verify_mutation",
+        "finality_proof_valid": true,
+        "execution_succeeded": true,
+        "resulting_state_proof_valid": true,
+        "exact_transition_matched": false,
+        "resulting_version": 3
+      },
+      "expect": {"accepted": false, "failure": "CONTROL_PLANE_STATE_MISMATCH", "committed_version": 2}
     }
   ]
 }

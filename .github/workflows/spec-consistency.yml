@@ -9,6 +9,7 @@ on:
       - "docs/**"
       - "core/**"
       - "sim/**"
+      - "near/**"
       - "tools/**"
       - "app/build.gradle.kts"
       - ".github/CODEOWNERS"
@@ -22,10 +23,15 @@ on:
       - "docs/**"
       - "core/**"
       - "sim/**"
+      - "near/**"
       - "tools/**"
       - "app/build.gradle.kts"
       - ".github/CODEOWNERS"
       - ".github/workflows/spec-consistency.yml"
+
+concurrency:
+  group: freedom-gates-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -39,7 +45,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: "temurin"
           java-version: "17"
@@ -72,3 +78,39 @@ jobs:
           python-version: "3.12"
       - name: Run real-container path failure/address-rebind smoke
         run: python sim/l2/run_docker.py
+
+  l3-near-sandbox:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-java@v5
+        with:
+          distribution: "temurin"
+          java-version: "17"
+      - name: Install pinned NEAR Rust toolchain
+        run: |
+          rustup toolchain install 1.93.0 --profile minimal
+          rustup default 1.93.0
+          rustup target add wasm32-unknown-unknown --toolchain 1.93.0
+          rustc --version
+          cargo --version
+      - name: Install official cargo-near binary and enforce version
+        run: |
+          curl --proto '=https' --tlsv1.2 -LsSf \
+            https://github.com/near/cargo-near/releases/latest/download/cargo-near-installer.sh | sh
+          CARGO_NEAR_VERSION="$(cargo near --version)"
+          echo "$CARGO_NEAR_VERSION"
+          case "$CARGO_NEAR_VERSION" in
+            *0.22.0*) ;;
+            *) echo "Expected cargo-near 0.22.0, got: $CARGO_NEAR_VERSION" >&2; exit 1 ;;
+          esac
+      - name: Run real NEAR Sandbox differential
+        env:
+          NEAR_ENABLE_SANDBOX_LOG: "0"
+        run: >-
+          python sim/l3/differential.py
+          --adapter-cmd "cargo run --quiet --manifest-path near/l3-adapter/Cargo.toml"

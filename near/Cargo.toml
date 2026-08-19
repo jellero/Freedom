@@ -1,0 +1,3 @@
+[workspace]
+members = ["control-plane-contract", "l3-adapter"]
+resolver = "2"

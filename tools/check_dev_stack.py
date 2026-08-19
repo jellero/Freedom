@@ -18,6 +18,12 @@ REQUIRED = [
     "sim/l3/README.md",
     "sim/l3/differential.py",
     "sim/l3/vectors.json",
+    "near/README.md",
+    "near/Cargo.toml",
+    "near/control-plane-contract/Cargo.toml",
+    "near/control-plane-contract/src/lib.rs",
+    "near/l3-adapter/Cargo.toml",
+    "near/l3-adapter/src/main.rs",
     "tools/build_core.py",
     "tools/run_core_tests.py",
 ]
@@ -57,8 +63,44 @@ def main() -> int:
         errors.append(f"invalid L3 vectors: {exc}")
 
     l3_readme = (ROOT / "sim" / "l3" / "README.md").read_text(encoding="utf-8")
-    if "not real L3 acceptance" not in l3_readme and "not** real L3 acceptance" not in l3_readme:
-        errors.append("L3 documentation must distinguish oracle-only from real adapter acceptance")
+    for marker in (
+        "real NEAR Sandbox adapter implemented",
+        "production light-client verification still separate",
+        "light-client",
+        "near/l3-adapter/Cargo.toml",
+    ):
+        if marker not in l3_readme:
+            errors.append(f"L3 documentation missing boundary/implementation marker: {marker}")
+
+    adapter = (ROOT / "near" / "l3-adapter" / "src" / "main.rs").read_text(encoding="utf-8")
+    for marker in (
+        "near_workspaces::sandbox()",
+        "compile_project",
+        "set_bootstrap_floor",
+        "apply_mutation",
+        "FREEDOM_L3",
+        "is_failure()",
+        "client_committed_version",
+        "read_chain_version",
+    ):
+        if marker not in adapter:
+            errors.append(f"NEAR L3 adapter missing executable marker: {marker}")
+
+    contract = (ROOT / "near" / "control-plane-contract" / "src" / "lib.rs").read_text(encoding="utf-8")
+    for marker in (
+        "#[near(contract_state)]",
+        "set_bootstrap_floor",
+        "apply_mutation",
+        "CONTROL_PLANE_ROLLBACK",
+        "CONTROL_PLANE_EXECUTION_FAILED",
+    ):
+        if marker not in contract:
+            errors.append(f"NEAR control-plane kernel missing marker: {marker}")
+
+    workflow = (ROOT / ".github" / "workflows" / "spec-consistency.yml").read_text(encoding="utf-8")
+    for marker in ("l3-near-sandbox:", "Run real NEAR Sandbox differential", '"near/**"'):
+        if marker not in workflow:
+            errors.append(f"CI does not gate real NEAR L3 marker: {marker}")
 
     if errors:
         for error in errors:
