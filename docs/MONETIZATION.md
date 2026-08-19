@@ -14,181 +14,198 @@ Il modello economico deve restare coerente con il trust model del protocollo:
 
 Principio: **monetizzare capacità, comodità e servizi professionali; non la conversazione.**
 
-Un secondo principio commerciale è obbligatorio:
+Principio commerciale obbligatorio:
 
 > **la censura non deve diventare un paywall.**
 
-Freedom può vendere capacità Shield superiore, multi-hop e resilienza preventiva, ma non deve rilevare una probabile interferenza e lasciare deliberatamente offline un utente Free solo per spingerlo verso Pro.
-
 ## 2. Core gratuito
 
-Il client ufficiale deve poter offrire gratuitamente il nucleo di Freedom:
+Policy iniziale Free:
 
-- identità Freedom;
-- fino a **10 contatti attivi** per RootIdentity/entitlement Free;
-- contatti espliciti tramite DeviceID/QR;
+- identità Freedom e Recovery Kit;
+- **1 device attivo**;
+- fino a **10 contatti attivi**;
 - sessioni E2EE;
 - messaggistica sincrona;
 - modalità Live/effimera;
 - comunicazione diretta quando disponibile;
 - chiamate base;
-- accesso a relay community/best-effort quando disponibili;
+- relay community/best-effort quando disponibili;
 - rilevamento base di route failure;
 - fallback tra RPC/provider, relay e route disponibili;
-- recovery rendezvous quando il peer risulta recentemente attivo sul control-plane ma il data-plane non è disponibile;
-- Freedom Network Indicator e spiegazione degli eventi di rete significativi;
-- quota limitata di capacità **Emergency Shield** gestita quando necessaria e disponibile.
+- recovery rendezvous;
+- Freedom Network Indicator;
+- quota limitata di **Emergency Shield** gestita quando necessaria e disponibile;
+- operazioni chain essenziali sponsorizzabili secondo policy anti-abuso.
 
-La resilienza minima del protocollo non deve essere rimossa dal piano gratuito. Il protocollo non deve introdurre una dipendenza tecnica da un abbonamento per poter stabilire o recuperare una sessione tra due peer compatibili quando esiste un percorso disponibile.
+Il limite di 10 contatti riguarda contatti **attivi simultaneamente**, non il numero totale di persone mai aggiunte. Eliminare/disattivare un contatto libera uno slot.
 
-Free e Pro devono ricevere la stessa classificazione tecnica onesta degli eventi di rete. Non deve esistere una versione "meno trasparente" del pannello Network per gli utenti gratuiti.
+La rubrica resta locale e cifrata. Se serve enforcement resistente a client modificati, usare commitment/slot opachi senza pubblicare `Account -> DeviceID[]`.
 
-### 2.1 Limite contatti Free
+## 3. Freedom Plus / Shield
 
-Il limite Free riguarda **contatti attivi simultaneamente**, non il numero totale di persone mai aggiunte.
+Il piano premium può offrire:
 
-Esempio:
+- contatti illimitati o limite molto superiore;
+- più device attivi secondo `max_devices` del tier;
+- maggiore capacità/priorità relay;
+- budget Shield molto superiore;
+- **Always-Shielded** senza direct IP;
+- multi-hop gestito;
+- pool relay più ampio e provider/geographic diversity;
+- pre-warming candidate;
+- failover parallelo;
+- transport rotation aggressiva;
+- bridge/non-public relay pool quando disponibile;
+- padding/metadata protection opzionale;
+- **Maximum Resilience**;
+- limiti file/media superiori;
+- funzioni recovery/multi-device avanzate.
+
+Il piano Pro non compra una cifratura più forte, una diagnosi tecnica più onesta o il diritto esclusivo al recovery di base.
+
+## 4. Entitlement e recovery
+
+La licenza appartiene alla `RootIdentity`, non al singolo APK/device.
 
 ```text
-Free contact slots: 10
-
-Alice   active
-Bob     active
-...
-10 / 10
+FreedomEntitlement {
+    account_commitment
+    tier
+    entitlement_epoch
+    max_devices
+    expires_at?
+    status
+}
 ```
 
-L'utente può eliminare/disattivare un contatto e liberare immediatamente uno slot per un altro contatto.
+Dopo reset/nuovo telefono, Recovery Kit -> RootIdentity -> nuova DeviceKey -> restore entitlement.
 
-La rubrica e il social graph non devono essere pubblicati in chiaro sulla blockchain. La lista dei contatti resta locale e cifrata.
+La chain fa rispettare `active_devices <= max_devices`; il restore non deve trasformarsi in clonazione illimitata della licenza.
 
-Se in futuro è necessario impedire che un client modificato aggiri il limite, l'enforcement deve usare **slot/commitment opachi** o una primitive equivalente che consenta di contare gli slot senza pubblicare una relazione leggibile `Account -> DeviceID[]`.
+Dettagli: [`ACCOUNT_RECOVERY_LICENSES.md`](ACCOUNT_RECOVERY_LICENSES.md).
 
-Il design deve minimizzare anche i metadati derivabili da numero, timing e rotazione degli slot. Il limite commerciale non giustifica la pubblicazione del social graph.
+## 5. Emergency Shield Free
 
-## 3. Emergency Shield Free
+Relay gestiti, multi-hop, voce/video shielded consumano banda e infrastruttura. È legittimo limitare la capacità commerciale gratuita.
 
-Relay gestiti, multi-hop, voce e video shielded consumano banda e infrastruttura. È quindi legittimo limitare la quantità di capacità commerciale gratuita.
-
-Il limite definitivo deve essere determinato da misure reali di:
-
-- costo bandwidth;
-- costo relay;
-- mix testo/media/voce/video;
-- abuso;
-- geografia/provider diversity;
-- costo delle eventuali chain write di recovery.
+Il limite definitivo va determinato da dati reali di bandwidth, relay cost, mix testo/media/voce/video, abuso e geografia.
 
 Possibili unità interne:
 
 ```text
-managed relay bytes / day
-shielded minutes / day
-emergency sessions / day
+managed relay bytes/day
+shielded minutes/day
+emergency sessions/day
 capacity tokens
 weighted traffic budget
 ```
 
-Il client può esporre una metrica più semplice, ad esempio **messaggi/sessioni di emergenza disponibili**, purché la contabilità interna non tratti un messaggio di testo e un video come equivalenti in costo.
+Freedom deve tentare i bypass Free disponibili prima di mostrare proposte commerciali aggressive durante un incidente.
 
-Non fissare un numero permanente prima di aver raccolto dati reali.
+## 6. Pagamenti provider-agnostic
 
-Quando il budget Free è disponibile, Freedom deve tentare il bypass prima di mostrare qualsiasi proposta commerciale aggressiva.
+L'utente compra **Freedom**, non NEAR.
 
-Quando il budget è quasi esaurito, il client può informare l'utente in modo neutro e spiegare quali alternative community/self-hosted restano disponibili.
+Metodi previsti:
 
-## 4. Freedom Plus / Shield
+```text
+PayPal
+crypto native
+stablecoin
+future providers
+```
 
-Possibili funzionalità premium del client ufficiale:
+PayPal non richiede un server Freedom pubblico: il checkout può essere aperto dall'app, mentre worker privati outbound-only verificano il provider e pubblicano una `PaymentAttestation` on-chain.
 
-- contatti illimitati o un limite molto superiore al Free, secondo la policy commerciale;
-- maggiore capacità o priorità sui relay gestiti;
-- budget Shield molto superiore al Free;
-- **Always-Shielded mode** senza direct IP;
-- percorsi privacy/multi-hop gestiti;
-- pool relay più ampio e geograficamente/provider-diverso;
-- pre-warming di candidate alternativi;
-- failover parallelo più rapido;
-- transport rotation più aggressiva;
-- bridge/non-public relay pool quando disponibile;
-- padding/metadata protection opzionale quando implementato;
-- modalità **Maximum Resilience** con più percorsi indipendenti pronti prima del failure;
-- trasferimenti file con limiti superiori;
-- qualità o capacità media superiori dove l'infrastruttura comporta un costo;
-- multi-device e strumenti di migrazione/recovery avanzati;
-- personalizzazioni e funzionalità client non necessarie all'interoperabilità di base.
+Il callback/OK nell'app non è sufficiente come prova economica autoritativa.
 
-Il piano Pro monetizza infrastruttura, banda, path diversity, capacità e automazione più costose. Non compra una cifratura più forte, non compra una classificazione più onesta degli eventi e non deve diventare requisito per autenticare una sessione Freedom.
+Per crypto verificabile on-chain, l'entitlement può essere attivato direttamente dal pagamento verificato dal contratto/adaptor.
 
-Le funzioni premium non devono creare un protocollo incompatibile con i client base.
+Nessun merchant `client_secret` deve essere distribuito nell'APK.
 
-## 5. Anti-dark-pattern commerciale
+Dettagli: [`PAYMENTS.md`](PAYMENTS.md).
+
+## 7. NEAR, gas e treasury
+
+L'utente Free non deve possedere obbligatoriamente NEAR.
+
+Treasury e fee relayer indipendenti possono sponsorizzare registrazione e rare operazioni essenziali. Ricavi Pro/Business/crypto possono finanziare:
+
+- gas;
+- storage staking;
+- relay/Shield bandwidth;
+- media infrastructure;
+- security/update infrastructure.
+
+Il costo on-chain non cresce con i messaggi: messaggi, ACK, file, audio, video e route update restano off-chain.
+
+## 8. Sponsored registration e anti-abuse
+
+La registrazione iniziale Free può essere sponsorizzata ma non illimitata.
+
+```text
+valid RootIdentity
+ -> anti-abuse proof / adaptive PoW
+ -> sponsorship not consumed
+ -> relayer rate limit
+ -> global bounded budget
+ -> register
+```
+
+Più relayer devono poter coesistere. Non usare PayPal, carta, SMS o numero telefonico come requisito universale per ottenere un'identità Free.
+
+L'installazione locale non produce automaticamente storage on-chain.
+
+Dettagli: [`REGISTRATION_ECONOMICS.md`](REGISTRATION_ECONOMICS.md).
+
+## 9. Anti-dark-pattern commerciale
 
 Freedom non deve:
 
 - chiamare "censura" una normale perdita di rete per vendere Pro;
-- aumentare artificialmente la severità di un evento quando la quota Free finisce;
-- nascondere informazioni diagnostiche fondamentali agli utenti Free;
-- degradare deliberatamente route Free funzionanti;
-- usare paura, sorveglianza non dimostrata o claim assoluti come leva commerciale;
-- mostrare un paywall prima di aver tentato le contromisure Free disponibili durante un incidente critico.
+- aumentare artificialmente la severità quando una quota Free finisce;
+- nascondere diagnostica fondamentale ai Free;
+- degradare route Free funzionanti;
+- usare paura o sorveglianza non dimostrata come leva commerciale;
+- mostrare un paywall prima delle contromisure Free disponibili durante un incidente critico.
 
-Il tier commerciale può determinare **quanta infrastruttura gestita e quanta capacità prodotto** viene consumata, non reinterpretare i segnali tecnici.
+## 10. Freedom Business
 
-## 6. Freedom Business
-
-Possibili servizi professionali:
+Possibili servizi:
 
 - SDK e integrazioni;
 - deployment aziendali;
-- relay dedicati o gestiti;
-- pool Shield privati/gestiti;
+- relay/Shield pool dedicati;
 - supporto e SLA;
-- policy e amministrazione locale dei client aziendali;
+- policy/amministrazione locale;
 - infrastruttura privata compatibile con Freedom Protocol.
 
-Un'organizzazione può pagare per infrastruttura e supporto senza ottenere accesso al plaintext delle comunicazioni E2EE.
+Pagare per infrastruttura non concede accesso al plaintext E2EE.
 
-## 7. Relay economy
-
-Il traffico diretto endpoint-to-endpoint non richiede infrastruttura Freedom nel data path.
-
-Quando un utente sceglie o necessita relay, possono coesistere:
+## 11. Relay economy
 
 ```text
 DIRECT                 -> nessun relay
 COMMUNITY RELAY        -> best effort
 EMERGENCY SHIELD FREE  -> capacità gestita limitata
-MANAGED RELAY          -> servizio a pagamento opzionale
-SHIELDED / MULTI-HOP   -> capacità privacy opzionale
-MAXIMUM RESILIENCE     -> path diversity e failover premium
+MANAGED RELAY          -> servizio opzionale
+SHIELDED / MULTI-HOP   -> capacità privacy premium
+MAXIMUM RESILIENCE     -> path diversity/failover premium
 ```
 
-Il pagamento di un relay compra capacità di rete, non fiducia crittografica. Il relay resta non fidato e non possiede le chiavi E2EE.
+Il pagamento compra capacità, non fiducia crittografica.
 
-## 8. Gas e blockchain
+## 12. Vincolo di indipendenza
 
-Le operazioni on-chain rare — registrazione identità, key rotation/revocation, rendezvous write e recovery beacon quando necessario — possono richiedere fee della chain.
+La monetizzazione non deve rendere obbligatori un singolo payment provider, account server, store, RPC, relay o soggetto commerciale.
 
-Freedom può supportare relayer di fee indipendenti che sponsorizzano il gas, ma:
+Un client compatibile deve continuare a usare Freedom Protocol anche se i servizi commerciali ufficiali sono indisponibili.
 
-- la private identity key resta sul dispositivo;
-- la private key del relayer non deve essere distribuita nel client;
-- un relayer non deve poter firmare come DeviceID;
-- devono poter esistere più relayer intercambiabili;
-- l'utente o un'organizzazione deve poter usare un proprio meccanismo di pagamento compatibile;
-- il blocco di un singolo relayer non deve rendere Freedom inutilizzabile.
+Riferimenti:
 
-Il costo on-chain non cresce con il numero di messaggi: messaggi, ACK, file, audio, video e route update in-session restano off-chain.
-
-I recovery beacon devono essere eccezionali, a TTL breve e attivati solo dopo perdita del data path o in modalità di resilienza esplicitamente configurata; non devono trasformarsi in heartbeat blockchain continui.
-
-## 9. Vincolo di indipendenza
-
-La monetizzazione non deve trasformare Freedom in un servizio che dipende da un singolo account, provider, store, RPC, relay o soggetto commerciale.
-
-Un client compatibile deve poter continuare a usare Freedom Protocol anche se i servizi commerciali ufficiali non sono disponibili.
-
-Dettagli del rilevamento/failover: [`ADAPTIVE_DEFENSE.md`](ADAPTIVE_DEFENSE.md).
-
-UX di stato rete e Emergency Shield: [`NETWORK_STATUS_UI.md`](NETWORK_STATUS_UI.md).
+- [`ACCOUNT_RECOVERY_LICENSES.md`](ACCOUNT_RECOVERY_LICENSES.md)
+- [`PAYMENTS.md`](PAYMENTS.md)
+- [`REGISTRATION_ECONOMICS.md`](REGISTRATION_ECONOMICS.md)
+- [`ADAPTIVE_DEFENSE.md`](ADAPTIVE_DEFENSE.md)
+- [`NETWORK_STATUS_UI.md`](NETWORK_STATUS_UI.md)
