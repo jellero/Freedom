@@ -3,9 +3,8 @@
   <desc id="desc">Freedom Communication uses RootIdentity-backed device authorization, pairwise contact identity, a replaceable route and transport fabric, and an authenticated end-to-end encrypted live session between Freedom endpoints. Relays and bridges forward ciphertext and do not become trust anchors or offline mailboxes.</desc>
   <defs>
     <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z" fill="#475569"/></marker>
-    <marker id="cyanArrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z" fill="#0891b2"/></marker>
     <style>
-      .bg{fill:#fff}.title{font:700 42px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#0f172a}.subtitle{font:400 20px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#475569}.section{font:700 23px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#0f172a}.label{font:600 18px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#0f172a}.small{font:400 16px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#334155}.tiny{font:400 14px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#475569}.endpoint{fill:#eff6ff;stroke:#60a5fa;stroke-width:3}.control{fill:#f5f3ff;stroke:#8b5cf6;stroke-width:3}.pair{fill:#ecfeff;stroke:#06b6d4;stroke-width:3}.route{fill:#f0fdf4;stroke:#22c55e;stroke-width:3}.pathbox{fill:#f8fafc;stroke:#cbd5e1;stroke-width:2}.relay{fill:#fff7ed;stroke:#fb923c;stroke-width:2}.session{fill:#ecfeff;stroke:#0891b2;stroke-width:4}.payload{fill:#f8fafc;stroke:#94a3b8;stroke-width:2}.warn{fill:#fff7ed;stroke:#f59e0b;stroke-width:2}.line{stroke:#475569;stroke-width:3;fill:none;marker-end:url(#arrow)}.dash{stroke:#64748b;stroke-width:2.5;stroke-dasharray:9 8;fill:none;marker-end:url(#arrow)}.secure{stroke:#0891b2;stroke-width:6;fill:none;marker-start:url(#cyanArrow);marker-end:url(#cyanArrow)}
+      .bg{fill:#fff}.title{font:700 42px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#0f172a}.subtitle{font:400 20px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#475569}.section{font:700 23px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#0f172a}.label{font:600 18px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#0f172a}.small{font:400 16px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#334155}.tiny{font:400 14px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#475569}.endpoint{fill:#eff6ff;stroke:#60a5fa;stroke-width:3}.control{fill:#f5f3ff;stroke:#8b5cf6;stroke-width:3}.pair{fill:#ecfeff;stroke:#06b6d4;stroke-width:3}.route{fill:#f0fdf4;stroke:#22c55e;stroke-width:3}.pathbox{fill:#f8fafc;stroke:#cbd5e1;stroke-width:2}.relay{fill:#fff7ed;stroke:#fb923c;stroke-width:2}.session{fill:#ecfeff;stroke:#0891b2;stroke-width:4}.payload{fill:#f8fafc;stroke:#94a3b8;stroke-width:2}.warn{fill:#fff7ed;stroke:#f59e0b;stroke-width:2}.line{stroke:#475569;stroke-width:3;fill:none;marker-end:url(#arrow)}.dash{stroke:#64748b;stroke-width:2.5;stroke-dasharray:9 8;fill:none;marker-end:url(#arrow)}
     </style>
   </defs>
 
@@ -82,8 +81,6 @@
   <text class="section" x="800" y="883" text-anchor="middle">Authenticated E2EE live session</text>
   <text class="small" x="800" y="918" text-anchor="middle">relay / bridge / provider transport ciphertext — they do not authenticate the peer or hold conversation keys</text>
   <text class="tiny" x="800" y="948" text-anchor="middle">the selected route may change without changing who Alice and Bob are to each other</text>
-
-  <path class="secure" d="M450 910 C650 820 950 820 1150 910"/>
 
   <rect class="payload" x="255" y="1010" width="210" height="64" rx="18"/>
   <text class="label" x="360" y="1049" text-anchor="middle">Text / ACK</text>
