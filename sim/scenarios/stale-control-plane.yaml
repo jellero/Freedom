@@ -1,0 +1,35 @@
+version: 1
+name: stale-control-plane-below-bootstrap-floor
+seed: 3001
+clock: virtual
+nodes:
+  - alice
+  - rpc_stale
+  - rpc_honest
+steps:
+  - at: 0s
+    action: set_bootstrap_freshness_floor
+    minimum_height: 1000
+
+  - at: 1s
+    action: fetch_control_plane_checkpoint
+    from: rpc_stale
+    height: 900
+    proof: valid
+
+  - at: 2s
+    assert: control_plane_checkpoint_rejected
+    reason: BOOTSTRAP_STATE_TOO_OLD
+
+  - at: 3s
+    action: fetch_control_plane_checkpoint
+    from: rpc_honest
+    height: 1100
+    proof: valid
+
+  - at: 4s
+    assert: control_plane_checkpoint_accepted
+
+  - at: 4s
+    assert: verified_checkpoint_height
+    equals: 1100

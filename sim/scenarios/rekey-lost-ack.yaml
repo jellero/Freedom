@@ -1,0 +1,38 @@
+version: 1
+name: rekey-lost-ack-then-confirm
+seed: 4001
+clock: virtual
+nodes:
+  - alice
+  - bob
+steps:
+  - at: 0s
+    action: connect
+    from: alice
+    to: bob
+    via: direct
+
+  - at: 1s
+    action: begin_rekey
+    next_epoch: 2
+
+  - at: 2s
+    action: receive_rekey_commit
+    next_epoch: 2
+
+  - at: 3s
+    action: drop_rekey_ack
+
+  - at: 4s
+    action: send_rekey_ack
+    next_epoch: 2
+
+  - at: 5s
+    assert: session_key_epoch
+    equals: 2
+
+  - at: 5s
+    assert: no_split_brain
+
+  - at: 5s
+    assert: old_send_key_erased

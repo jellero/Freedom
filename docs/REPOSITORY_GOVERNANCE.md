@@ -12,7 +12,9 @@ Target repository policy:
 
 ```text
 agent/worktree branch
- -> automated consistency/security checks
+ -> specification consistency
+ -> frozen byte vectors
+ -> deterministic simulator scenarios
  -> pull request
  -> human review for normative/security changes
  -> required checks green
@@ -24,7 +26,7 @@ agent/worktree branch
 `main` SHOULD be configured in GitHub repository settings with branch/ruleset protection that at minimum:
 
 - requires pull requests before merge for normative/security-sensitive changes;
-- requires the spec-consistency workflow;
+- requires the specification/vector/simulator workflow;
 - prevents force-push/deletion of `main`;
 - requires review from the relevant code owner for canonical spec/security files;
 - prevents an autonomous agent credential from bypassing those controls.
@@ -50,7 +52,7 @@ docs/APP_DISTRIBUTION.md
 AGENTS.md
 ```
 
-`spec/crypto-domains.txt` is specifically treated as a normative security file because changing a fixed SIGN/MAC/AEAD/HASH/KDF domain can change cross-object/network/purpose acceptance semantics.
+`spec/ENCODING_PROFILE.md`, `spec/vectors/**` and `spec/crypto-domains.txt` are specifically security-sensitive because changing deterministic bytes or a fixed SIGN/MAC/AEAD/HASH/KDF domain can change interoperability and cross-object/network/purpose acceptance semantics.
 
 `CODEOWNERS` names the human owner for these paths.
 
@@ -61,36 +63,65 @@ Agents may:
 - create branches/worktrees;
 - implement changes;
 - add/update tests;
+- add simulator scenarios;
 - open PRs;
 - respond to review;
 - update non-normative docs consistent with canonical state.
 
-Agents MUST NOT independently merge a change that weakens a security invariant, changes a trust assumption, cryptographic domain, recovery/revocation/governance/rekey state machine or canonical signed schema.
+Agents MUST NOT independently merge a change that weakens a security invariant, changes a trust assumption, frozen encoding profile/vector, cryptographic domain, recovery/revocation/governance/rekey state machine or canonical signed schema.
 
-## 5. Specification consistency CI
+## 5. Repository protocol gates
 
-`.github/workflows/spec-consistency.yml` runs `tools/check_spec_consistency.py`.
+`.github/workflows/spec-consistency.yml` is the required lightweight protocol/specification gate.
 
-The checker is intentionally small and dependency-free. It verifies repository-level invariants such as:
+It runs three independent checks:
 
-- required canonical files exist;
-- README does not absorb the internal Codex/Docker development method;
-- known stale terminology/formulas do not reappear;
-- required CDDL object families remain present;
-- required cryptographic domain families remain registered;
-- pairwise recovery anchor objects/docs remain present;
-- SVG concept/architecture assets remain well-formed XML;
-- key normative docs continue linking to canonical schema/domain sources.
+```text
+python tools/check_spec_consistency.py
+python tools/check_vectors.py
+python sim/simctl.py --all --quiet
+```
 
-It does **not** prove cryptographic correctness. It is drift detection, not security review.
+### Specification consistency
+
+`tools/check_spec_consistency.py` catches repository-level drift such as required canonical files, stale terminology/formulas, schema/domain references and malformed documentation assets.
+
+### Frozen byte vectors
+
+`tools/check_vectors.py` checks `Freedom-DCBOR-1` exact canonical bytes, strict decoding, standalone signature-preimage bytes and negative/non-canonical rejection fixtures.
+
+Changing expected bytes is not a routine refactor; it is a normative compatibility change.
+
+### Deterministic simulator
+
+`sim/simctl.py` executes versioned L1 virtual-time scenarios. Current fixtures cover route/NAT recovery, pairwise-backup rollback, bootstrap freshness and a first rekey loss/confirmation path.
+
+A passing simulator scenario proves the modeled state/oracle behavior, not the full production implementation.
 
 ## 6. CI is not the oracle
 
-A green workflow means only that automated repository checks passed.
+A green workflow demonstrates repository consistency with the currently frozen vectors and modeled deterministic scenarios.
 
-Security acceptance still requires the test levels in `ADVANCED_DEVELOPMENT.md`, canonical vectors and independent/human review where specified.
+It does **not** prove cryptographic correctness, real ChainAdapter behavior, Android platform behavior or real-network resilience.
 
-## 7. Current enforcement caveat
+Security acceptance still requires the higher test levels in `ADVANCED_DEVELOPMENT.md`, cross-language vectors, L2/L3/L4/L5 testing and independent/human review where specified.
+
+## 7. Scenario/oracle integrity
+
+Agents MUST NOT make a failing security scenario green by simply deleting/weakening the assertion or changing a normative vector to match buggy implementation behavior.
+
+The acceptable flow is:
+
+```text
+failing oracle
+ -> determine code bug vs explicit normative-spec change
+ -> fix implementation when spec is unchanged
+ -> or request human review for normative change
+```
+
+Vector/scenario changes that alter a security property require the same human gate as the corresponding normative document.
+
+## 8. Current enforcement caveat
 
 Until GitHub branch/ruleset protection is actually enabled, these controls are partly procedural rather than server-enforced.
 
