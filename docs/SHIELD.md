@@ -1,10 +1,11 @@
 # Freedom — Shield Circuit Architecture
 
-Status: **canonical design target / pre-implementation normative boundary**
-
-Freedom Shield è la modalità di path protection/multi-hop di Freedom. Finché le proprietà sotto non sono implementate e testate, `SHIELDED` è un design target e non una garanzia production.
+Status: **canonical design target / pre-implementation normative boundary**.
 
 Normative baseline: [`SECURITY_INVARIANTS.md`](SECURITY_INVARIANTS.md).
+Schema: [`../spec/freedom.cddl`](../spec/freedom.cddl).
+
+Freedom Shield è la modalità multi-hop/path-protection. Finché i gate sotto non sono implementati/testati, `SHIELDED` è design target e non garanzia production.
 
 ## 1. Obiettivo
 
@@ -14,122 +15,126 @@ Alice -> Hop A -> Hop B -> Bob
 
 Target:
 
-- Hop A vede il lato origine adiacente ma non la destinazione finale in forma direttamente utilizzabile;
-- Hop B vede il lato destinazione adiacente ma non direttamente l'IP originale;
-- nessun hop riceve session keys E2EE Alice/Bob;
-- compromissione di un singolo hop non consente impersonation o plaintext;
-- route identity resta separata dalla pairwise contact identity.
+- Hop A vede origine adiacente ma non destinazione finale direttamente utilizzabile;
+- Hop B vede destinazione adiacente ma non direttamente l'IP originale;
+- nessun hop riceve le session keys Alice/Bob;
+- single-hop compromise non concede impersonation/plaintext;
+- route identity separata dalla pairwise contact identity.
 
-Non promettere anonimato contro collusione completa o osservatore globale.
+Non promettere anonimato contro collusione completa/global observer.
 
-## 2. Circuit setup
+## 2. Circuit protocol
 
-Un circuito usa materiale per-hop separato:
-
-```text
-ShieldCircuit {
-    circuit_id
-    circuit_epoch
-    hop_descriptors[]
-    hop_key_epochs[]
-    expires_at
-    policy
-}
-```
-
-`circuit_id` è temporaneo e non è un global identity.
-
-La costruzione concreta deve usare un protocollo standard/reviewato o una composizione formalmente reviewata; concatenare semplici proxy TCP non è sufficiente.
-
-## 3. Hop keys
-
-Per ogni hop il client deriva/negozia una chiave distinta:
+Un path `SHIELDED` richiede:
 
 ```text
-K_A
-K_B
-...
+circuit setup autenticato
+per-hop independent keys
+layered forwarding
+temporary circuit identity
+bounded lifetime/rekey
+explicit teardown/rebuild
+no silent direct fallback
 ```
 
-Le chiavi per-hop sono indipendenti da:
+Concatenare proxy TCP non basta.
 
-- RootIdentity;
-- DeviceKey;
-- pairwise conversation keys;
-- Gateway application keys.
+La costruzione concreta deve essere standard/reviewata o formalmente reviewata prima del claim production.
 
-Un relay compromesso non ottiene le chiavi degli altri hop.
+## 3. Per-hop keys
+
+Ogni hop ha materiale distinto e indipendente da RootIdentity, DeviceKey, pairwise conversation keys e Gateway application keys.
+
+Un hop compromesso non ottiene automaticamente le keys degli altri hop.
 
 ## 4. Layered forwarding
 
-Concettualmente:
-
 ```text
-payload_to_Bob
- -> wrap for Hop B
- -> wrap for Hop A
- -> send to Hop A
+payload
+ -> wrap for last hop
+ -> wrap for previous hop
+ -> ...
+ -> first hop
 ```
 
-Ogni hop rimuove soltanto il proprio layer e apprende il next-hop token necessario.
+Ogni hop rimuove soltanto il proprio layer e apprende soltanto il next-hop token necessario.
 
-Header per-hop non contiene RootIdentity, DeviceRecordCommitment o pairwise alias quando un capability token basta.
+Header non contiene RootIdentity/DeviceRecordCommitment/pairwise alias quando capability temporanee bastano.
 
-## 5. ShieldHopDescriptor
+## 5. RelayDescriptor / provenance
+
+Schema canonico in CDDL:
 
 ```text
-ShieldHopDescriptor {
-    relay_public_key
-    relay_descriptor_hash
-    transport
-    endpoint
-    provenance_class
-    observed_network_metadata?
-    capabilities
-    expires_at
-    signature
-}
+relay-descriptor
+provenance-attestation
 ```
 
-Self-declared operator/geography/provider metadata non è una prova di indipendenza.
+Self-declared operator/geography/provider metadata **non è** prova di indipendenza.
 
-## 6. Diversity
+## 6. Provenance classes
 
 Il selector distingue:
 
 ```text
 SELF_DECLARED
 OBSERVED
-VERIFIED_PROVENANCE
+ATTESTED_PROVENANCE
 ```
 
-Per un circuito multi-hop non deve considerare automaticamente due relay IDs come due operatori indipendenti.
+`ATTESTED_PROVENANCE` significa soltanto che uno o più issuer hanno firmato uno specifico claim bounded/expiring sul relay.
 
-Preferire, quando disponibile:
+Una singola attestation **non dimostra** che due relay abbiano operatori realmente indipendenti.
 
-- provider/ASN differenti;
-- provenance differente;
-- operatori verificabilmente differenti;
-- regioni differenti coerenti con policy;
+## 7. Provenance issuers
+
+Gli issuer devono essere identificabili per chiave/issuer class e avere scope limitato.
+
+Possibili classi future:
+
+```text
+NETWORK_OBSERVER
+MANAGED_PROVIDER
+COMMUNITY_DIRECTORY
+ORGANIZATION_ADMIN
+INDEPENDENT_AUDITOR
+```
+
+Una attestation include almeno subject relay, claim type/value, observation height, expiry e firma domain-separated.
+
+Il selector considera anche **issuer diversity**: tre attestazioni provenienti dallo stesso operator/custody domain non equivalgono automaticamente a tre osservatori indipendenti.
+
+## 8. Diversity
+
+Preferire quando possibile:
+
+- ASN/provider differenti osservati;
+- endpoint/netblock differenti;
+- directory/source differenti;
+- provenance issuer differenti;
+- managed/community/private class mix coerente con policy;
 - transport families differenti quando utile.
 
-## 7. Sybil / eclipse
+`N relay IDs != N independent operators` rimane un'invariante.
 
-Un attacker può creare molti relay IDs.
+Operator independence è un trust signal probabilistico, non una proprietà matematica derivabile dal solo descriptor.
+
+## 9. Sybil/eclipse
+
+Attacker può creare relay IDs/endpoint/capacity hint differenti.
 
 Mitigazioni:
 
-- relay keys persistenti ma non identity user-facing;
-- provenance/source diversity;
-- observed ASN/provider metadata;
-- reputation/capability bounded senza social graph;
-- evitare selezione interamente da una singola directory/provenance;
-- randomizzazione controllata;
-- circuit rebuild su anomalie.
+- relay keys persistenti;
+- multi-source discovery;
+- observed network metadata;
+- issuer-diverse provenance attestations;
+- controlled randomization;
+- evitare circuiti interamente da una singola directory/provenance quando alternative esistono;
+- rebuild su anomalie;
+- dedicated Sybil/eclipse simulation.
 
-Nessuna metrica singola dimostra indipendenza reale.
-
-## 8. Circuit lifecycle
+## 10. Circuit lifecycle
 
 ```text
 BUILDING
@@ -140,64 +145,42 @@ CLOSING
 CLOSED
 ```
 
-Circuiti hanno TTL/key lifetime bounded.
+Circuit/key lifetime bounded. Failure di un hop provoca rebuild/route change senza ridefinire peer identity.
 
-Rotation può avvenire per:
-
-- expiry;
-- relay failure;
-- policy change;
-- filtering evidence;
-- provenance/diversity improvement;
-- rekey requirement.
-
-## 9. Failure
-
-Se un hop fallisce:
-
-```text
-current circuit fails
- -> authenticated endpoint session remains the identity context
- -> build alternate circuit/path
- -> resume/re-establish according to session protocol
-```
-
-Il path non ridefinisce chi è il peer.
-
-## 10. Gateway Shield
-
-Per Gateway:
+## 11. Gateway Shield
 
 ```text
 Client -> Hop A -> Egress B -> Internet
 ```
 
-l'egress resta una trust boundary distinta. Shield separa osservazioni tra hop ma non trasforma traffico Internet plaintext in Freedom E2EE.
+Egress resta trust boundary separata. Shield non trasforma traffico Internet plaintext in Freedom E2EE.
 
-## 11. Claim gate
+## 12. Claim gate
 
-La UI può mostrare `SHIELDED` solo quando:
+UI può mostrare `SHIELDED` soltanto se:
 
-- il circuit setup definito è completato;
-- hop keys separate sono attive;
-- layered forwarding è verificato;
-- il path soddisfa la policy Shield richiesta;
-- non è avvenuto silent fallback direct.
+- circuit setup completato;
+- per-hop keys attive;
+- layered forwarding verificato;
+- requested Shield policy soddisfatta;
+- no silent fallback direct;
+- path state corrente/non expired.
 
-Prima di questo gate usare label di sviluppo/concept, non claim production.
-
-## 12. Test gate
+## 13. Test gate
 
 Prima della release Shield:
 
-- single-hop compromise test;
-- two-hop collusion model;
-- replay/reorder per circuit frame;
+- circuit setup vectors;
+- per-hop key separation/rotation;
+- layered forwarding;
+- single-hop compromise;
+- all-hop collusion threat test/model;
+- replay/reorder;
 - circuit rebuild;
-- per-hop key rotation;
-- relay Sybil/eclipsing simulation;
 - provenance spoofing;
+- issuer-collusion/issuer-duplication cases;
+- relay Sybil/eclipsing;
 - packet-size/timing metadata review;
-- route failure during active Communication session;
-- Gateway egress separation tests;
-- external security review del circuit protocol.
+- route failure during Communication session;
+- Gateway egress separation;
+- external security review.
