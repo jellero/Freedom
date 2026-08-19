@@ -240,6 +240,36 @@ apps/device
 
 Un community/device relay può essere un hop del fabric ma **non diventa automaticamente Internet egress**.
 
+## Product UI concept
+
+Gli schemi architetturali sopra descrivono il protocollo; gli screen seguenti mostrano come quelle proprietà possono diventare comprensibili nel prodotto. Sono **concept UI**, non screenshot dell'attuale transport/crypto spike Android. Le label di sicurezza devono comparire nel client reale soltanto quando il relativo stato è realmente verificato.
+
+### Freedom Communication — Live E2EE, route visibile, no mailbox
+
+![Freedom Communication product screens](docs/assets/freedom-communication-screens.svg)
+
+La UI distingue il contatto autenticato dal percorso usato per raggiungerlo. Un cambio `Direct -> Relay -> Shield` non cambia l'identità del peer o le chiavi della sessione. Se il peer è offline, l'interfaccia non deve fingere una consegna futura: **nessuna mailbox, nessuna queue automatica**.
+
+### Freedom Gateway — selected apps, percorso adattivo, quota gestita
+
+![Freedom Gateway product screens](docs/assets/freedom-gateway-screens.svg)
+
+Gateway mostra app protette, transport/path attivo, egress esplicito, DNS/leak controls e la quota di managed capacity. Il target Free iniziale resta **100 MB/giorno di managed egress**; questa quota è separata da Freedom Communication e non trasforma un `DEVICE_RELAY` in un Internet exit.
+
+### Freedom Shield — fatti osservati, inferenza, contromisura
+
+![Freedom Shield product screens](docs/assets/freedom-shield-screens.svg)
+
+Il Network Indicator deve spiegare cosa è stato osservato (`peer recently active`, `path failed`, `control-plane reachable`), quale inferenza è stata prodotta (`SUSPECTED`) e quale contromisura è attiva. Non deve dichiarare sorveglianza o attribuire un blocco senza evidenza.
+
+### Share Freedom — qualunque source, verifica fail-closed
+
+![Share Freedom product screens](docs/assets/freedom-share-screens.svg)
+
+Peer, relay, mirror e store possono fornire i byte dell'APK, ma l'installazione dipende da hash esatto, firme FreedomRelease, Android signer lineage, ReleaseStatus e SecurityPolicy. Il filename/locator opaco aiuta il lookup ma **non è trust**.
+
+Spiegazione completa dei visual e dei vincoli UX: [`docs/PRODUCT_VISUALS.md`](docs/PRODUCT_VISUALS.md).
+
 ## Identity model
 
 ```text
@@ -554,6 +584,7 @@ Le proprietà documentate devono essere dimostrate con implementazione, test su 
 - [`docs/REGISTRATION_ECONOMICS.md`](docs/REGISTRATION_ECONOMICS.md) — sponsorship Free, anti-Sybil e storage bounded.
 - [`docs/EMERGENCY_UPDATES.md`](docs/EMERGENCY_UPDATES.md) — bulletin, SecurityPolicy e release firmate.
 - [`docs/APP_DISTRIBUTION.md`](docs/APP_DISTRIBUTION.md) — Share Freedom, peer APK transfer e trust del primo install.
+- [`docs/PRODUCT_VISUALS.md`](docs/PRODUCT_VISUALS.md) — screen concept di Communication, Gateway, Shield e Share Freedom con vincoli UX/security.
 - [`docs/COMPETITIVE_POSITIONING.md`](docs/COMPETITIVE_POSITIONING.md) — confronto e benchmark esterni.
 - [`docs/PRODUCT_SCOPE.md`](docs/PRODUCT_SCOPE.md) — V1, Live Groups/Rooms e roadmap.
 - [`docs/MONETIZATION.md`](docs/MONETIZATION.md) — modello Free/Shield/Gateway/Business.
