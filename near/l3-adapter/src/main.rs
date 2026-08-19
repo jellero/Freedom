@@ -10,6 +10,9 @@ struct NearChainAdapter {
     contract: Contract,
     bootstrap_floor: u64,
     verified_height: Option<u64>,
+    /// Last mutation version accepted by the Freedom client after all verification.
+    /// This is deliberately distinct from state merely observed on NEAR.
+    client_committed_version: u64,
 }
 
 impl NearChainAdapter {
@@ -35,6 +38,7 @@ impl NearChainAdapter {
             contract,
             bootstrap_floor: 0,
             verified_height: None,
+            client_committed_version: 0,
         })
     }
 
@@ -99,9 +103,10 @@ impl NearChainAdapter {
             }));
         }
 
-        // Real node/RPC integration gate: every accepted proof path must be backed by a
-        // successful read from the running NEAR Sandbox. The vector's logical height is
-        // the canonical checkpoint height under test; near_block_height is evidence only.
+        // Real node/RPC integration gate: every proof-valid path is backed by a
+        // successful read from the running NEAR Sandbox. The vector's logical height
+        // remains the canonical checkpoint height under test; sandbox block data is
+        // evidence only and is NOT treated as an independently verified light-client proof.
         let block = self.worker.view_block().await.context("read latest sandbox block")?;
         let near_block_height = block.height();
 
@@ -154,30 +159,31 @@ impl NearChainAdapter {
             return Ok(json!({
                 "accepted": false,
                 "failure": "CONTROL_PLANE_PROOF_INVALID",
-                "committed_version": self.read_committed_version().await?
+                "committed_version": self.client_committed_version
             }));
         }
 
-        let before = self.read_committed_version().await?;
+        let chain_before = self.read_chain_version().await?;
 
-        // A lower version is submitted to the real contract and must fail there. This
-        // checks that rollback rejection is not merely an adapter-side convention.
-        if resulting_version < before {
+        // Submit a lower version to the real contract so rollback rejection is tested
+        // by NEAR execution, not only by adapter-side logic.
+        if resulting_version < chain_before {
             let outcome = self
                 .call_mutation(resulting_version, false)
                 .await
                 .context("submit rollback mutation")?;
             if !outcome.is_failure() {
-                bail!("contract accepted rollback mutation {resulting_version} < {before}");
+                bail!("contract accepted rollback mutation {resulting_version} < {chain_before}");
             }
-            let after = self.read_committed_version().await?;
-            if after != before {
-                bail!("failed rollback transaction changed state: before={before} after={after}");
+            let chain_after = self.read_chain_version().await?;
+            if chain_after != chain_before {
+                bail!("failed rollback transaction changed state: before={chain_before} after={chain_after}");
             }
             return Ok(json!({
                 "accepted": false,
                 "failure": "CONTROL_PLANE_ROLLBACK",
-                "committed_version": after
+                "committed_version": self.client_committed_version,
+                "near_observed_version": chain_after
             }));
         }
 
@@ -189,19 +195,20 @@ impl NearChainAdapter {
             if !outcome.is_failure() {
                 bail!("forced-failure mutation unexpectedly succeeded");
             }
-            let after = self.read_committed_version().await?;
-            if after != before {
-                bail!("failed transaction changed state: before={before} after={after}");
+            let chain_after = self.read_chain_version().await?;
+            if chain_after != chain_before {
+                bail!("failed transaction changed state: before={chain_before} after={chain_after}");
             }
             return Ok(json!({
                 "accepted": false,
                 "failure": "CONTROL_PLANE_EXECUTION_FAILED",
-                "committed_version": after
+                "committed_version": self.client_committed_version,
+                "near_observed_version": chain_after
             }));
         }
 
-        // When the vector asks for a state mismatch, deliberately write a different
-        // monotonic value so the mismatch is observed by a real post-transaction view.
+        // When the vector asks for an exact-state mismatch, deliberately write a
+        // different monotonic value. The real post-transaction view must detect it.
         let write_version = if exact_transition_matched {
             resulting_version
         } else {
@@ -215,37 +222,42 @@ impl NearChainAdapter {
             return Ok(json!({
                 "accepted": false,
                 "failure": "CONTROL_PLANE_EXECUTION_FAILED",
-                "committed_version": self.read_committed_version().await?
+                "committed_version": self.client_committed_version,
+                "near_observed_version": self.read_chain_version().await?
             }));
         }
 
-        let block = self.worker.view_block().await.context("read finalized sandbox block after mutation")?;
-        let after = self.read_committed_version().await?;
+        let block = self.worker.view_block().await.context("read sandbox block after mutation")?;
+        let chain_after = self.read_chain_version().await?;
 
+        // A chain state may advance even when the client cannot verify it. Do not
+        // silently promote observed state to trusted local committed state.
         if !resulting_state_proof_valid {
             return Ok(json!({
                 "accepted": false,
                 "failure": "CONTROL_PLANE_PROOF_INVALID",
-                "committed_version": before,
-                "near_observed_version": after,
+                "committed_version": self.client_committed_version,
+                "near_observed_version": chain_after,
                 "near_block_height": block.height()
             }));
         }
 
-        if after != resulting_version {
+        if chain_after != resulting_version {
             return Ok(json!({
                 "accepted": false,
                 "failure": "CONTROL_PLANE_STATE_MISMATCH",
-                "committed_version": before,
-                "near_observed_version": after,
+                "committed_version": self.client_committed_version,
+                "near_observed_version": chain_after,
                 "near_block_height": block.height()
             }));
         }
 
+        self.client_committed_version = resulting_version;
         Ok(json!({
             "accepted": true,
             "failure": null,
-            "committed_version": after,
+            "committed_version": self.client_committed_version,
+            "near_observed_version": chain_after,
             "near_block_height": block.height(),
             "near_block_hash": block.hash().to_string()
         }))
@@ -267,13 +279,13 @@ impl NearChainAdapter {
             .context("contract apply_mutation")
     }
 
-    async fn read_committed_version(&self) -> Result<u64> {
+    async fn read_chain_version(&self) -> Result<u64> {
         self.contract
             .view("get_committed_version")
             .await
-            .context("read committed version")?
+            .context("read committed version from NEAR")?
             .json()
-            .context("decode committed version")
+            .context("decode committed version from NEAR")
     }
 }
 
