@@ -1,10 +1,12 @@
 # Freedom — Payments
 
+Status: **canonical design draft**
+
+Normative security rules: [`SECURITY_INVARIANTS.md`](SECURITY_INVARIANTS.md).
+
 ## 1. Principio
 
-Il pagamento abilita servizi/entitlement Freedom. L'utente non deve essere obbligato a possedere NEAR, un wallet NEAR o saldo NEAR per usare il protocollo base.
-
-Freedom deve essere payment-provider agnostic:
+Il pagamento abilita servizi/entitlement Freedom. L'utente non deve possedere obbligatoriamente NEAR, wallet NEAR o saldo NEAR per usare il protocollo base.
 
 ```text
 PaymentAdapter
@@ -14,25 +16,44 @@ PaymentAdapter
 `- future providers
 ```
 
-Nessun singolo provider di pagamento deve essere requisito permanente per acquistare servizi Freedom.
+Nessun singolo provider è requisito permanente.
 
 ## 2. Separazione dei ruoli
 
 ```text
 payment provider -> prova economica
-Freedom chain    -> PurchaseIntent / attestation / entitlement
-client           -> UX di acquisto e verifica entitlement
+Freedom control-plane -> attestation / entitlement state
+client -> UX + verifica stato
 ```
 
-Il metodo di pagamento non deve diventare una root of trust dell'identità Freedom.
+Il provider payment non è root of trust dell'identità Freedom.
 
-## 3. Purchase intent
+Il ruolo payment attestor non può firmare release, SecurityPolicy o identity/device authorization.
+
+## 3. PaymentBindingCommitment
+
+Freedom **MUST NOT** riutilizzare `root_commitment`, `DeviceRecordCommitment` o `PairwiseContactAlias` come riferimento economico globale.
+
+Usare un commitment domain-separated:
+
+```text
+PaymentBindingCommitment = H(root/payment context, "payment", random/context)
+```
+
+Requisiti:
+
+- diverso da entitlement/device/sponsorship commitment;
+- non usato come routing/contact identifier;
+- non copiato in plaintext come merchant reference se non necessario;
+- più acquisti possono usare binding/nullifier specifici quando utile a ridurre correlazione.
+
+## 4. PurchaseIntent
 
 ```text
 PurchaseIntent {
     version
     purchase_ref_hash
-    root_commitment
+    payment_binding_commitment
     product
     amount
     currency_or_asset
@@ -42,11 +63,17 @@ PurchaseIntent {
 }
 ```
 
-`purchase_ref` deve essere casuale ad alta entropia. Non usare in chiaro email, RootIdentity, DeviceRecordCommitment, pairwise alias o social metadata come riferimento provider.
+`purchase_ref` è casuale ad alta entropia.
 
-L'eventuale `root_commitment` del PurchaseIntent appartiene al control-plane Freedom e non deve essere copiato come merchant reference leggibile verso PayPal quando non necessario.
+Non usare in merchant/provider reference plaintext:
 
-## 4. Payment descriptor on-chain
+- email/telefono salvo necessità del provider;
+- RootIdentity/root_commitment;
+- DeviceRecordCommitment;
+- pairwise alias;
+- social metadata.
+
+## 5. PaymentDescriptor
 
 ```text
 PaymentDescriptor {
@@ -60,42 +87,36 @@ PaymentDescriptor {
 }
 ```
 
-Il sistema non deve promettere di nascondere al provider o al pagatore informazioni che il provider è legalmente/tecnicamente tenuto a mostrare.
+Nessun merchant secret viene distribuito nell'APK.
 
-Nessun `client_secret` PayPal o altra credenziale merchant segreta deve essere inserita nell'APK.
-
-## 5. PayPal senza server pubblico
+## 6. PayPal senza server pubblico
 
 ```text
-App -> legge PaymentDescriptor/PurchaseIntent dalla chain
-App -> apre il flusso PayPal ospitato/in-app
-User -> completa il pagamento su PayPal
-Private Payment Worker -> interroga PayPal outbound
-Private Payment Worker -> riconcilia purchase_ref/importo/stato
-Private Payment Worker -> scrive PaymentAttestation on-chain
-Chain -> attiva entitlement
-App -> osserva entitlement attivo
+App -> reads PurchaseIntent/PaymentDescriptor
+App -> hosted PayPal flow
+User -> completes payment
+Private Payment Worker -> queries PayPal outbound
+Worker -> reconciles purchase_ref / amount / status
+Worker -> publishes PaymentAttestation
+Control-plane -> applies entitlement transition
+App -> verifies final state
 ```
 
 Il worker:
 
-- non espone una API pubblica all'app;
-- non necessita di porta inbound pubblica;
+- non espone API pubblica all'app;
 - può stare dietro NAT/firewall;
-- usa connessioni outbound verso PayPal e blockchain/RPC;
 - custodisce credenziali merchant fuori dal client;
-- non è un account server Freedom;
+- non è account server Freedom;
 - può essere replicato/sostituito.
 
-La frequenza di polling è una policy operativa. Il client mostra `PAYMENT_PENDING` fino a prova verificata.
+## 7. Callback client != prova economica
 
-## 6. Callback PayPal nell'app
+Il ritorno `OK` del checkout serve solo alla UX e può portare a `PAYMENT_PENDING`.
 
-Il ritorno/OK del checkout PayPal nell'app è utile per UX ma **non costituisce da solo prova autoritativa di pagamento**, perché un client modificato potrebbe simulare il callback.
+Un client modificato può simulare il callback; l'entitlement nasce soltanto da prova verificata e stato control-plane verificato.
 
-Il callback può portare l'UX a `PAYMENT_PENDING`; l'entitlement viene emesso soltanto dopo verifica indipendente del provider tramite worker o altra attestazione sicura.
-
-## 7. Payment attestation
+## 8. PaymentAttestation
 
 ```text
 PaymentAttestation {
@@ -114,48 +135,54 @@ PaymentAttestation {
 
 Requisiti:
 
-- idempotenza: una transazione provider non può attivare più entitlement incompatibili;
-- importo/prodotto/currency devono corrispondere al PurchaseIntent;
-- replay rifiutato;
+- idempotenza;
+- amount/product/currency match;
+- replay reject;
 - worker key ruotabili/revocabili;
-- possibilità futura di quorum/threshold tra più worker indipendenti.
+- possibilità futura quorum/threshold tra worker indipendenti;
+- nessuna autorità del worker su release, identity o conversazioni.
 
-## 8. Crypto payments
+## 9. Verified finality
 
-Per asset verificabili direttamente dalla chain, il pagamento può evitare il worker esterno:
+`PaymentAttestation` pubblicata o transaction hash ricevuto **non** significa automaticamente entitlement attivo.
+
+```text
+submit/observe attestation
+ -> acceptable finality
+ -> execution success
+ -> resolve entitlement
+ -> verify expected entitlement_epoch/tier/status
+ -> only then show PAID/ACTIVE
+```
+
+Failure o state mismatch -> `PAYMENT_PENDING`/errore esplicito, mai successo silenzioso.
+
+## 10. Crypto payments
 
 ```text
 PurchaseIntent
  -> crypto transfer / contract call
  -> on-chain verification
+ -> finalized state verification
  -> entitlement
 ```
 
-Stablecoin sono preferibili per prezzi commerciali stabili; il token nativo può essere accettato con quote a validità breve.
+Stablecoin possono essere preferibili per prezzi commerciali stabili; native token può usare quote a validità breve.
 
-Il sistema deve poter accettare crypto anche quando PayPal non è disponibile, desiderato o accessibile all'utente.
+## 11. NEAR è infrastruttura, non prodotto
 
-## 9. NEAR è infrastruttura, non prodotto
+L'utente compra servizi Freedom, non NEAR.
 
-L'utente compra:
+Gas/storage possono essere sponsorizzati da treasury/fee relayer e finanziati dai ricavi.
 
-- Freedom Pro/Shield;
-- capacità relay;
-- multi-device;
-- Maximum Resilience;
-- altre feature commerciali.
+## 12. Privacy invariants
 
-Non compra "NEAR" come requisito applicativo.
-
-Gas/storage necessari alle operazioni Freedom possono essere sponsorizzati da treasury/fee relayer e finanziati dai ricavi. Pagamenti in NEAR possono contribuire direttamente al treasury, ma il tier resta un entitlement Freedom.
-
-## 10. Invarianti
-
-- nessun payment provider obbligatorio;
-- nessun merchant secret nell'APK;
-- nessun server pubblico Freedom necessario al flusso PayPal;
-- callback client != prova economica;
-- PayPal/crypto convergono nello stesso modello di entitlement;
-- provider payment reference non contiene RootIdentity/device commitment/pairwise alias in chiaro salvo necessità esplicita;
-- dati personali/payment metadata non vengono copiati inutilmente on-chain;
-- dopo l'emissione, il provider di pagamento non è nel percorso quotidiano dell'app.
+- provider agnostic;
+- merchant secret mai nell'APK;
+- callback client != proof;
+- payment binding domain-separated;
+- provider reference non contiene identity/network/social identifiers Freedom in plaintext salvo necessità esplicita;
+- dati personali non copiati inutilmente on-chain;
+- payment state non entra nel packet hot path;
+- provider payment non diventa identity trust anchor;
+- transaction hash != entitlement success.
