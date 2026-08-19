@@ -98,6 +98,8 @@ Un device relay non deve necessariamente avere un IP pubblico: può essere utile
 
 Essere relay non concede accesso a plaintext o session keys. Il relay usa token/capability di circuito temporanei e non deve ricevere RootIdentity/device commitment quando non necessari.
 
+Un `DEVICE_RELAY` non diventa automaticamente un Internet egress: il Gateway usa solo egress espliciti managed/private/business.
+
 ## 6. Share Freedom / distribuzione peer-to-peer dell'app
 
 Un client già installato deve poter mostrare un QR dedicato all'installazione:
@@ -210,7 +212,9 @@ Non sono prerequisiti della prima release pubblica:
 - update swarm completo se esiste già un canale sicuro di distribuzione V1;
 - incentivi economici/tokenizzati ai relay oltre al bonus contatti;
 - browser web integrato;
-- gateway Internet a livello dispositivo.
+- **Freedom Gateway a livello dispositivo**.
+
+Il Gateway è un'evoluzione post-V1 costruita sulle stesse primitive di routing/relay/Shield e non deve rallentare la comunicazione core.
 
 ## 11. Live Groups — V1.5
 
@@ -318,9 +322,70 @@ Pro evolution — Freedom Shield
   multi-hop managed paths
   aggressive path/transport diversity
   Maximum Resilience
+
+Post-V1 — Freedom Gateway
+  explicit managed/private/business egress
+  selected-app Android Gateway
+  whole-device Gateway
+  DNS/leak controls
+  egress diversity
+  shielded/multi-hop Gateway
+  pluggable anti-censorship transports
+  non-public bridge distribution
+  DPI/firewall test lab
+  Maximum Reachability
 ```
 
-## 16. Launch quality gate
+## 16. Freedom Gateway — prodotto post-V1
+
+Freedom Gateway usa il fabric Freedom come percorso opzionale per traffico di applicazioni esterne.
+
+```text
+app traffic
+ -> local Gateway / VpnService
+ -> encrypted tunnel
+ -> route / relay / bridge / Shield
+ -> explicit Egress
+ -> Internet
+```
+
+### Garanzia diversa dal messenger
+
+Il Gateway non deve essere presentato come equivalente alla sicurezza della comunicazione Freedom-to-Freedom.
+
+```text
+Freedom Communication
+  endpoint-authenticated E2EE
+  session keys only at endpoints
+
+Freedom Gateway
+  protected/adaptive path to egress
+  final application security depends also on HTTPS/app protocol
+```
+
+### Obiettivo anti-censura
+
+Il Gateway deve essere progettato per ambienti con firewall/DPI/filtraggio aggressivo mediante:
+
+- transport adapter sostituibili;
+- più provider/egress;
+- bridge pubblici e non pubblici;
+- failover automatico;
+- transport offuscati/pluggable quando reviewati;
+- active-probing resistance dove supportata;
+- path multi-hop/Shield;
+- transport health classification;
+- test reali contro firewall/DPI.
+
+Non promettere bypass universale. Se una rete applica allowlist totale o elimina ogni connettività, un protocollo IP non può garantire il passaggio.
+
+### Browser
+
+Non integrare un browser generalista come requisito. Su Android è preferibile instradare Chrome/Firefox/app selezionate o l'intero device tramite `VpnService`, mantenendo il browser dell'utente separato.
+
+Dettagli: [`GATEWAY.md`](GATEWAY.md).
+
+## 17. Launch quality gate
 
 Blocker prima del Creator Pilot:
 
@@ -345,4 +410,4 @@ Blocker prima del Creator Pilot:
 - merchant secret nell'APK;
 - meccanismo update non autenticato.
 
-Gruppi e Shield avanzato non devono ritardare il lancio se il V1 soddisfa questi criteri.
+Gruppi, Gateway e Shield avanzato non devono ritardare il lancio se il V1 soddisfa questi criteri.
