@@ -1,20 +1,23 @@
 # Freedom — Account Recovery & Licenses
 
+Status: **canonical design draft**
+
+Normative security rules: [`SECURITY_INVARIANTS.md`](SECURITY_INVARIANTS.md).
+
 ## 1. Separazione delle identità
 
-Freedom distingue:
-
 ```text
-RootIdentity             -> ownership / recovery / licenze
-DeviceKey                -> chiave operativa del singolo device
-DeviceRecordCommitment   -> handle opaco del control-plane
-PairwiseContactAlias     -> identità specifica della relazione
-Session keys             -> materiale effimero delle comunicazioni
+RootIdentity                    -> ownership / recovery
+DeviceCertificate               -> autorizzazione offline DeviceKey
+DeviceKey                       -> chiave operativa del device
+DeviceRecordCommitment          -> handle opaco control-plane
+PairwiseContactAlias            -> relazione specifica
+Session keys                    -> materiale effimero
+EntitlementCommitment           -> licenza/capacità domain-separated
+SponsorshipCommitment           -> sponsorship domain-separated
 ```
 
-La `RootIdentity` non viene usata per cifrare le chat. Serve per autorizzare/revocare device, recuperare ownership e dimostrare la titolarità degli entitlement commerciali o temporanei.
-
-Freedom non richiede un `DeviceID` globale user-facing o transport-facing. Dettagli: [`IDENTITY_MODEL.md`](IDENTITY_MODEL.md).
+Freedom non richiede un `DeviceID` globale user-facing o transport-facing.
 
 ## 2. Prima installazione
 
@@ -22,60 +25,76 @@ La prima installazione genera localmente:
 
 ```text
 RootKeyPair
-root_commitment = H(root_public_key || domain)
+RootIdentity
 DeviceKeyPair
 device_random_secret
 DeviceRecordCommitment
+Recovery Kit
 ```
 
-`DeviceRecordCommitment` è un handle tecnico opaco per lookup/rotation/revocation del control-plane. Non è username, contatto o indirizzo di rete.
+e **0 mandatory chain writes**.
 
-L'installazione locale, da sola, non deve obbligatoriamente produrre una write on-chain. La registrazione viene sponsorizzata/effettuata quando l'identità deve diventare verificabile secondo la policy del protocollo.
+La registrazione/activation avviene quando serve rendere lo stato verificabile.
 
-## 3. Freedom Recovery Kit
-
-Il client deve permettere di esportare un Recovery Kit composto da:
-
-- QR contenente un bundle cifrato/versionato;
-- recovery code umano separato;
-- checksum/versione per rilevare errori.
+## 3. Recovery Kit
 
 ```text
 EncryptedRecoveryBundle {
     version
     root_secret_ciphertext
-    root_commitment
+    root_identity_commitment_or_fingerprint
     kdf_params
     checksum
 }
 ```
 
-Il QR non deve contenere la Root private key in chiaro. Il recovery code deve essere necessario per decifrare il bundle o derivarne la chiave. Salvare QR e recovery code nello stesso posto deve essere sconsigliato dal client.
+Il QR non contiene la Root private key in chiaro. Il recovery code separato è necessario per decifrare/derivare la chiave del bundle.
 
-## 4. Ripristino dopo reset/nuovo telefono
+## 4. Ripristino
 
 ```text
-install Freedom
- -> Restore
- -> scan/import Recovery QR
- -> enter Recovery Code
+Restore
  -> recover RootIdentity
- -> generate NEW DeviceKeyPair
+ -> generate NEW DeviceKey
  -> generate NEW DeviceRecordCommitment
- -> authorize/activate new device
- -> resolve existing entitlements
+ -> authorize/activate device
+ -> wait verified finality/state
+ -> issue/use NEW DeviceCertificate
+ -> resolve entitlement proof/state
 ```
 
-Un restore non clona la vecchia DeviceKey né il vecchio handle tecnico. Il nuovo telefono genera materiale operativo nuovo.
+Un restore non clona la vecchia DeviceKey o il vecchio device record.
 
-## 5. Entitlement
+## 5. DeviceCertificate
 
-Una licenza Freedom appartiene alla RootIdentity, non a un APK o a un singolo device.
+Dopo activation verificata:
+
+```text
+DeviceCertificate {
+    version
+    network_id
+    root_identity_commitment_or_proof
+    device_public_key
+    key_epoch
+    protocol_version
+    capabilities?
+    issued_at
+    expires_at
+    certificate_id
+    root_authorization_signature
+}
+```
+
+Il peer lo verifica offline durante handshake; control-plane/cache serve per revocation/freshness.
+
+## 6. Entitlement domain-separated
+
+Una licenza segue la continuità della RootIdentity, ma il control-plane non riusa `root_commitment` come global account identifier.
 
 ```text
 FreedomEntitlement {
     version
-    root_commitment
+    entitlement_commitment
     tier
     issued_at
     expires_at?
@@ -87,24 +106,9 @@ FreedomEntitlement {
 }
 ```
 
-Il metodo di pagamento non è necessario per verificare l'entitlement dopo l'emissione.
+`EntitlementCommitment` è domain-separated da device authorization, payment, sponsorship e pairwise identity.
 
-Benefit temporanei possono modificare capacità specifiche senza cambiare il tier principale:
-
-```text
-EntitlementBenefit {
-    benefit_type
-    value
-    issued_at
-    expires_at?
-    proof_commitment?
-    status
-}
-```
-
-## 6. Controllo multi-device on-chain
-
-Il recovery della RootIdentity non deve permettere l'uso illimitato della stessa licenza su telefoni arbitrari.
+## 7. Multi-device
 
 ```text
 active_devices <= max_devices
@@ -118,50 +122,50 @@ PRO      -> max_devices definito dal piano
 BUSINESS -> policy dedicata
 ```
 
-L'attivazione di un nuovo device richiede una prova autorizzata dalla RootIdentity:
+L'attivazione usa stato device/account privacy-preserving:
 
 ```text
 ActivateDevice {
-    root_commitment
+    device_authorization_commitment
     device_record_commitment
     device_public_key
+    key_epoch
     entitlement_epoch
     nonce
     root_signature
 }
 ```
 
-Se il limite è raggiunto, l'utente può revocare un device precedente e liberare uno slot usando la RootIdentity recuperata.
+Il successo locale arriva solo dopo finalità + verifica dello stato risultante.
 
-## 7. Privacy degli slot device
+## 8. Privacy degli slot device
 
-Non pubblicare strutture leggibili che colleghino direttamente una persona ai suoi device.
+Non pubblicare strutture leggibili `RootIdentity -> devices[]`.
 
-Preferire slot/commitment opachi che consentano enforcement del conteggio. Un `DeviceRecordCommitment` non deve essere riutilizzato come alias di contatto, routing identifier o token relay.
+Preferire slot/commitment opachi. `DeviceRecordCommitment` non viene riutilizzato come contact alias, payment binding o token relay.
 
-Il design definitivo deve considerare correlazioni temporali tra activation, revocation, rendezvous e entitlement.
+## 9. Contatti Free
 
-## 8. Contatti Free
+Il contatto logico rappresenta una persona/RootIdentity, non un device.
 
-La policy commerciale Free prevede **10 contatti attivi base**.
-
-Il contatto logico rappresenta una persona/RootIdentity, non ogni suo singolo device. Un contatto può quindi possedere più device autorizzati senza occupare più slot della rubrica.
-
-Il limite riguarda gli slot attivi, non il numero totale di persone mai conosciute. Eliminare/disattivare un contatto libera uno slot.
-
-La rubrica resta locale e cifrata. Non pubblicare il social graph in chiaro on-chain. Se serve enforcement resistente a client modificati, usare commitment/slot opachi o primitive equivalenti.
-
-## 9. Relay Contributor benefit
-
-Un account Free che mantiene un `DEVICE_RELAY` qualificato riceve un benefit temporaneo di **+10 contact slots**.
+Policy iniziale:
 
 ```text
 base_contact_slots = 10
-relay_contributor_bonus = 10
-effective_contact_slots = 20
 ```
 
-Il benefit appartiene alla RootIdentity come capacità temporanea, ma deriva dal contributo del device relay attivo. Non viene ripristinato automaticamente su un nuovo telefono se il nuovo device non contribuisce come relay.
+Rubrica locale/cifrata; nessun social graph pubblico.
+
+Se serve enforcement resistente a client modificati, usare commitment/slot/nullifier opachi.
+
+## 10. Relay Contributor
+
+```text
+FREE                     10 contact slots
+FREE + RELAY CONTRIBUTOR 20 contact slots
+```
+
+Il benefit è temporaneo e deriva da contributo relay reale del device.
 
 ```text
 EntitlementBenefit {
@@ -170,30 +174,41 @@ EntitlementBenefit {
     issued_at
     expires_at
     proof_commitment
-    status = ACTIVE
+    status
 }
 ```
 
-Il semplice toggle `relay_enabled=true` non è prova sufficiente. La qualificazione segue [`RELAYS.md`](RELAYS.md) e deve evitare log pubblici del traffico o dei peer serviti.
+Il nuovo device ripristinato deve contribuire di nuovo; il benefit non viene clonato automaticamente.
 
-Se il benefit scade e l'account ha più contatti del limite base:
+Se il benefit scade:
 
-- non eliminare automaticamente i contatti;
-- non invalidare la RootIdentity;
-- non trasformare il beneficio in un lockout di sicurezza;
-- impedire soltanto nuove aggiunte finché la quota torna valida o il benefit torna attivo.
+- non cancellare contatti;
+- non invalidare RootIdentity;
+- non terminare sessioni;
+- impedire solo nuove aggiunte sopra quota finché la policy torna valida.
 
-## 10. Invarianti
+## 11. Verified finality
 
-- RootIdentity, DeviceKey, device commitment, alias pairwise e session keys hanno ruoli separati;
-- non esiste un `DeviceID` globale necessario al network layer;
-- recovery non significa clonazione della DeviceKey;
-- la licenza segue la RootIdentity;
-- il numero di device attivi è limitabile/verificabile con slot opachi;
-- il contatto è una persona/RootIdentity, non un singolo device;
-- la rubrica non diventa un social graph pubblico;
-- Relay Contributor aumenta la quota contatti senza diventare Pro;
-- il bonus relay è temporaneo e legato a contributo reale;
-- la scadenza del bonus non cancella automaticamente contatti;
-- il server commerciale non è necessario per verificare ogni avvio dell'app;
-- il Recovery Kit deve restare utilizzabile anche se i servizi commerciali ufficiali sono indisponibili.
+Activation, revocation, entitlement change e benefit state non sono considerati riusciti dal solo transaction hash.
+
+```text
+submit
+ -> acceptable finality
+ -> execution success
+ -> state verification
+ -> local transition
+```
+
+## 12. Invarianti
+
+- RootIdentity, DeviceCertificate, DeviceKey, commitment, pairwise alias e session keys separati;
+- nessun global DeviceID network-facing;
+- recovery genera nuova DeviceKey;
+- entitlement commitment domain-separated;
+- multi-device enforcement senza device list pubblica;
+- contatto = persona/RootIdentity;
+- rubrica non pubblica;
+- Relay Contributor non diventa Pro;
+- scadenza benefit non cancella contatti;
+- Recovery Kit resta utile anche se servizi commerciali ufficiali sono indisponibili;
+- transaction hash != success.
