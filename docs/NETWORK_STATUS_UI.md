@@ -1,339 +1,225 @@
 # Freedom — Network Status UI
 
+Status: **canonical UX/security labeling rules**
+
+Normative security rules: [`SECURITY_INVARIANTS.md`](SECURITY_INVARIANTS.md).
+Shield label gate: [`SHIELD.md`](SHIELD.md).
+Adaptive evidence: [`ADAPTIVE_DEFENSE.md`](ADAPTIVE_DEFENSE.md).
+
 ## 1. Obiettivo
 
-Freedom non deve nascondere completamente lo stato della rete.
+La UI separa:
 
-Quando la rete degrada, filtra o interrompe un percorso, il client deve rendere visibile:
-
-- cosa Freedom ha osservato;
-- cosa può inferire;
-- quale contromisura sta applicando;
-- **se lo stato riguarda Freedom Communication oppure Freedom Gateway**.
-
-Principio UX:
+- fatti verificati/osservati;
+- inferenze;
+- contromisure;
+- Communication vs Gateway.
 
 > **Semplice quando tutto funziona. Trasparente quando qualcosa cerca di impedirti di comunicare.**
 
-## 2. Freedom Network Indicator
-
-Indicatore sempre accessibile dalla schermata principale/chat.
-
-Stati base:
+## 2. Stati
 
 ```text
-NORMAL       percorso funzionante
-SHIELDED     percorso protetto/shielded attivo
-DEGRADED     degradazione o fallback
-SUSPECTED    probabile filtraggio/interferenza o failure selettiva
-UNAVAILABLE  nessun percorso valido trovato
+NORMAL
+SHIELDED
+DEGRADED
+SUSPECTED
+UNAVAILABLE
 ```
 
-Il colore non è mai l'unico segnale: usare testo/icona/descrizione accessibile.
+Colore mai unico segnale.
 
-## 3. Communication e Gateway non sono la stessa cosa
+## 3. Gate `SHIELDED`
 
-Il pannello deve distinguere due security boundary.
+`SHIELDED` può essere mostrato in production solo se il runtime ha completato il vero circuit protocol di `SHIELD.md`:
 
-### Freedom Communication
+- circuit setup valido;
+- per-hop keys separate;
+- layered forwarding attivo;
+- path conforme alla Shield policy;
+- no silent direct fallback.
+
+Due relay/proxy concatenati non autorizzano la label `SHIELDED`.
+
+## 4. Communication
 
 ```text
 COMMUNICATION
-Security      Endpoint-to-endpoint encrypted
-Peer          Verified
-Session       Active
-Route         Shielded relay
-Interference  None / Suspected
+Peer assurance     Bootstrap / Verified
+Session            Authenticated / Inactive
+Encryption         E2EE ACTIVE only after handshake verification
+Route              Direct / Relay / Bridge / Shielded
+Interference       None / Suspected
 ```
 
-Se la sessione è autenticata E2EE, può essere mostrato chiaramente:
+`End-to-end encrypted by Freedom` appare solo dopo expected-contact authentication + valid DeviceCertificate/delegation + DeviceKey possession + session establishment.
 
-> **End-to-end encrypted by Freedom**
-
-### Freedom Gateway
+## 5. Gateway
 
 ```text
 GATEWAY
-Mode          Selected apps / Whole device
-Tunnel        Protected
-Egress        Active
-Route         Shielded / Bridge / Direct egress
-Filtering     None / Suspected
-Managed quota 82 MB / 100 MB today
+Mode               Selected apps / Whole device
+Tunnel             Protected / Off
+Egress             Active / Unavailable
+Route              Relay / Bridge / Shielded / Direct egress
+Filtering          None / Suspected
+Managed quota      used / remaining
 ```
 
-Il Gateway **non deve** mostrare `End-to-end encrypted by Freedom` per traffico Internet generico.
+Gateway non mostra `End-to-end encrypted by Freedom` per traffico Internet generico.
 
 Copy corretto:
 
 > **Protected path to Freedom egress**
 
-oppure:
+## 6. Control-plane evidence
 
-> **Shielded network path active**
-
-La sicurezza oltre l'egress dipende anche dal protocollo dell'applicazione finale, ad esempio HTTPS.
-
-Il contatore `100 MB/day` è mostrato solo quando il traffico usa managed Gateway capacity. Private/business egress o policy differenti mostrano la propria quota separatamente.
-
-## 4. Apertura automatica
-
-Normalmente il pannello resta chiuso.
-
-Quando passa per la prima volta a `SUSPECTED` o `UNAVAILABLE`, può aprirsi una volta per incidente.
-
-Esempio Communication:
+Non mostrare:
 
 ```text
-Freedom Network — Communication
-
-Peer activity        RECENT
-Control-plane        REACHABLE / VERIFIED
-Current path         FAILED
-Alternate path       AVAILABLE
-Protection           SHIELDED
-
-Possibile filtraggio o anomalia di rete.
-Freedom sta usando un percorso alternativo.
+Peer activity RECENT
+Control-plane VERIFIED
 ```
 
-Esempio Gateway:
+solo perché un RPC ha risposto.
+
+Serve:
 
 ```text
-Freedom Network — Gateway
-
-Local Internet       AVAILABLE
-Current transport    FILTERED / FAILED
-Bridge               ACTIVE
-Egress               REACHABLE
-Gateway path          RECOVERED
-Managed quota         82 / 100 MB today
-
-Il percorso normale è stato degradato.
-Freedom Gateway sta usando un transport alternativo.
+VerifiedControlPlaneCheckpoint
++ valid state proof
++ fresh pairwise RecoveryBeacon
 ```
 
-## 5. Evidenza vs inferenza
+Se proof/freshness fallisce:
 
-### Fatti osservabili
+```text
+Control-plane state  UNVERIFIED / STALE
+```
 
-- RecoveryBeacon recente;
-- RPC A fail / RPC B ok;
-- direct path fail;
-- relay A fail / relay B ok;
-- bridge raggiungibile;
-- transport family A fail;
-- transport family B ok;
-- egress reachability;
-- handshake authentication failure;
-- route recovery.
+non `peer active`.
 
-### Inferenze
+## 7. Evidenza vs inferenza
 
-- `INTERFERENCE_OR_ROUTE_FAILURE_SUSPECTED`;
-- `PROTOCOL_BLOCK_SUSPECTED`;
-- `DPI_OR_FILTERING_SUSPECTED`;
-- provider specifico probabilmente indisponibile.
+Fatti:
 
-Non dichiarare:
+- verified RecoveryBeacon freshness;
+- verified control-plane checkpoint;
+- route/transport connect result;
+- authenticated handshake result;
+- relay/bridge/egress reachability;
+- packet loss/RTT;
+- Shield circuit state;
+- quota state.
 
-- "sei monitorato";
-- "il governo ti sta bloccando";
-- "questo firewall non può fermarci";
-- attribuzioni a ISP/Stato senza evidenza.
+Inferenze:
 
-## 6. Vista semplice
+```text
+INTERFERENCE_OR_ROUTE_FAILURE_SUSPECTED
+PROTOCOL_BLOCK_SUSPECTED
+DPI_OR_FILTERING_SUSPECTED
+```
 
-Communication:
+Non dichiarare `sei monitorato`, attribution a Stato/ISP o universal bypass.
+
+## 8. First-contact assurance
+
+Per contatti:
+
+```text
+BOOTSTRAP_UNVERIFIED
+CONTACT_VERIFIED
+```
+
+`CONTACT_VERIFIED` richiede verifica indipendente/safety code/fingerprint secondo UX.
+
+Una sessione può essere crittograficamente autenticata rispetto al descriptor ricevuto senza provare da sola che il descriptor appartenga alla persona fisica che l'utente intendeva contattare.
+
+## 9. Vista semplice Communication
 
 ```text
 FREEDOM COMMUNICATION
 
 Status             Connected
-Peer               Verified
+Peer               Verified / Bootstrap only
 Encryption         End-to-end
-Route              Shielded
-Interference       None
+Route              Relay / Shielded
+Interference       None / Suspected
 ```
 
-Gateway:
+## 10. Vista semplice Gateway
 
 ```text
 FREEDOM GATEWAY
 
 Status             Connected
 Mode               3 selected apps
-Path               Shielded
+Path               Shielded / Relay / Bridge
 Egress             CH / managed
 Filtering          None
-Free managed       82 / 100 MB today
+Managed capacity   82 / 100 MB today
 ```
 
-Se la quota gestita è quasi esaurita:
+Quota esaurita non diventa `SUSPECTED`/`UNAVAILABLE` se il problema è economico/capacity.
 
-```text
-Gateway managed capacity
-12 MB remaining today
-```
-
-La UI non deve trasformare questo stato economico in `DEGRADED`, `SUSPECTED` o `UNAVAILABLE` se tecnicamente la rete funziona.
-
-## 7. Vista tecnica
+## 11. Vista tecnica
 
 Campi possibili:
 
 ```text
-control-plane state
-recovery beacon freshness
+verified checkpoint height
+control-plane proof state
+recovery beacon proof/freshness
+pairwise/contact assurance
 route generation
-candidate class
-relay / bridge class
-transport family
-provider/RPC health
+transport semantic class
+relay descriptor/provenance class
+Shield circuit epoch/hop count
 last failure reason
 fallback attempts
-current protection policy
-Gateway egress class
-Gateway DNS/leak state
-Gateway quota class
-Gateway bytes used / remaining
+Gateway egress/DNS/leak state
+quota state
 ```
 
-Non mostrare secret, private key, session key o identificatori globali non necessari.
+Non mostrare secrets o global identifiers non necessari.
 
-## 8. Maximum Reachability UI
+## 12. Core Free / Pro
 
-Modalità futura Gateway/transport:
+Free e Pro vedono la stessa verità tecnica.
 
-```text
-Maximum Reachability: ON
+Pro può aumentare managed capacity, path diversity, prewarming, multi-hop/Shield resources e Gateway quota, ma non può ottenere label di sicurezza più favorevoli a parità di stato.
 
-Normal path          BLOCKED
-Transport A          FAILED
-Transport B          FAILED
-Private bridge       ACTIVE
-Egress               REACHABLE
-Parallel fallback    READY
-```
-
-Copy consigliato:
-
-> **Freedom ha trovato un percorso alternativo attraverso la rete filtrata.**
-
-Non:
-
-> **Freedom passa qualsiasi firewall.**
-
-## 9. Core Free e anti-paywall
-
-Un utente Free deve:
-
-- vedere lo stesso stato significativo;
-- ricevere la stessa spiegazione tecnica;
-- beneficiare del recovery/fallback core;
-- cambiare route/relay/transport quando esistono alternative gratuite/community;
-- ricevere quota Emergency Shield quando prevista;
-- quando Gateway managed è disponibile, ricevere il target iniziale di **100 MB/giorno** di capacità egress gestita.
-
-Principio:
-
-> **La censura non deve diventare un paywall.**
-
-La policy commerciale Gateway può limitare capacità egress gestita, ma non deve falsificare classificazioni o indebolire la comunicazione Freedom core.
-
-La quota Gateway e la quota Emergency Shield Communication devono restare separate anche in UI.
-
-## 10. Emergency Shield / Pro
-
-Pro può aumentare:
-
-```text
-Always-Shielded
-managed relay budget
-multi-hop
-relay/provider diversity
-pre-warmed alternatives
-parallel failover
-aggressive transport rotation
-bridge/non-public pools
-Maximum Resilience
-Gateway managed quota
-egress/provider diversity
-Maximum Reachability budget
-```
-
-Free e Pro usano gli stessi principi di autenticazione e la stessa interpretazione tecnica degli eventi.
-
-## 11. Anti-dark-pattern
+## 13. Anti-dark-pattern
 
 Il client non deve:
 
-- chiamare ogni packet loss `SUSPECTED`;
-- elevare severità per vendere Pro;
-- nascondere il motivo del fallback;
-- usare paura/sorveglianza non dimostrata;
-- degradare route Free funzionanti;
-- mostrare `E2EE Freedom` su Gateway generico;
-- nascondere che un egress Gateway è una trust boundary differente;
-- dichiarare universal firewall bypass;
-- rappresentare `quota Gateway esaurita` come interferenza/censura;
-- bloccare Freedom Communication perché il managed Gateway ha finito i 100 MB del giorno.
+- elevare packet loss a censura senza evidenza;
+- usare `SUSPECTED` per vendere Pro;
+- mostrare `SHIELDED` prima del vero circuit gate;
+- mostrare `VERIFIED` da risposta RPC non provata;
+- mostrare E2EE su Gateway generico;
+- confondere quota Gateway con incidente security;
+- nascondere egress trust boundary;
+- promettere anonimato/universal bypass.
 
-## 12. Notification policy
+## 14. Notification policy
 
 ```text
-INFO       route cambiata senza impatto
-NOTICE     degradazione/fallback
-WARNING    filtering/interference suspected
-CRITICAL   nessun percorso valido trovato
+INFO       route changed
+NOTICE     degraded/fallback
+WARNING    interference/route failure suspected
+CRITICAL   no valid path
 ```
 
-Gli eventi devono essere deduplicati per incidente.
+Deduplicare per incidente.
 
-Recovery Communication:
+## 15. Invarianti UX
 
-> **Percorso ripristinato. La sessione Freedom è nuovamente attiva.**
-
-Recovery Gateway:
-
-> **Gateway ripristinato tramite un percorso alternativo.**
-
-Quota Gateway quasi esaurita è una notifica di capacità separata, non una network incident notification.
-
-## 13. Main UI
-
-```text
-Chat
-Call
-Video
-Live
-Network indicator
-```
-
-Gateway, quando implementato:
-
-```text
-Freedom Gateway
-  |- ON / OFF
-  |- Selected apps / Whole device
-  |- Protection mode
-  |- Managed quota remaining
-  `- Network details
-```
-
-Non serve integrare un browser generalista.
-
-## 14. Invarianti UX
-
-- Network Indicator sempre accessibile;
-- Communication e Gateway chiaramente separati;
-- E2EE label solo dove tecnicamente corretta;
-- fatti e inferenze separati;
-- colore mai unico segnale;
-- nessun claim di sorveglianza passiva rilevata;
-- nessun universal firewall claim;
-- diagnostica significativa anche Free;
-- Pro aumenta capacità/resilienza, non la verità mostrata;
-- egress Gateway visibile come ruolo separato dal relay;
-- quota Free managed Gateway mostrata come capacity state, non security state;
-- quota Gateway e Emergency Shield Communication contabilizzate e comunicate separatamente.
+- labels derivano da runtime state verificato;
+- `SHIELDED` richiede real Shield circuit;
+- `VERIFIED` control-plane richiede proof;
+- `CONTACT_VERIFIED` distingue human assurance da bootstrap;
+- Communication/Gateway separati;
+- facts/inference separati;
+- no passive-surveillance detection claim;
+- same meaningful diagnostics for Free/paid tiers.
