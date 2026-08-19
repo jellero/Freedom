@@ -1,18 +1,30 @@
 ; Freedom Protocol canonical object schema
 ; Status: normative schema draft
 ;
-; Field names and object shapes in this file are the single source of truth.
-; Security semantics are defined by docs/SECURITY_INVARIANTS.md and subsystem docs.
-; Encoding target: deterministic CBOR profile with frozen test vectors before public interoperability.
-; Every signature MUST use the domain-separated signing input documented in spec/README.md.
+; Field names and object shapes in this file are the single source of truth for
+; objects that are frozen enough to be referenced by normative documentation.
+; Objects not present here are not frozen for public interoperability.
+; Security semantics: docs/SECURITY_INVARIANTS.md and subsystem docs.
+; Encoding target: deterministic CBOR with frozen positive/negative vectors.
+; Signed objects use spec/README.md domain separation.
 
 uint64 = uint
 bytes16 = bstr .size 16
 bytes32 = bstr .size 32
-bytes64 = bstr .size 64
 network-id = tstr
 
-; ---- Identity / device authorization ---------------------------------------------------------
+; ---- User root / device authorization --------------------------------------------------------
+
+root-control-state = {
+  version: uint,
+  root_control_commitment: bytes32,
+  root_epoch: uint64,
+  root_public_key: bstr,
+  root_commitment: bytes32,
+  ? recovery_policy_commitment: bytes32,
+  ? pending_compromise_recovery_hash: bytes32,
+  updated_at_height: uint64
+}
 
 device-authorization-delegation = {
   version: uint,
@@ -61,7 +73,8 @@ device-revocation-record = {
   revocation_epoch: uint64,
   effective_height: uint64,
   reason_code: uint,
-  device_control_signature: bstr
+  authorization_kind: "DEVICE_CONTROL" / "RECOVERY_OR_SUCCESSOR",
+  authorization_proof: bstr
 }
 
 authorization-revocation-record = {
@@ -75,6 +88,7 @@ authorization-revocation-record = {
 
 user-recovery-policy = {
   version: uint,
+  root_control_commitment: bytes32,
   recovery_policy_epoch: uint64,
   recovery_key_commitments: [2* bstr],
   threshold: uint,
@@ -82,13 +96,19 @@ user-recovery-policy = {
   policy_commitment: bytes32
 }
 
+; V1 recovery policy is sticky. NORMAL rotation inherits current policy commitment.
+; COMPROMISE_RECOVERY requires the precommitted independent recovery quorum.
 user-root-rotation = {
   version: uint,
-  old_root_epoch: uint64,
+  root_control_commitment: bytes32,
+  current_root_epoch: uint64,
+  current_root_commitment: bytes32,
   new_root_public_key: bstr,
   new_root_commitment: bytes32,
   recovery_policy_epoch: uint64,
+  recovery_policy_commitment: bytes32,
   rotation_mode: "NORMAL" / "COMPROMISE_RECOVERY",
+  requested_at_height: uint64,
   activation_height: uint64,
   old_root_continuity_proof: bstr / null,
   recovery_quorum_proof: bstr / null
@@ -118,8 +138,12 @@ freedom-contact = {
   ? expires_after_height: uint64
 }
 
+; PairRendezvousSecret derives a fresh write keypair off-chain per direction/epoch.
+; The public slot itself is simply a domain-separated hash of the derived public key,
+; so the control plane can verify the slot binding without learning pair epoch/direction.
 rendezvous-record = {
   version: uint,
+  network_id: network-id,
   slot_id: bytes32,
   write_public_key: bstr,
   generation: uint64,
@@ -131,6 +155,7 @@ rendezvous-record = {
 
 recovery-beacon = {
   version: uint,
+  network_id: network-id,
   slot_id: bytes32,
   write_public_key: bstr,
   generation: uint64,
@@ -153,7 +178,7 @@ pairwise-recovery-bundle = {
   integrity: bstr
 }
 
-; ---- Routing / relay -------------------------------------------------------------------------
+; ---- Routing / relay / Shield ---------------------------------------------------------------
 
 route-candidate = {
   transport: tstr,
@@ -206,6 +231,15 @@ relay-candidate = {
   ? capacity_hint: uint64
 }
 
+relay-packet = {
+  version: uint,
+  packet_id: bytes32,
+  next_hop_token: bstr,
+  hop_limit: uint,
+  expires_after_height: uint64,
+  ciphertext: bstr
+}
+
 relay-contribution-proof = {
   version: uint,
   relay_commitment: bytes32,
@@ -215,6 +249,24 @@ relay-contribution-proof = {
   policy_version: uint,
   expires_after_height: uint64,
   attestations: [* bstr]
+}
+
+shield-hop-descriptor = {
+  version: uint,
+  relay_descriptor_hash: bytes32,
+  hop_public_key: bstr,
+  transport: tstr,
+  ? provenance_attestations: [* provenance-attestation],
+  expires_after_height: uint64
+}
+
+shield-circuit-descriptor = {
+  version: uint,
+  circuit_id: bytes32,
+  circuit_epoch: uint64,
+  hops: [2* shield-hop-descriptor],
+  policy_hash: bytes32,
+  expires_after_height: uint64
 }
 
 ; ---- Handshake / session / rekey -------------------------------------------------------------
@@ -256,6 +308,57 @@ rekey-ack = {
   next_epoch: uint64,
   commit_hash: bytes32,
   key_confirmation: bytes32
+}
+
+encrypted-control-frame = {
+  version: uint,
+  session_hint: bytes32,
+  traffic_key_epoch: uint64,
+  stream_sequence: uint64,
+  ciphertext: bstr
+}
+
+encrypted-media-frame = {
+  version: uint,
+  session_hint: bytes32,
+  media_stream_id: bytes32,
+  media_key_epoch: uint64,
+  packet_sequence: uint64,
+  ciphertext: bstr
+}
+
+chat-message = {
+  version: uint,
+  message_id: bytes32,
+  logical_sequence: uint64,
+  sent_at_logical: uint64,
+  body: bstr,
+  ? reply_to: bytes32
+}
+
+message-ack = {
+  version: uint,
+  message_id: bytes32,
+  ack_type: "RECEIVED" / "READ",
+  logical_time: uint64
+}
+
+attachment-manifest = {
+  version: uint,
+  attachment_id: bytes32,
+  media_type: tstr,
+  plaintext_size: uint64,
+  chunk_size: uint,
+  chunk_hashes: [1* bytes32],
+  integrity_root: bytes32
+}
+
+call-signal = {
+  version: uint,
+  call_id: bytes32,
+  signal_type: "INVITE" / "ACCEPT" / "CANDIDATE" / "END",
+  sequence: uint64,
+  payload: bstr
 }
 
 ; ---- Control-plane verification --------------------------------------------------------------
