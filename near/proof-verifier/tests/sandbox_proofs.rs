@@ -164,14 +164,17 @@ async fn advance_after(
     bail!("sandbox did not advance the verified light-client head")
 }
 
-async fn deploy_control_plane(worker: &Worker<Sandbox>) -> Result<Contract> {
-    eprintln!("L4 contract: compile");
-    let wasm = near_workspaces::compile_project("../control-plane-contract")
+async fn compile_control_plane() -> Result<Vec<u8>> {
+    eprintln!("L4 contract: compile before sandbox start");
+    near_workspaces::compile_project("../control-plane-contract")
         .await
-        .context("compile control-plane contract for proof gate")?;
+        .context("compile control-plane contract for proof gate")
+}
+
+async fn deploy_control_plane(worker: &Worker<Sandbox>, wasm: &[u8]) -> Result<Contract> {
     eprintln!("L4 contract: deploy");
     let contract = worker
-        .dev_deploy(&wasm)
+        .dev_deploy(wasm)
         .await
         .context("deploy control-plane contract in sandbox")?;
     contract
@@ -186,10 +189,15 @@ async fn deploy_control_plane(worker: &Worker<Sandbox>) -> Result<Contract> {
 
 #[tokio::test]
 async fn malicious_rpc_objects_cannot_be_promoted_to_verified_state() -> Result<()> {
+    // Contract compilation is intentionally completed before the node starts. A long host build
+    // must not age or garbage-collect the checkpoint that the light-client verifier is testing.
+    let wasm = compile_control_plane().await?;
+
     eprintln!("L4 sandbox: start");
     let worker = near_workspaces::sandbox().await.context("start NEAR Sandbox")?;
     let rpc_addr = worker.rpc_addr();
     let rpc = JsonRpcClient::connect(&rpc_addr);
+    let contract = deploy_control_plane(&worker, &wasm).await?;
 
     // The trusted-bootstrap phase ends here. Every object obtained through RPC below this point is
     // attacker-controlled input and becomes trusted only if NearLightClientVerifier accepts it.
@@ -207,8 +215,6 @@ async fn malicious_rpc_objects_cannot_be_promoted_to_verified_state() -> Result<
     let mut verifier = NearLightClientVerifier::new(anchor);
     let verified = verifier.verify_and_advance(&candidate)?;
     assert_eq!(verified.block_hash, light_client_block_hash(&candidate));
-
-    let contract = deploy_control_plane(&worker).await?;
 
     // Execute a real state transition, then advance the independently verified head so the
     // execution and resulting state are in its ancestry.
