@@ -8,6 +8,7 @@ Canonical schema: [`../spec/freedom.cddl`](../spec/freedom.cddl).
 Canonical cryptographic domains: [`../spec/crypto-domains.txt`](../spec/crypto-domains.txt).
 Canonical encoding/signing: [`../spec/README.md`](../spec/README.md).
 Control-plane: [`CONTROL_PLANE_SECURITY.md`](CONTROL_PLANE_SECURITY.md).
+NetworkAnchor bootstrap/rotation: [`NETWORK_ANCHORS.md`](NETWORK_ANCHORS.md).
 Revocation/freshness: [`REVOCATION.md`](REVOCATION.md).
 Pairwise recovery: [`PAIRWISE_RECOVERY.md`](PAIRWISE_RECOVERY.md).
 
@@ -28,10 +29,13 @@ PairRendezvousSecret            -> pairwise rendezvous authority
 RecoveryStateKey                -> encrypted pairwise-backup authority
 TransportToken                  -> temporary route/circuit identity
 Session keys                    -> ephemeral E2EE
-VerifiedControlPlaneCheckpoint  -> verified control-plane state root
+NetworkAnchor                   -> independently authenticated ChainAdapter bootstrap/rotation root
+VerifiedControlPlaneCheckpoint  -> consensus-verified control-plane state root
 ```
 
 Nessun elemento viene automaticamente riutilizzato come un altro.
+
+In particolare `NETWORK_ANCHOR` governance authorization e chain consensus/finality sono trust domains distinti: servono entrambi dopo bootstrap e nessuno sostituisce l'altro.
 
 ## 2. Primitive vietate
 
@@ -50,6 +54,8 @@ Freedom Protocol MUST NOT introdurre:
 - master decryption key;
 - single production credential con unilateral security-core authority;
 - single Full Access key che può sostituire silenziosamente il production security core;
+- governance/quorum signature trattata come sostituto del consenso/finality della chain;
+- NetworkAnchor iniziale ottenuto esclusivamente dalla stessa RPC che deve essere verificata;
 - `transaction hash == success`;
 - `RPC not found == non-revoked`;
 - silent downgrade da strict/Shield policy;
@@ -127,10 +133,12 @@ Rules:
 - `RPC not found` is not proof;
 - stale revocation state is explicit, never silently `VERIFIED`.
 
-## 8. Control-plane authenticity
+## 8. Control-plane authenticity / NetworkAnchor
 
 ```text
-NetworkAnchor
+BootstrapTrustAnchor or already trusted NetworkAnchor
+ -> canonical NetworkAnchor
+ -> independently verified chain consensus/finality
  -> VerifiedControlPlaneCheckpoint
  -> state root
  -> inclusion/non-inclusion proof
@@ -138,6 +146,10 @@ NetworkAnchor
 ```
 
 A raw RPC response is not authoritative security state.
+
+Fresh bootstrap MUST bind the exact canonical initial `NetworkAnchorCommitmentV1` through the authentic bootstrap/release trust path. An ordinary post-bootstrap NetworkAnchor rotation MUST preserve network/adapter/chain/profile context, advance monotonic lineage, satisfy the active `NETWORK_ANCHOR` signer-set policy **and** prove consensus continuity from state already trusted by the client.
+
+A quorum can authorize adoption of an anchor package; it MUST NOT fabricate or override chain history. Chain/profile changes use the separately reviewed migration/update path. Full rules: `NETWORK_ANCHORS.md`.
 
 ## 9. Fresh-install freshness
 
@@ -336,20 +348,23 @@ Self-declared metadata is not diversity proof. Provenance attestations are scope
 Production minimum:
 
 ```text
-ReleaseAuthorization   >= 3-of-5
-ReleaseRevocation      >= 3-of-5
-CriticalSecurityPolicy >= 3-of-5
-ContractUpgrade        >= 3-of-5 + timelock
-GovernanceRootRotation >= 3-of-5 + recovery
+ReleaseAuthorization       >= 3-of-5
+ReleaseRevocation          >= 3-of-5
+CriticalSecurityPolicy     >= 3-of-5
+NetworkAnchorAuthorization >= 3-of-5
+ContractUpgrade            >= 3-of-5 + timelock
+GovernanceRootRotation     >= 3-of-5 + recovery
 ```
 
 This means **no single production credential** is unilateral.
 
 It does not eliminate quorum collusion. Custody/operator domains should be separated and auditable. If one actor controls enough signer credentials for quorum, Freedom must not claim absence of a single administrative actor merely because multiple key files exist.
 
+`NetworkAnchorAuthorization` is additionally constrained by underlying chain consensus continuity after bootstrap; possession of the Freedom quorum alone cannot manufacture accepted control-plane history.
+
 ## 26. Signer / contract anti-rollback
 
-Signer-set transitions are previous-threshold-authorized, next-set-accepted and monotonic. Highest-seen state prevents old signer/policy/status reactivation.
+Signer-set transitions are previous-threshold-authorized, next-set-accepted and monotonic. Highest-seen state prevents old signer/policy/status/NetworkAnchor reactivation.
 
 Contract security core is immutable or threshold/timelocked/code-hash-pinned. Single Full Access production upgrade authority is forbidden.
 
@@ -359,11 +374,13 @@ Migration requires `ChainMigrationManifest + StateMigrationProof`.
 
 The proof binds source finalized state/export root, migration program hash/input and target imported state root. Governance chooses the migration rule; it cannot simply sign arbitrary replacement state and call it migration.
 
+An ordinary NetworkAnchor rotation MUST NOT silently change chain adapter, chain network or verifier semantics.
+
 ## 28. Release / first install
 
 Install verification requires exact artifact hash, threshold release authorization, Android signer lineage, verified ReleaseStatus/SecurityPolicy, anti-rollback, BootstrapTrustAnchor and BootstrapFreshnessFloor.
 
-Byte source is not trust.
+For a control-plane-enabled release, the bootstrap anchor pins the exact initial NetworkAnchor commitment expected by that verifier/profile. Byte source is not trust.
 
 ## 29. Payment / product quota boundary
 
@@ -379,7 +396,7 @@ Contact/device V1 quotas and Relay Contributor bonuses are product/service polic
 
 ## 31. Normative-spec human gate
 
-Agents may propose changes to security invariants, control-plane/revocation/pairwise-recovery/identity/protocol docs and canonical schema/domain registry, but they MUST NOT autonomously weaken MUST/MUST NOT rules, trust assumptions, cryptographic domains, signed schemas or security state machines simply to make tests pass.
+Agents may propose changes to security invariants, control-plane/NetworkAnchor/revocation/pairwise-recovery/identity/protocol docs and canonical schema/domain registry, but they MUST NOT autonomously weaken MUST/MUST NOT rules, trust assumptions, cryptographic domains, signed schemas or security state machines simply to make tests pass.
 
 Such changes require explicit human review before becoming canonical/main-ready.
 
@@ -389,6 +406,9 @@ Before public interoperability:
 
 - deterministic encoding vectors;
 - complete `spec/crypto-domains.txt` registry vectors including cross-object/network negative cases;
+- NetworkAnchor canonical bytes/signing-input/commitment vectors;
+- initial NetworkAnchor pin mismatch/profile/payload negative tests;
+- NetworkAnchor signer transition + consensus-continuity + rollback tests;
 - delegation scope/expiry negative vectors;
 - recovery-policy threshold/distinct-key/custody validation;
 - revocation/non-revocation/freshness vectors;
