@@ -274,6 +274,7 @@ def main() -> int:
         "spec/crypto-domains.txt",
         "docs/SECURITY_INVARIANTS.md",
         "docs/CONTROL_PLANE_SECURITY.md",
+        "docs/NETWORK_ANCHORS.md",
         "docs/REVOCATION.md",
         "docs/PAIRWISE_RECOVERY.md",
         "docs/SHIELD.md",
