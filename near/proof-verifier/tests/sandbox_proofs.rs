@@ -10,26 +10,58 @@ use near_primitives::types::validator_stake::ValidatorStake;
 use near_primitives::types::{BlockId, BlockReference, StoreKey, TransactionOrReceiptId};
 use near_primitives::views::{LightClientBlockView, QueryRequest};
 use near_workspaces::{Contract, Worker, network::Sandbox};
+use serde_json::json;
 use std::collections::HashMap;
 use std::sync::Arc;
 
 const BOOTSTRAP_STEP: u64 = 50;
 const ADVANCE_STEP: u64 = 20;
 
+/// NEAR 2.13.3 serializes `RpcLightClientNextBlockResponse { light_client_block: None }`
+/// as an empty object because the optional block is flattened. near-jsonrpc-client 0.22.0 still
+/// models the response as `Option<LightClientBlockView>` and therefore tries to deserialize `{}`
+/// as a block. This narrow transport parser preserves the node's wire semantics without moving
+/// any verification into the RPC layer: `{}`/`null` are `None`; a non-empty result must deserialize
+/// into the canonical typed LightClientBlockView before the local verifier sees it.
 async fn next_light_client_block(
-    rpc: &JsonRpcClient,
+    rpc_addr: &str,
     last_block_hash: CryptoHash,
 ) -> Result<Option<LightClientBlockView>> {
-    rpc.call(methods::next_light_client_block::RpcLightClientNextBlockRequest {
-        last_block_hash,
-    })
-    .await
-    .context("next_light_client_block RPC")
+    let response = reqwest::Client::new()
+        .post(rpc_addr)
+        .json(&json!({
+            "jsonrpc": "2.0",
+            "id": "freedom-l4-next-light-client-block",
+            "method": "next_light_client_block",
+            "params": { "last_block_hash": last_block_hash.to_string() }
+        }))
+        .send()
+        .await
+        .context("send next_light_client_block RPC")?
+        .error_for_status()
+        .context("next_light_client_block HTTP status")?;
+    let envelope: serde_json::Value = response
+        .json()
+        .await
+        .context("decode next_light_client_block JSON-RPC envelope")?;
+
+    if let Some(error) = envelope.get("error") {
+        bail!("next_light_client_block RPC error: {error}");
+    }
+    let result = envelope
+        .get("result")
+        .context("next_light_client_block response missing result")?;
+    if result.is_null() || result.as_object().is_some_and(|object| object.is_empty()) {
+        return Ok(None);
+    }
+    serde_json::from_value(result.clone())
+        .map(Some)
+        .context("decode non-empty next_light_client_block result")
 }
 
 async fn trusted_bootstrap_anchor(
     worker: &Worker<Sandbox>,
-    rpc: &JsonRpcClient,
+    rpc_addr: &str,
 ) -> Result<NearNetworkAnchor> {
     // The local Sandbox process is the trusted out-of-band bootstrap source in this deterministic
     // gate. Start from a recent observed head and walk incrementally so every last_block_hash
@@ -42,9 +74,9 @@ async fn trusted_bootstrap_anchor(
     let mut trusted_hash = CryptoHash(seed_block.hash().0);
     let mut producer_sets: HashMap<CryptoHash, Vec<ValidatorStake>> = HashMap::new();
 
-    // Each LightClientBlockView always carries the ordered producer set for its next epoch. Once
-    // the walk crosses an epoch boundary, the set learned as "next" on the previous epoch becomes
-    // the exact current set for the new anchor; the new block simultaneously supplies its next set.
+    // Each LightClientBlockView carries the ordered producer set for its next epoch. Once the walk
+    // crosses an epoch boundary, the set learned as "next" in the previous epoch becomes the exact
+    // current set for the new anchor; the new block simultaneously supplies its next set.
     for attempt in 0..48 {
         eprintln!("L4 bootstrap: incremental step {attempt}");
         worker
@@ -52,7 +84,7 @@ async fn trusted_bootstrap_anchor(
             .await
             .context("fast-forward sandbox during trusted bootstrap")?;
 
-        let Some(block) = next_light_client_block(rpc, trusted_hash).await? else {
+        let Some(block) = next_light_client_block(rpc_addr, trusted_hash).await? else {
             continue;
         };
         trusted_hash = light_client_block_hash(&block);
@@ -89,7 +121,7 @@ async fn trusted_bootstrap_anchor(
 
 async fn next_acceptable_block(
     worker: &Worker<Sandbox>,
-    rpc: &JsonRpcClient,
+    rpc_addr: &str,
     anchor: &NearNetworkAnchor,
 ) -> Result<LightClientBlockView> {
     for attempt in 0..12 {
@@ -98,7 +130,7 @@ async fn next_acceptable_block(
             .fast_forward(ADVANCE_STEP)
             .await
             .context("fast-forward sandbox for verifiable light-client block")?;
-        if let Some(block) = next_light_client_block(rpc, anchor.trusted_hash()).await? {
+        if let Some(block) = next_light_client_block(rpc_addr, anchor.trusted_hash()).await? {
             let mut probe = NearLightClientVerifier::new(anchor.clone());
             if probe.verify_and_advance(&block).is_ok() {
                 eprintln!("L4 verify: candidate accepted at height {}", block.inner_lite.height);
@@ -111,7 +143,7 @@ async fn next_acceptable_block(
 
 async fn advance_after(
     worker: &Worker<Sandbox>,
-    rpc: &JsonRpcClient,
+    rpc_addr: &str,
     verifier: &mut NearLightClientVerifier,
 ) -> Result<()> {
     for attempt in 0..12 {
@@ -121,7 +153,7 @@ async fn advance_after(
             .await
             .context("fast-forward sandbox after control-plane mutation")?;
         let head_hash = verifier.head().block_hash;
-        if let Some(block) = next_light_client_block(rpc, head_hash).await? {
+        if let Some(block) = next_light_client_block(rpc_addr, head_hash).await? {
             match verifier.verify_and_advance(&block) {
                 Ok(_) => return Ok(()),
                 Err(VerificationError::MissingEpochProducers) => continue,
@@ -156,12 +188,13 @@ async fn deploy_control_plane(worker: &Worker<Sandbox>) -> Result<Contract> {
 async fn malicious_rpc_objects_cannot_be_promoted_to_verified_state() -> Result<()> {
     eprintln!("L4 sandbox: start");
     let worker = near_workspaces::sandbox().await.context("start NEAR Sandbox")?;
-    let rpc = JsonRpcClient::connect(worker.rpc_addr());
+    let rpc_addr = worker.rpc_addr();
+    let rpc = JsonRpcClient::connect(&rpc_addr);
 
-    // The trusted-bootstrap phase ends here. Every object obtained through `rpc` below this point
-    // is attacker-controlled input and becomes trusted only if NearLightClientVerifier accepts it.
-    let anchor = trusted_bootstrap_anchor(&worker, &rpc).await?;
-    let candidate = next_acceptable_block(&worker, &rpc, &anchor).await?;
+    // The trusted-bootstrap phase ends here. Every object obtained through RPC below this point is
+    // attacker-controlled input and becomes trusted only if NearLightClientVerifier accepts it.
+    let anchor = trusted_bootstrap_anchor(&worker, &rpc_addr).await?;
+    let candidate = next_acceptable_block(&worker, &rpc_addr, &anchor).await?;
 
     // A modified RPC object cannot move the trusted head. Modifying the signed height changes the
     // approval message/hash and therefore fails cryptographic verification.
@@ -192,8 +225,8 @@ async fn malicious_rpc_objects_cannot_be_promoted_to_verified_state() -> Result<
         .context("execute control-plane mutation")?;
     let tx_hash = CryptoHash(mutation.outcome().transaction_hash.0);
 
-    advance_after(&worker, &rpc, &mut verifier).await?;
-    advance_after(&worker, &rpc, &mut verifier).await?;
+    advance_after(&worker, &rpc_addr, &mut verifier).await?;
+    advance_after(&worker, &rpc_addr, &mut verifier).await?;
 
     // The transaction hash is not success. The execution outcome is accepted only if its outcome
     // root and containing block both prove into the current independently verified head.
