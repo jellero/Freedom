@@ -4,9 +4,10 @@ use freedom_near_proof_verifier::{
     light_client_block_lite,
 };
 use near_jsonrpc_client::{JsonRpcClient, methods};
+use near_jsonrpc_primitives::types::query::QueryResponseKind;
 use near_primitives::hash::CryptoHash;
 use near_primitives::types::{BlockId, BlockReference, StoreKey, TransactionOrReceiptId};
-use near_primitives::views::{LightClientBlockView, QueryRequest, QueryResponseKind};
+use near_primitives::views::{LightClientBlockView, QueryRequest};
 use near_workspaces::{Contract, Worker, network::Sandbox};
 use std::sync::Arc;
 
@@ -27,7 +28,8 @@ async fn trusted_bootstrap_anchor(
     worker: &Worker<Sandbox>,
     rpc: &JsonRpcClient,
 ) -> Result<NearNetworkAnchor> {
-    let mut trusted_hash = worker.view_block().await?.hash();
+    let seed_block = worker.view_block().await?;
+    let mut trusted_hash = CryptoHash(seed_block.hash().0);
 
     // In this test only, the local Sandbox process is the out-of-band trusted bootstrap source.
     // Once the anchor is built, all later RPC objects are treated as attacker-controlled inputs.
@@ -123,7 +125,7 @@ async fn malicious_rpc_objects_cannot_be_promoted_to_verified_state() -> Result<
         .transact()
         .await?;
     mutation.clone().into_result()?;
-    let tx_hash = mutation.outcome().transaction_hash;
+    let tx_hash = CryptoHash(mutation.outcome().transaction_hash.0);
 
     advance_after(&worker, &rpc, &mut verifier).await?;
     advance_after(&worker, &rpc, &mut verifier).await?;
