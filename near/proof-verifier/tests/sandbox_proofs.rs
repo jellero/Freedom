@@ -248,10 +248,28 @@ async fn malicious_rpc_objects_cannot_be_promoted_to_verified_state() -> Result<
     tampered_execution.outcome_proof.block_hash = CryptoHash::hash_bytes(b"malicious-rpc-block");
     assert!(verifier.verify_execution_proof(&tampered_execution).is_err());
 
-    // Query exactly the state block/root authenticated by the verified light-client head. The RPC
-    // supplies bytes and trie nodes, but neither is trusted until the local trie-proof verifier
-    // authenticates the ContractData path against prev_state_root.
+    // Fetch the exact full block whose hash is already authenticated by the light-client verifier.
+    // In pre-Spice NEAR this block's ordered chunk.prev_state_root values must Merkle-reconstruct
+    // the head's aggregate prev_state_root. Sandbox is explicitly one-shard here, so shard index 0
+    // is unambiguous even for non-inclusion proofs.
     let head = verifier.head();
+    eprintln!("L4 state: request verified-head block {}", head.block_hash);
+    let head_block = rpc
+        .call(methods::block::RpcBlockRequest {
+            block_reference: BlockReference::BlockId(BlockId::Hash(head.block_hash)),
+        })
+        .await
+        .context("fetch exact verified-head block for shard-root binding")?;
+    assert_eq!(head_block.header.hash, head.block_hash);
+    assert_eq!(
+        head_block.chunks.len(),
+        1,
+        "Sandbox L4 state-proof gate requires one-shard routing; production multi-shard routing must be authenticated separately"
+    );
+
+    // Query exactly the previous state block bound by the verified light-client head. The RPC
+    // supplies bytes and trie nodes, but neither is trusted until the verifier first authenticates
+    // the shard-root set through head_block and then walks the ContractData trie proof.
     eprintln!("L4 state: request inclusion proof at {}", head.state_block_hash);
     let state_response = rpc
         .call(methods::query::RpcQueryRequest {
@@ -278,6 +296,8 @@ async fn malicious_rpc_objects_cannot_be_promoted_to_verified_state() -> Result<
         .context("contract STATE key missing")?;
 
     verifier.verify_contract_state_value(
+        &head_block,
+        0,
         contract.id(),
         item.key.as_slice(),
         Some(item.value.as_slice()),
@@ -287,11 +307,29 @@ async fn malicious_rpc_objects_cannot_be_promoted_to_verified_state() -> Result<
     let committed_version = u64::from_le_bytes(item.value[8..16].try_into()?);
     assert_eq!(committed_version, 7);
 
+    // A malicious provider cannot alter a shard state root in the full-block response while
+    // keeping the trusted light-client aggregate root unchanged.
+    let mut false_head_block = head_block.clone();
+    false_head_block.chunks[0].prev_state_root = CryptoHash::hash_bytes(b"malicious-shard-root");
+    assert_eq!(
+        verifier.verify_contract_state_value(
+            &false_head_block,
+            0,
+            contract.id(),
+            item.key.as_slice(),
+            Some(item.value.as_slice()),
+            &state.proof,
+        ),
+        Err(VerificationError::StateShardRootSetMismatch)
+    );
+
     // A malicious provider cannot swap the state bytes while reusing the proof.
     let mut false_value = item.value.to_vec();
     false_value[8] ^= 0x01;
     assert_eq!(
         verifier.verify_contract_state_value(
+            &head_block,
+            0,
             contract.id(),
             item.key.as_slice(),
             Some(&false_value),
@@ -309,6 +347,8 @@ async fn malicious_rpc_objects_cannot_be_promoted_to_verified_state() -> Result<
     assert!(
         verifier
             .verify_contract_state_value(
+                &head_block,
+                0,
                 contract.id(),
                 item.key.as_slice(),
                 Some(item.value.as_slice()),
@@ -317,8 +357,8 @@ async fn malicious_rpc_objects_cannot_be_promoted_to_verified_state() -> Result<
             .is_err()
     );
 
-    // Exact non-inclusion is also locally verifiable; an RPC cannot invent an absent key as long
-    // as the proof is checked against the authenticated root.
+    // Exact non-inclusion is locally verifiable only after shard selection is authenticated. In
+    // this one-shard Sandbox gate there is exactly one possible shard, so index 0 is authoritative.
     eprintln!("L4 state: request non-inclusion proof");
     let absent_response = rpc
         .call(methods::query::RpcQueryRequest {
@@ -339,6 +379,8 @@ async fn malicious_rpc_objects_cannot_be_promoted_to_verified_state() -> Result<
     };
     assert!(absent.values.is_empty());
     verifier.verify_contract_state_value(
+        &head_block,
+        0,
         contract.id(),
         b"FREEDOM_ABSENT_KEY",
         None,
