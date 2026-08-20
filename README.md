@@ -117,12 +117,18 @@ Details: [`docs/REVOCATION.md`](docs/REVOCATION.md).
 Security-sensitive state follows:
 
 ```text
-NetworkAnchor
+BootstrapTrustAnchor / trusted prior NetworkAnchor
+ -> canonical NetworkAnchor
+ -> independently verified chain consensus/finality
  -> VerifiedControlPlaneCheckpoint
  -> state root
  -> inclusion/non-inclusion proof
  -> canonical object
 ```
+
+The initial `NetworkAnchor` is not learned from the same RPC being verified. A fresh verifier pins its exact canonical anchor commitment through the authenticated bootstrap/release path.
+
+After bootstrap, an ordinary anchor rotation requires both threshold `NETWORK_ANCHOR` authorization **and** consensus continuity from state already trusted by the client. Governance signatures do not replace chain consensus.
 
 A transaction hash is submission, not success:
 
@@ -137,7 +143,7 @@ submit
 
 A fresh install also enforces a `BootstrapFreshnessFloor` contained in its current verifier/release, preventing a network peer/RPC from freezing a recent verifier below that floor.
 
-Details: [`docs/CONTROL_PLANE_SECURITY.md`](docs/CONTROL_PLANE_SECURITY.md).
+Details: [`docs/CONTROL_PLANE_SECURITY.md`](docs/CONTROL_PLANE_SECURITY.md) and [`docs/NETWORK_ANCHORS.md`](docs/NETWORK_ANCHORS.md).
 
 ## Pairwise rendezvous
 
@@ -269,14 +275,17 @@ Freedom does not promise to traverse every firewall or invent connectivity when 
 Production critical operations use threshold governance:
 
 ```text
-ReleaseAuthorization   >= 3-of-5
-ReleaseRevocation      >= 3-of-5
-CriticalSecurityPolicy >= 3-of-5
-ContractUpgrade        >= 3-of-5 + timelock
-GovernanceRootRotation >= 3-of-5 + recovery
+ReleaseAuthorization       >= 3-of-5
+ReleaseRevocation          >= 3-of-5
+CriticalSecurityPolicy     >= 3-of-5
+NetworkAnchorAuthorization >= 3-of-5
+ContractUpgrade            >= 3-of-5 + timelock
+GovernanceRootRotation     >= 3-of-5 + recovery
 ```
 
 This guarantees that no **single production key/credential** is sufficient. It does not magically remove quorum-collusion risk: signer custody/operator independence is an explicit trust assumption and must be operationally separated/audited.
+
+`NetworkAnchorAuthorization` is additionally constrained: after bootstrap, the quorum can authorize a candidate package but cannot replace the underlying chain's consensus/finality proof. A quorum-valid anchor without valid chain continuity is rejected.
 
 `UserRootRotation` for a user's identity is a different mechanism from governance root rotation.
 
@@ -289,6 +298,7 @@ peer / relay / mirror / store
  -> untrusted artifact bytes
  -> exact hash
  -> threshold release authorization
+ -> exact initial / monotonic rotated NetworkAnchor
  -> verified ReleaseStatus / SecurityPolicy
  -> Android signer lineage
  -> bootstrap trust + freshness floor
@@ -340,6 +350,7 @@ Paying does not make Freedom Communication's base cryptography stronger.
 - [`spec/README.md`](spec/README.md) — deterministic encoding/domain rules.
 - [`docs/SECURITY_INVARIANTS.md`](docs/SECURITY_INVARIANTS.md) — MUST/MUST NOT security baseline.
 - [`docs/CONTROL_PLANE_SECURITY.md`](docs/CONTROL_PLANE_SECURITY.md) — checkpoint/proof/bootstrap/governance/migration model.
+- [`docs/NETWORK_ANCHORS.md`](docs/NETWORK_ANCHORS.md) — authenticated NetworkAnchor bootstrap/rotation/anti-rollback model.
 - [`docs/REVOCATION.md`](docs/REVOCATION.md) — device/authorization/root revocation and freshness.
 - [`docs/PAIRWISE_RECOVERY.md`](docs/PAIRWISE_RECOVERY.md) — pairwise backup lifecycle/freshness/rollback model.
 - [`docs/IDENTITY_MODEL.md`](docs/IDENTITY_MODEL.md) — identity/recovery/pairwise model.
@@ -358,7 +369,3 @@ Paying does not make Freedom Communication's base cryptography stronger.
 ## Principle
 
 Freedom is not defined by one blockchain, relay, VPN server or app build.
-
-> **Nessun server centrale. Nessun super-admin. Niente di opaco. Fiducia nel protocollo. Sicurezza nell'architettura.**
-
-Here, “nessun super-admin” means no single technical production credential can unilaterally control the security core; threshold-quorum trust assumptions remain explicit rather than hidden.
