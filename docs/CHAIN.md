@@ -4,6 +4,7 @@ Status: **canonical design draft**.
 
 Normative security: [`SECURITY_INVARIANTS.md`](SECURITY_INVARIANTS.md).
 Control-plane: [`CONTROL_PLANE_SECURITY.md`](CONTROL_PLANE_SECURITY.md).
+NetworkAnchor bootstrap/rotation: [`NETWORK_ANCHORS.md`](NETWORK_ANCHORS.md).
 Revocation: [`REVOCATION.md`](REVOCATION.md).
 Pairwise recovery: [`PAIRWISE_RECOVERY.md`](PAIRWISE_RECOVERY.md).
 Schema: [`../spec/freedom.cddl`](../spec/freedom.cddl).
@@ -52,7 +53,8 @@ Device/contact quotas V1 sono product/service policy, non protocol security/inte
 Conceptual API:
 
 ```text
-networkAnchor
+loadBootstrapNetworkAnchor
+verifyNetworkAnchorRotation
 verifyCheckpoint
 verifyStateProof
 verifyNonInclusionProof
@@ -89,12 +91,18 @@ readContractLineageProof
 readMigrationProof
 ```
 
+`loadBootstrapNetworkAnchor` non significa “chiedi l'anchor alla RPC”. Accetta soltanto un canonical `network-anchor` il cui exact `NetworkAnchorCommitmentV1` è già autenticato dalla release/bootstrap trust path, verifica il payload adapter-specific e inizializza il consensus verifier.
+
+`verifyNetworkAnchorRotation` richiede ordinary same-context monotonic lineage, active `NETWORK_ANCHOR` authorization e consensus/finality continuity dalla state già trusted. Full rules: `NETWORK_ANCHORS.md`.
+
 Core logic non importa SDK NEAR direttamente.
 
 ## 5. RPC non è trust
 
 ```text
-NetworkAnchor
+authentic BootstrapTrustAnchor
+ -> exact initial NetworkAnchor
+ -> adapter-specific consensus verifier
  -> VerifiedControlPlaneCheckpoint
  -> state root
  -> inclusion/non-inclusion proof
@@ -103,7 +111,38 @@ NetworkAnchor
 
 Un raw RPC response non è `VERIFIED_STATE`.
 
-## 6. Verified mutation
+Dopo bootstrap:
+
+```text
+valid NETWORK_ANCHOR quorum
++ invalid chain continuity
+= reject
+```
+
+La governance Freedom non sostituisce la consensus authority della chain.
+
+## 6. NEAR V1 profile
+
+Il primo executable adapter profile è:
+
+```text
+NEAR-NEP25-PRE-SPICE-BORSH-V1
+```
+
+Il canonical outer `network-anchor` contiene un `adapter_anchor_payload` Borsh deterministico con:
+
+```text
+payload version
+trusted LightClientBlockLiteView
+current epoch ValidatorStake set
+next epoch ValidatorStake set
+```
+
+Prima di costruire il verifier NEAR, il decoder richiede exact profile, strict payload parse, outer checkpoint height/hash match, validator sets presenti e next-validator-set commitment coerente col trusted head.
+
+Questo profile è esplicitamente pre-Spice. Un cambiamento delle NEAR commitment semantics richiede un nuovo verifier profile reviewato; fallback a raw RPC trust è vietato.
+
+## 7. Verified mutation
 
 ```text
 submit
@@ -116,19 +155,21 @@ submit
 
 Tx hash != success.
 
-## 7. Bootstrap freshness
+## 8. Bootstrap freshness
 
-Fresh install applica `BootstrapFreshnessFloor` della propria release/verifier. State sotto minimum checkpoint/signer/policy floor viene rifiutato.
+Fresh install applica `BootstrapFreshnessFloor` della propria release/verifier e l'exact initial `NetworkAnchorCommitmentV1`. State sotto minimum checkpoint/signer/policy floor viene rifiutato.
 
 Un verifier autentico ma esso stesso molto vecchio non può dedurre magicamente state più recente; verifier freshness richiede independent bootstrap assurance.
 
-## 8. Revocation
+Persisted current NetworkAnchor commitment/epoch/checkpoint/signer epoch impediscono ordinary anchor rollback dopo bootstrap.
+
+## 9. Revocation
 
 Adapter semantics devono essere univoche/testate per device key floor, authorization epoch floor, root-lineage transition e non-inclusion/current-state proof.
 
 `RPC not found` non è una prova.
 
-## 9. Rendezvous pairwise
+## 10. Rendezvous pairwise
 
 Direction/epoch restano nella derivazione segreta del one-time write keypair.
 
@@ -151,7 +192,7 @@ size/expiry bounds valid
 
 Il contract non necessita di conoscere direction/epoch e chi osserva lo slot non ottiene overwrite authority.
 
-## 10. Pairwise recovery anchor
+## 11. Pairwise recovery anchor
 
 Il full `PairwiseRecoveryBundle` non viene messo on-chain.
 
@@ -184,7 +225,7 @@ La source che conserva il ciphertext del bundle resta non fidata e non può ride
 
 L'anchor non pubblica contact list/plaintext, ma rende osservabile il timing degli update della stessa opaque recovery lineage. Questo trade-off è esplicito.
 
-## 11. Active storage bounded
+## 12. Active storage bounded
 
 Temporary objects implementano overwrite/ring/prune/lease/reclaim. TTL alone non basta.
 
@@ -192,13 +233,13 @@ Repeated renew/expire must converge to a configured active-state bound. Chain ar
 
 `pairwise-recovery-anchor` è current monotonic state per lineage, non una nuova key infinita per ogni backup generation.
 
-## 12. Root control / recovery lineage
+## 13. Root control / recovery lineage
 
 Compromise-recovery users possono registrare un opaque `root_control_commitment` con current root epoch/commitment, recovery-policy commitment e optional pending recovery hash.
 
 Questo handle non è network identity ma rende correlabili gli eventi della stessa recovery lineage sul control-plane; trade-off esplicito.
 
-## 13. UserRecoveryPolicy
+## 14. UserRecoveryPolicy
 
 Una policy valida usa recovery-key commitments distinti e:
 
@@ -218,7 +259,7 @@ root_epoch + 1
 
 La current root da sola non può rimuovere/sostituire la policy. V1 non supporta arbitrary recovery-policy mutation.
 
-## 14. Compromise recovery race
+## 15. Compromise recovery race
 
 Una valid quorum-authorized `COMPROMISE_RECOVERY` può targettare la latest current root state della stessa root-control lineage.
 
@@ -238,25 +279,28 @@ fino all'activation height:
 
 Questo impedisce alla root rubata di evadere dalla recovery policy con una normal-rotation race.
 
-## 15. Governance
+## 16. Governance
 
 Production minimum:
 
 ```text
-ReleaseAuthorization   >= 3-of-5
-ReleaseRevocation      >= 3-of-5
-CriticalSecurityPolicy >= 3-of-5
-ContractUpgrade        >= 3-of-5 + timelock
-GovernanceRootRotation >= 3-of-5 + recovery
+ReleaseAuthorization       >= 3-of-5
+ReleaseRevocation          >= 3-of-5
+CriticalSecurityPolicy     >= 3-of-5
+NetworkAnchorAuthorization >= 3-of-5
+ContractUpgrade            >= 3-of-5 + timelock
+GovernanceRootRotation     >= 3-of-5 + recovery
 ```
 
 Threshold eliminates a unilateral single key, not quorum collusion. Custody/operator domains should be separated/audited.
 
-## 16. Contract upgrade
+`NetworkAnchorAuthorization` è scoped e non può bypassare il consensus verifier.
+
+## 17. Contract upgrade
 
 Immutable security core or threshold/timelocked/code-hash-pinned upgrade. No silent contract-address swap or single Full Access production upgrade key.
 
-## 17. Chain migration
+## 18. Chain migration
 
 ```text
 ChainMigrationManifest
@@ -265,16 +309,23 @@ ChainMigrationManifest
 
 Proof binds source finalized/export state, migration program and target imported root. Governance authorizes the migration rule, not arbitrary replacement state.
 
-## 18. Payments / quotas
+Ordinary NetworkAnchor rotation non cambia `chain_adapter_id`, `chain_network_id` o verifier semantics. Questi cambi appartengono a migration/update.
+
+## 19. Payments / quotas
 
 Voucher/nullifier can reduce payment→entitlement linkage. Timing correlation may remain.
 
 Contact/device commercial limits V1 do not justify public social/device graph.
 
-## 19. Mainnet acceptance
+## 20. Mainnet acceptance
 
-- deterministic schema + crypto-domain vectors;
+- canonical NetworkAnchor bytes/signing-input/commitment vectors;
+- exact bootstrap NetworkAnchor pin + freshness floor;
+- NetworkAnchor payload/checkpoint/profile negative cases;
+- NetworkAnchor governance-valid / consensus-invalid rejection;
+- NetworkAnchor signer transition/rollback tests;
 - checkpoint/finality/state proofs against honest/stale/forked/malicious RPC;
+- authenticated multi-shard account/key routing before production non-inclusion;
 - fresh-install floor;
 - revocation proof/freshness;
 - rendezvous overwrite/front-run/replay;
@@ -286,4 +337,5 @@ Contact/device commercial limits V1 do not justify public social/device graph.
 - signer custody/quorum tests/documentation;
 - contract rollback;
 - StateMigrationProof;
+- explicit production signature suite for NETWORK_ANCHOR/release/governance;
 - no mailbox/message/media/full-pairwise-backup state.
