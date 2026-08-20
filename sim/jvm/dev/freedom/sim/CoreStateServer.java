@@ -93,6 +93,21 @@ public final class CoreStateServer {
                         bool(p[1]), bool(p[2]), bool(p[3]), bool(p[4]), Long.parseLong(p[5]));
                 return "accepted=" + accepted + "\t" + snapshot();
             }
+            case "CONFIGURE_NETWORK_ANCHOR" -> {
+                require(p, 8);
+                model.networkAnchor.configure(
+                        p[1], p[2], p[3], p[4], Long.parseLong(p[5]), p[6], Long.parseLong(p[7]));
+                return snapshot();
+            }
+            case "VERIFY_NETWORK_ANCHOR" -> {
+                require(p, 17);
+                boolean accepted = model.networkAnchor.acceptCandidate(
+                        p[1], p[2], p[3], p[4], Long.parseLong(p[5]),
+                        p[6], nullable(p[7]), Long.parseLong(p[8]), Long.parseLong(p[9]),
+                        Long.parseLong(p[10]), Long.parseLong(p[11]), Long.parseLong(p[12]),
+                        bool(p[13]), bool(p[14]), bool(p[15]), bool(p[16]));
+                return "accepted=" + accepted + "\t" + snapshot();
+            }
             case "BEGIN_REKEY" -> { require(p, 2); model.rekey.begin(Long.parseLong(p[1])); return snapshot(); }
             case "REKEY_COMMIT" -> { require(p, 2); model.rekey.receiveCommit(Long.parseLong(p[1])); return snapshot(); }
             case "REKEY_ACK" -> { require(p, 2); model.rekey.acknowledge(Long.parseLong(p[1])); return snapshot(); }
@@ -122,6 +137,14 @@ public final class CoreStateServer {
         s.put("mutation_has_committed_state", Boolean.toString(model.mutation.hasCommittedState()));
         s.put("mutation_last_reason", nullString(model.mutation.lastReason()));
         s.put("mutation_committed_version", Long.toString(model.mutation.committedVersion()));
+        s.put("network_anchor_configured", Boolean.toString(model.networkAnchor.configured()));
+        s.put("network_anchor_initialized", Boolean.toString(model.networkAnchor.initialized()));
+        s.put("network_anchor_commitment", nullString(model.networkAnchor.currentCommitment()));
+        s.put("network_anchor_epoch", Long.toString(model.networkAnchor.anchorEpoch()));
+        s.put("network_anchor_checkpoint_height", Long.toString(model.networkAnchor.checkpointHeight()));
+        s.put("network_anchor_signer_set_epoch", Long.toString(model.networkAnchor.signerSetEpoch()));
+        s.put("network_anchor_last_accepted", Boolean.toString(model.networkAnchor.lastAccepted()));
+        s.put("network_anchor_last_reason", nullString(model.networkAnchor.lastReason()));
         s.put("key_epoch", Long.toString(model.rekey.keyEpoch()));
         s.put("pending_key_epoch", nullString(model.rekey.pendingEpoch()));
         s.put("rekey_phase", model.rekey.phase().name());
@@ -140,6 +163,7 @@ public final class CoreStateServer {
     }
 
     private static boolean bool(String value) { return "true".equalsIgnoreCase(value); }
+    private static String nullable(String value) { return "null".equals(value) ? null : value; }
     private static String nullString(Object value) { return value == null ? "null" : value.toString(); }
     private static String sanitize(String value) { return value == null ? "null" : value.replace('\t', ' ').replace('\n', ' '); }
     private static void require(String[] parts, int n) {
