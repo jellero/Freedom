@@ -128,8 +128,8 @@ impl NearNetworkAnchor {
 
 fn validate_validator_sets(
     trusted_head: &LightClientBlockLiteView,
-    current_block_producers: &[ValidatorStake],
-    next_block_producers: &[ValidatorStake],
+    current_block_producers: &Vec<ValidatorStake>,
+    next_block_producers: &Vec<ValidatorStake>,
 ) -> Result<(), AnchorPayloadError> {
     if current_block_producers.is_empty() || next_block_producers.is_empty() {
         return Err(AnchorPayloadError::MissingValidatorSet);
