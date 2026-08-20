@@ -263,6 +263,25 @@ class Engine:
             self.core.command("SET_BOOTSTRAP_FLOOR", int(step["minimum_height"])); return
         if name == "fetch_control_plane_checkpoint":
             self.core.command("VERIFY_CHECKPOINT", int(step["height"]), step.get("proof") == "valid"); return
+        if name == "configure_network_anchor":
+            self.core.command(
+                "CONFIGURE_NETWORK_ANCHOR",
+                step["network_id"], step["chain_adapter_id"], step["chain_network_id"],
+                step["verifier_profile"], int(step["verifier_policy_version"]),
+                step["pinned_commitment"], int(step["minimum_checkpoint_height"])); return
+        if name == "evaluate_network_anchor":
+            previous = step.get("previous_commitment")
+            self.core.command(
+                "VERIFY_NETWORK_ANCHOR",
+                step["network_id"], step["chain_adapter_id"], step["chain_network_id"],
+                step["verifier_profile"], int(step["verifier_policy_version"]),
+                step["commitment"], "null" if previous is None else previous,
+                int(step["anchor_epoch"]), int(step["trusted_checkpoint_height"]),
+                int(step["signer_set_epoch"]), int(step["issued_at_height"]),
+                int(step["activation_height"]), bool(step.get("payload_binding_valid", False)),
+                bool(step.get("threshold_signatures_valid", False)),
+                bool(step.get("signer_set_transition_valid", False)),
+                bool(step.get("consensus_continuity_valid", False))); return
         if name == "begin_rekey": self.core.command("BEGIN_REKEY", int(step["next_epoch"])); return
         if name == "receive_rekey_commit": self.core.command("REKEY_COMMIT", int(step["next_epoch"])); return
         if name == "drop_rekey_ack": self.trace("packet_dropped", packet="rekey_ack"); return
@@ -292,6 +311,17 @@ class Engine:
         elif name == "control_plane_checkpoint_accepted": passed = _nullable_int(s.get("verified_height")) is not None
         elif name == "verified_checkpoint_height":
             detail = _nullable_int(s.get("verified_height")); passed = detail == equals
+        elif name == "network_anchor_rejected":
+            detail = None if s.get("network_anchor_last_reason") == "null" else s.get("network_anchor_last_reason")
+            passed = not _bool(s.get("network_anchor_last_accepted")) and (reason is None or detail == reason)
+        elif name == "network_anchor_accepted": passed = _bool(s.get("network_anchor_last_accepted"))
+        elif name == "network_anchor_commitment":
+            detail = None if s.get("network_anchor_commitment") == "null" else s.get("network_anchor_commitment"); passed = detail == equals
+        elif name == "network_anchor_epoch": detail = int(s.get("network_anchor_epoch", "-1")); passed = detail == equals
+        elif name == "network_anchor_checkpoint_height":
+            detail = int(s.get("network_anchor_checkpoint_height", "-1")); passed = detail == equals
+        elif name == "network_anchor_signer_set_epoch":
+            detail = int(s.get("network_anchor_signer_set_epoch", "-1")); passed = detail == equals
         elif name == "session_key_epoch": detail = int(s.get("key_epoch", "-1")); passed = detail == equals
         elif name == "no_split_brain": passed = _bool(s.get("no_split_brain"))
         elif name == "old_send_key_erased": passed = _bool(s.get("old_send_key_erased"))
