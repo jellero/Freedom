@@ -28,10 +28,19 @@ L2 Docker/kernel network
 L3 real NEAR Sandbox ChainAdapter differential
    |
    v
-L4/L5 Android + physical networks
+L4 independent NEAR proof / NetworkAnchor adapter gate
+   |
+   v
+L5 Android integration
+   |
+   v
+L6 physical networks
+   |
+   v
+L7 external review
 ```
 
-Il core viene compilato/eseguito a ogni ciclo host-side con `javac`; non serve produrre/installare un APK per testare state machine, routing policy, recovery/freshness e control-plane acceptance rules.
+Il core viene compilato/eseguito a ogni ciclo host-side con `javac`; non serve produrre/installare un APK per testare state machine, routing policy, recovery/freshness, NetworkAnchor acceptance e control-plane acceptance rules.
 
 ## 2. Shared core — regola obbligatoria
 
@@ -52,6 +61,7 @@ RouteState
 PairwiseRecoveryState
 BootstrapFreshnessState
 MutationVerificationState
+NetworkAnchorState
 RekeyState
 ```
 
@@ -65,7 +75,7 @@ spec/task
  -> isolated branch/worktree
  -> shared-core implementation
  -> L0/L1
- -> relevant L2/L3
+ -> relevant L2/L3/L4
  -> reviewer agent
  -> human gate if normative semantics changed
  -> merge only with required checks green
@@ -97,7 +107,16 @@ python sim/l3/differential.py \
   --adapter-cmd "cargo run --quiet --manifest-path near/l3-adapter/Cargo.toml"
 ```
 
-`--oracle-only` **non è L3 reale**.
+Per L4 NEAR proof/NetworkAnchor adapter:
+
+```bash
+cd near/proof-verifier
+cargo test --manifest-path ../Cargo.toml \
+  -p freedom-near-proof-verifier \
+  --test sandbox_proofs -- --nocapture
+```
+
+`--oracle-only` **non è L3 reale**. L3 reale **non è** L4 independent proof verification. L4 **non è** first-install anchor authenticity se il test costruisce l'anchor da un Sandbox fidato.
 
 ## 5. Livelli di test
 
@@ -106,9 +125,10 @@ L0  core unit/self-tests + canonical byte vectors
 L1  deterministic virtual-time simulation
 L2  real Docker/container/socket/network behavior
 L3  real NEAR Sandbox ChainAdapter differential
-L4  Android emulator
-L5  physical devices + Wi-Fi/mobile/CGNAT
-L6  external security/interoperability review
+L4  independent post-NetworkAnchor consensus/execution/state proof + adapter-payload gate
+L5  Android emulator/device integration
+L6  physical devices + Wi-Fi/mobile/CGNAT
+L7  external security/interoperability review
 ```
 
 Ogni livello risponde a una domanda diversa; nessun livello sostituisce automaticamente quello successivo.
@@ -116,6 +136,17 @@ Ogni livello risponde a una domanda diversa; nessun livello sostituisce automati
 ## 6. L0 — core e bytes
 
 L0 include `Freedom-DCBOR-1` exact byte vectors, strict decoding/negative vectors, crypto-domain registry checks e shared-core transition self-tests. Modificare expected bytes o una state machine normativa richiede review umana.
+
+Per NetworkAnchor L0 copre:
+
+```text
+canonical network-anchor CDDL shape
+FREEDOM/NETWORK_ANCHOR signing domain
+exact Freedom-DCBOR-1 encoding/signing-input vector
+bootstrap pin + monotonic rotation + signer-transition + consensus-continuity state machine
+```
+
+L0 non prova signatures/consensus reali; quei fatti arrivano dagli adapter e sono verificati nei livelli appropriati.
 
 ## 7. L1 — deterministic simulator
 
@@ -135,6 +166,7 @@ Baseline scenari eseguibili:
 relay block + NAT/rebind event -> alternate route
 pairwise backup rollback -> reject stale / accept latest / rotate future state
 stale control-plane checkpoint -> BootstrapFreshnessFloor reject
+NetworkAnchor -> wrong bootstrap pin / governance-only rotation / signer transition / rollback
 rekey lost Ack -> stable next epoch without split brain
 ```
 
@@ -200,9 +232,36 @@ untrusted RPC response
  -> VERIFIED_STATE
 ```
 
-Il verifier production contro `NetworkAnchor` resta un gate distinto. Raw RPC success non diventa `VERIFIED_STATE` solo perché L3 Sandbox è verde.
+Raw RPC success non diventa `VERIFIED_STATE` solo perché L3 Sandbox è verde.
 
-## 11. Adversarial matrix obbligatoria
+## 11. L4 — independent NEAR verifier / NetworkAnchor payload
+
+`near/proof-verifier` verifica localmente:
+
+```text
+trusted NetworkAnchor payload
+ -> NEAR light-client epoch/signature/>2/3-stake continuity
+ -> execution outcome proof
+ -> verified-head block/state-root aggregate
+ -> shard-root selection
+ -> ContractData trie inclusion/non-inclusion
+```
+
+Il primo adapter payload profile è `NEAR-NEP25-PRE-SPICE-BORSH-V1`. L4 verifica anche strict Borsh decode, exact outer checkpoint binding e validator-set commitment prima di costruire il verifier.
+
+Il Sandbox fornisce un fixture iniziale fidato soltanto per rendere il test deterministico. Questo **non** sostituisce:
+
+```text
+Freedom-DCBOR-1 canonical outer NetworkAnchor verification
+BootstrapTrustAnchor exact commitment pin
+production NETWORK_ANCHOR signature-suite verification
+ordinary rotation Freedom authorization + real consensus continuity composition
+production multi-shard routing
+```
+
+Questi confini devono restare dichiarati e fallire chiuso se non implementati.
+
+## 12. Adversarial matrix obbligatoria
 
 Il laboratorio deve coprire progressivamente:
 
@@ -214,7 +273,13 @@ loss/reorder/jitter/throttle/reset
 DNS/SNI/transport blocking
 allowlist-only environments
 
-CONTROL PLANE
+CONTROL PLANE / NETWORK ANCHOR
+wrong bootstrap-pinned NetworkAnchor
+wrong network/adapter/chain/profile
+malformed adapter payload / checkpoint mismatch
+anchor epoch/checkpoint rollback
+signer-set jump/rollback
+threshold-valid anchor without chain consensus continuity
 stale/fork/non-final checkpoint
 invalid inclusion/non-inclusion proof
 RPC omission/conflict/unavailable
@@ -252,41 +317,47 @@ invalid StateMigrationProof
 malicious first-install source
 ```
 
-## 12. Storage/resource tests
+## 13. Storage/resource tests
 
 Simulare create/renew/expire/prune/overwrite su grandi cardinalità logiche. Assert active-state upper bound, reclaim/refund/bounty bounded, no message/media/mailbox state, resource/concurrency caps e no unbounded queues introdotte da recovery/routing.
 
-## 13. Android gates
+## 14. Android gates
 
 APK/emulator/device resta obbligatorio per proprietà Android-specifiche: Keystore, process death, Doze/background, permissions, package signing/update, real socket handover, camera/QR e `VpnService`.
 
-Il fatto che L0-L3 passino non prova queste proprietà.
+Il fatto che L0-L4 passino non prova queste proprietà.
 
-## 14. Evidence artifacts
+## 15. Evidence artifacts
 
 Ogni run deve conservare quando applicabile scenario/version, seed, spec/core commit hash, virtual/network event trace, node/adapter versions, assertions, failure class, redacted logs e result. Mai loggare session keys, recovery private material o plaintext conversazioni.
 
-## 15. Parallel agent roles
+Per NetworkAnchor/proof gates è utile preservare profile/version, declared checkpoint, trusted-head hash/height e pass/fail class; non preservare private governance signing material.
+
+## 16. Parallel agent roles
 
 Usare worktree/branch isolate, per esempio:
 
 ```text
 agent/core-protocol
 agent/control-plane
+agent/network-anchor
 agent/identity-recovery
 agent/routing
 agent/l2-chaos
 agent/l3-near
+agent/l4-proof
 agent/test-oracle
 agent/reviewer
 ```
 
 Reviewer e fixer idealmente separati per evitare che lo stesso agente definisca, implementi e auto-approvi l'oracolo.
 
-## 16. Definition of done
+## 17. Definition of done
 
-Una feature security/network non è done con una demo manuale. Richiede, dove applicabile, canonical semantics, shared-core implementation, positive + negative tests, adversarial scenario, resource bound, replay/rollback behavior, safe evidence/logging, relevant L0/L1/L2/L3 gate e Android/platform gate se specifico.
+Una feature security/network non è done con una demo manuale. Richiede, dove applicabile, canonical semantics, shared-core implementation, positive + negative tests, adversarial scenario, resource bound, replay/rollback behavior, safe evidence/logging, relevant L0/L1/L2/L3/L4 gate e Android/platform gate se specifico.
 
-## 17. Regola finale
+Per una NetworkAnchor production path, L4 Sandbox verde da solo non è sufficiente: servono outer canonical verifier, production signature suite, bootstrap packaging, real rotation composition, multi-shard routing e human/external review secondo il livello.
+
+## 18. Regola finale
 
 > **Simulare velocemente non significa simulare la sicurezza. Il loop rapido deve eseguire le stesse regole core che il prodotto userà, e i livelli reali devono restare esplicitamente separati dai mock.**
