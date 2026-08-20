@@ -68,14 +68,19 @@ NetworkAnchor
        -> next validator-set commitment
   -> verified block-merkle root
        -> execution outcome proof
-  -> authenticated previous-state root
-       -> contract-data trie inclusion / non-inclusion proof
+  -> verified-head block hash
+       -> ordered chunk.prev_state_root set
+       -> local Merkle reconstruction of aggregate prev_state_root
+       -> authenticated shard selection
+       -> ContractData trie inclusion / non-inclusion proof
   -> locally accepted state
 ```
 
-The verifier follows the NEAR light-client validation model and keeps the trusted head unchanged on any failed check. Transaction hashes are evidence only; execution success is accepted only when the execution outcome proves into the independently verified head. `view_state(include_proof=true)` bytes are also evidence only; the local trie walker authenticates the exact `ContractData` key against the state root committed by the verified light-client head.
+The verifier follows the NEAR light-client validation model and keeps the trusted head unchanged on any failed check. Transaction hashes are evidence only; execution success is accepted only when the execution outcome proves into the independently verified head.
 
-The sandbox proof gate deliberately tampers with candidate light-client data, execution-proof data, returned state bytes and trie proof nodes. These inputs must fail closed while the previously trusted head remains unchanged.
+For state, the verifier does **not** treat the light-client header's `prev_state_root` as a contract trie root. In the supported pre-Spice profile it first requires the exact full block to hash to the independently verified head, reconstructs the header's aggregate state commitment from that block's ordered `chunk.prev_state_root` values, selects the authenticated shard root, and only then walks the exact `ContractData` trie proof returned by `view_state(include_proof=true)`.
+
+The Sandbox L4 gate is deliberately one-shard. That makes shard index `0` uniquely authenticated and allows both inclusion and non-inclusion to be tested without pretending that a production multi-shard routing rule has already been implemented. The gate tampers with signed light-client data, execution-proof data, the full block's shard state root, returned contract-state bytes and trie proof nodes. Every corruption must fail closed.
 
 Run it from this directory:
 
@@ -90,12 +95,18 @@ cargo test --manifest-path ../Cargo.toml \
 
 The test bootstraps `NearNetworkAnchor` from the trusted local Sandbox process so it can test the post-anchor verifier deterministically. Production Freedom **MUST NOT** bootstrap that anchor from the RPC being verified. Mainnet/testnet anchor packaging, release signing, rotation and emergency recovery remain part of the independently authenticated Freedom bootstrap/update path.
 
+Production multi-shard state verification also requires an independently authenticated mapping from account/key to shard index. This is security-critical for non-inclusion: a valid proof from the wrong shard can truthfully prove that a key is absent from that shard. The current Sandbox gate avoids that ambiguity by asserting exactly one shard.
+
+The current state-root binding is explicitly the pre-Spice NEAR profile. A protocol profile in which the light-client header no longer commits to state through the ordered chunk-state-root Merkle aggregate MUST be rejected until Freedom has a separately specified and tested verifier for that profile. No fallback to RPC trust is permitted.
+
 Therefore the presence of this verifier does not make an arbitrary RPC response `VERIFIED_STATE`. The valid production chain remains:
 
 ```text
 independently authenticated NetworkAnchor
  -> independently verified NEAR light-client head
- -> independently verified execution/state proof
+ -> independently verified execution proof
+ -> verified shard-state commitment + authenticated shard routing
+ -> independently verified trie proof
  -> canonical Freedom object/state transition
 ```
 
