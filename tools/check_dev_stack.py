@@ -24,6 +24,9 @@ REQUIRED = [
     "near/control-plane-contract/src/lib.rs",
     "near/l3-adapter/Cargo.toml",
     "near/l3-adapter/src/main.rs",
+    "near/proof-verifier/Cargo.toml",
+    "near/proof-verifier/src/lib.rs",
+    "near/proof-verifier/tests/sandbox_proofs.rs",
     "tools/build_core.py",
     "tools/run_core_tests.py",
 ]
@@ -97,10 +100,45 @@ def main() -> int:
         if marker not in contract:
             errors.append(f"NEAR control-plane kernel missing marker: {marker}")
 
+    proof_verifier = (ROOT / "near" / "proof-verifier" / "src" / "lib.rs").read_text(encoding="utf-8")
+    for marker in (
+        "NearNetworkAnchor",
+        "NearLightClientVerifier",
+        "verify_and_advance",
+        "InsufficientApprovedStake",
+        "verify_execution_proof",
+        "BlockMerkleProofInvalid",
+        "verify_contract_state_value",
+        "StateBlockHashMismatch",
+        "StateShardRootSetMismatch",
+        "merklize(&shard_state_roots)",
+        "StateProofMissingNode",
+    ):
+        if marker not in proof_verifier:
+            errors.append(f"NEAR proof verifier missing executable marker: {marker}")
+
+    proof_test = (ROOT / "near" / "proof-verifier" / "tests" / "sandbox_proofs.rs").read_text(encoding="utf-8")
+    for marker in (
+        "malicious_rpc_objects_cannot_be_promoted_to_verified_state",
+        "include_proof: true",
+        "light_client_proof",
+        "RpcBlockRequest",
+        "StateShardRootSetMismatch",
+        "FREEDOM_ABSENT_KEY",
+    ):
+        if marker not in proof_test:
+            errors.append(f"NEAR proof integration gate missing marker: {marker}")
+
     workflow = (ROOT / ".github" / "workflows" / "spec-consistency.yml").read_text(encoding="utf-8")
-    for marker in ("l3-near-sandbox:", "Run real NEAR Sandbox differential", '"near/**"'):
+    for marker in (
+        "l3-near-sandbox:",
+        "Run real NEAR Sandbox differential",
+        "l4-near-proof-verifier:",
+        "Verify NEAR finality, execution and state proofs against NetworkAnchor",
+        '"near/**"',
+    ):
         if marker not in workflow:
-            errors.append(f"CI does not gate real NEAR L3 marker: {marker}")
+            errors.append(f"CI does not gate NEAR development stack marker: {marker}")
 
     if errors:
         for error in errors:
