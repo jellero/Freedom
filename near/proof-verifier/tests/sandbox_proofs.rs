@@ -150,8 +150,8 @@ async fn trusted_bootstrap_anchor(
         );
 
         return NearNetworkAnchor::from_adapter_payload(
-            raw_anchor.network_id,
-            raw_anchor.chain_id,
+            raw_anchor.network_id.clone(),
+            raw_anchor.chain_id.clone(),
             NEAR_ANCHOR_VERIFIER_PROFILE,
             raw_anchor.trusted_head.inner_lite.height,
             raw_anchor.trusted_hash(),
