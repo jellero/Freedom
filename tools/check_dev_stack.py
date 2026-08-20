@@ -109,6 +109,9 @@ def main() -> int:
         "verify_execution_proof",
         "BlockMerkleProofInvalid",
         "verify_contract_state_value",
+        "StateBlockHashMismatch",
+        "StateShardRootSetMismatch",
+        "merklize(&shard_state_roots)",
         "StateProofMissingNode",
     ):
         if marker not in proof_verifier:
@@ -119,6 +122,8 @@ def main() -> int:
         "malicious_rpc_objects_cannot_be_promoted_to_verified_state",
         "include_proof: true",
         "light_client_proof",
+        "RpcBlockRequest",
+        "StateShardRootSetMismatch",
         "FREEDOM_ABSENT_KEY",
     ):
         if marker not in proof_test:
