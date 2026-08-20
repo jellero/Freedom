@@ -34,6 +34,14 @@ MutationVerificationState
   failed follow-up operation does not erase prior committed state
   resulting-state rollback rejected
 
+NetworkAnchorState
+  exact fresh-install bootstrap pin
+  network / adapter / chain-network / verifier-profile binding
+  monotonic anchor and checkpoint lineage
+  signer-set transition gate
+  threshold authorization does not replace chain consensus continuity
+  rejected candidate leaves previous trusted anchor intact
+
 RekeyState
   STABLE -> INIT_SENT -> NEW_KEY_PENDING_ACK -> STABLE(next epoch)
   exact +1 epoch
@@ -64,7 +72,9 @@ The Android source set compiles `core/src/main/java` directly. Platform-specific
 
 ## Control-plane relationship
 
-The shared core defines client-side acceptance semantics. A real `NearChainAdapter` must supply verified facts/proofs and pass `sim/l3/differential.py`; the core does not treat RPC responses as trusted state by itself.
+The shared core defines client-side acceptance semantics. A real `ChainAdapter` supplies cryptographically verified facts/proofs; the core never treats an RPC response or a governance signature alone as trusted chain state.
+
+For NetworkAnchor specifically, the adapter verifies canonical bytes/signatures, exact adapter payload binding and consensus continuity. `NetworkAnchorState` then enforces bootstrap pinning, context/epoch/height monotonicity and signer-set transition semantics defined in `docs/NETWORK_ANCHORS.md`.
 
 ## Change discipline
 
@@ -74,5 +84,5 @@ A security-relevant core behavior change requires:
 2. core self-test/regression;
 3. L1 scenario coverage where applicable;
 4. vectors when wire/crypto-domain semantics change;
-5. L2/L3 coverage when routing/control-plane behavior is affected;
+5. L2/L3/L4 coverage when routing/control-plane/proof behavior is affected;
 6. human review for normative semantic changes.

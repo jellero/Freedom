@@ -22,6 +22,7 @@ REQUIRED_FILES = [
     "spec/crypto-domains.txt",
     "docs/SECURITY_INVARIANTS.md",
     "docs/CONTROL_PLANE_SECURITY.md",
+    "docs/NETWORK_ANCHORS.md",
     "docs/REVOCATION.md",
     "docs/PAIRWISE_RECOVERY.md",
     "docs/IDENTITY_MODEL.md",
@@ -32,6 +33,7 @@ REQUIRED_FILES = [
     "sim/README.md",
     "sim/scenarios/relay-block-nat-rebind.yaml",
     "sim/scenarios/pairwise-backup-rollback.yaml",
+    "sim/scenarios/network-anchor-rollback.yaml",
     ".github/CODEOWNERS",
 ]
 
@@ -56,6 +58,7 @@ REQUIRED_CDDL_OBJECTS = [
     "rekey-ack",
     "encrypted-control-frame",
     "encrypted-media-frame",
+    "network-anchor",
     "verified-control-plane-checkpoint",
     "bootstrap-freshness-floor",
     "state-migration-proof",
@@ -85,6 +88,7 @@ REQUIRED_CRYPTO_DOMAINS = [
     "SIGN FREEDOM/CONTRACT_UPGRADE",
     "SIGN FREEDOM/CHAIN_MIGRATION",
     "SIGN FREEDOM/PAIRWISE_RECOVERY_ANCHOR",
+    "SIGN FREEDOM/NETWORK_ANCHOR",
     "MAC FREEDOM/HANDSHAKE_TRANSCRIPT",
     "MAC FREEDOM/REKEY_INIT",
     "MAC FREEDOM/REKEY_COMMIT",
@@ -104,6 +108,7 @@ REQUIRED_CRYPTO_DOMAINS = [
 NORMATIVE_DOCS_REQUIRING_SCHEMA_LINK = [
     "docs/SECURITY_INVARIANTS.md",
     "docs/CONTROL_PLANE_SECURITY.md",
+    "docs/NETWORK_ANCHORS.md",
     "docs/REVOCATION.md",
     "docs/PAIRWISE_RECOVERY.md",
     "docs/IDENTITY_MODEL.md",
@@ -113,6 +118,7 @@ NORMATIVE_DOCS_REQUIRING_SCHEMA_LINK = [
 NORMATIVE_DOCS_REQUIRING_DOMAIN_LINK = [
     "docs/SECURITY_INVARIANTS.md",
     "docs/CONTROL_PLANE_SECURITY.md",
+    "docs/NETWORK_ANCHORS.md",
     "docs/IDENTITY_MODEL.md",
     "docs/PROTOCOL.md",
 ]
@@ -234,6 +240,27 @@ def main() -> int:
         if required_marker not in pairwise_scenario:
             fail(errors, f"pairwise simulator fixture missing marker: {required_marker}")
 
+    network_anchor_doc = read("docs/NETWORK_ANCHORS.md")
+    for required_marker in (
+        "NetworkAnchorCommitmentV1",
+        "NETWORK_ANCHOR",
+        "governance authorization never substitutes chain consensus",
+        "NEAR-NEP25-PRE-SPICE-BORSH-V1",
+    ):
+        if required_marker not in network_anchor_doc:
+            fail(errors, f"NETWORK_ANCHORS.md missing semantic marker: {required_marker}")
+
+    network_anchor_scenario = read("sim/scenarios/network-anchor-rollback.yaml")
+    for required_marker in (
+        "NETWORK_ANCHOR_INVALID",
+        "CONTROL_PLANE_PROOF_INVALID",
+        "GOVERNANCE_TRANSITION_INVALID",
+        "CONTROL_PLANE_ROLLBACK",
+        "consensus_continuity_valid: false",
+    ):
+        if required_marker not in network_anchor_scenario:
+            fail(errors, f"NetworkAnchor simulator fixture missing marker: {required_marker}")
+
     # SVGs are source-controlled documentation and should remain XML-well-formed.
     for svg in (ROOT / "docs" / "assets").glob("*.svg"):
         try:
@@ -247,6 +274,7 @@ def main() -> int:
         "spec/crypto-domains.txt",
         "docs/SECURITY_INVARIANTS.md",
         "docs/CONTROL_PLANE_SECURITY.md",
+        "docs/NETWORK_ANCHORS.md",
         "docs/REVOCATION.md",
         "docs/PAIRWISE_RECOVERY.md",
         "docs/SHIELD.md",

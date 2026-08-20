@@ -4,6 +4,7 @@ Status: **canonical design draft**.
 
 Normative baseline: [`SECURITY_INVARIANTS.md`](SECURITY_INVARIANTS.md).
 Control-plane: [`CONTROL_PLANE_SECURITY.md`](CONTROL_PLANE_SECURITY.md).
+NetworkAnchor bootstrap/rotation: [`NETWORK_ANCHORS.md`](NETWORK_ANCHORS.md).
 Revocation: [`REVOCATION.md`](REVOCATION.md).
 Pairwise recovery: [`PAIRWISE_RECOVERY.md`](PAIRWISE_RECOVERY.md).
 Shield: [`SHIELD.md`](SHIELD.md).
@@ -21,6 +22,9 @@ Un avversario può:
 - creare Sybil relay;
 - servire stale/forked state;
 - tentare rollback/downgrade;
+- proporre un NetworkAnchor diverso da quello bootstrap-pinned;
+- riprodurre un vecchio NetworkAnchor validamente autorizzato;
+- tentare una NetworkAnchor rotation governance-valid ma priva di valid chain consensus continuity;
 - front-run/overwrite public control-plane slots;
 - sostituire Contact QR prima del bootstrap;
 - rubare device/root/recovery backup material;
@@ -43,9 +47,48 @@ Gateway egress è trust boundary separata. Shield riduce la conoscenza del singo
 
 ## 4. Malicious/stale RPC
 
-Security state richiede checkpoint/finality + state proof. Multi-RPC senza proof non basta.
+Security state richiede un `NetworkAnchor` già autenticato indipendentemente, poi checkpoint/finality + state proof. Multi-RPC senza proof non basta.
 
-## 5. Fresh-install freeze
+L'RPC può mentire su:
+
+```text
+next light-client block
+transaction outcome
+full block / shard roots
+contract state bytes
+inclusion/non-inclusion proof
+```
+
+Il verifier locale deve ricostruire e validare queste relazioni contro la propria chain of trust. Raw RPC JSON non diventa `VERIFIED_STATE`.
+
+## 5. NetworkAnchor substitution / bootstrap confusion
+
+Rischio: un fresh install chiede alla stessa RPC non fidata sia “qual è l'anchor?” sia “qual è lo state?”, creando un trust loop circolare.
+
+Mitigazione:
+
+```text
+authentic BootstrapTrustAnchor
+ -> exact NetworkAnchorCommitmentV1
+ -> canonical NetworkAnchor
+ -> adapter payload/profile binding
+ -> independent consensus verification
+```
+
+Un candidate con firma threshold valida ma commitment diverso dall'exact bootstrap pin viene rifiutato sul primo bootstrap.
+
+Dopo bootstrap, una ordinary rotation deve essere monotonicamente collegata al current anchor e deve superare **entrambi**:
+
+```text
+Freedom NETWORK_ANCHOR threshold authorization
++ underlying chain consensus/finality continuity
+```
+
+Questo impedisce che il Freedom governance quorum diventi un sostituto della chain consensus authority.
+
+Chain/adapter/profile changes non sono ordinary anchor rotations: richiedono migration/update path separata e reviewata.
+
+## 6. Fresh-install freeze
 
 Un fresh install non ha highest-seen locale.
 
@@ -53,14 +96,15 @@ Mitigazione:
 
 ```text
 BootstrapTrustAnchor
++ exact initial NetworkAnchor commitment
 + BootstrapFreshnessFloor
 ```
 
-Un verifier recente rifiuta checkpoint/signer/policy sotto il proprio floor.
+Un verifier recente rifiuta anchor/checkpoint/signer/policy sotto il proprio floor o fuori dal proprio profile.
 
 Limite: un verifier autentico ma molto vecchio ottenuto soltanto da canali attacker-controlled può essere congelato nel proprio passato. Freshness del verifier stesso richiede un canale/bootstrap anchor indipendente.
 
-## 6. False-success transaction
+## 7. False-success transaction
 
 ```text
 submit -> finality proof -> execution success -> resulting-state proof -> local success
@@ -68,7 +112,7 @@ submit -> finality proof -> execution success -> resulting-state proof -> local 
 
 Tx hash non equivale a success.
 
-## 7. Revocation ambiguity
+## 8. Revocation ambiguity
 
 Rischio: RPC `not found`, stale cache o namespace ambiguo viene interpretato come non-revoca.
 
@@ -80,7 +124,7 @@ Difesa:
 - highest-seen root/authorization/key epochs;
 - fail explicit `REVOCATION_STATE_STALE`.
 
-## 8. Root compromise
+## 9. Root compromise
 
 Una sola RootRecoveryKey rubata rende proprietario e attacker indistinguibili se non esiste una seconda authority.
 
@@ -96,7 +140,7 @@ Un profilo production che dichiara independent compromise recovery dovrebbe evit
 
 Senza independent precommitment Freedom non promette compromise recovery.
 
-## 9. Rendezvous overwrite/front-running
+## 10. Rendezvous overwrite/front-running
 
 Rischio: dopo la prima public write uno slot diventa osservabile e può essere sovrascritto/spammato.
 
@@ -111,7 +155,7 @@ PairRendezvousSecret
 
 Osservare public key/slot non concede private write authority.
 
-## 10. Pairwise backup rollback / freeze
+## 11. Pairwise backup rollback / freeze
 
 Rischio: dopo perdita totale dei device, un mirror/storage non fidato serve un **vecchio ma integro** `PairwiseRecoveryBundle` e il nuovo device non possiede highest-seen state locale per sapere che esisteva un backup più recente.
 
@@ -135,21 +179,21 @@ Se non sopravvive alcun device e non esiste independent anchor, Freedom può ver
 
 Dopo restore: peer re-authentication + future rendezvous/recovery state rotation impediscono che uno storico backup resti future authority indefinita.
 
-## 11. First-contact substitution
+## 12. First-contact substitution
 
 Un descriptor interamente sostituito prima del bootstrap può creare una relazione valida con Mallory.
 
 Mitigazioni: `BOOTSTRAP_UNVERIFIED`, safety code/fingerprint/out-of-band verification, `CONTACT_VERIFIED` solo dopo independent assurance.
 
-## 12. Colluding contacts
+## 13. Colluding contacts
 
 Pairwise alias riduce infrastructure correlation, non garantisce unlinkability contro contatti che confrontano root/certificate material.
 
-## 13. Handshake downgrade
+## 14. Handshake downgrade
 
 Transcript lega entrambi gli offer set; selection strongest-allowed/deterministic. Offer stripping sotto policy fallisce.
 
-## 14. Cryptographic cross-domain substitution
+## 15. Cryptographic cross-domain substitution
 
 Rischio: una firma, MAC, ciphertext, protocol hash o KDF result valido per un oggetto/rete/purpose viene riusato in un contesto differente.
 
@@ -160,29 +204,31 @@ Difesa:
 - network/object/schema/session context binding where applicable;
 - cross-purpose negative vectors.
 
+`NetworkAnchor` usa il proprio `SIGN FREEDOM/NETWORK_ANCHOR` domain e un commitment sul signing input senza signatures; non riusa release/security-policy signatures.
+
 Child certificate scope/expiry non può superare la delegation parent.
 
-## 15. Forward secrecy / rekey split-brain
+## 16. Forward secrecy / rekey split-brain
 
 Rekey può fallire per simultaneous init, lost commit/ack, duplicate/replay o route switch.
 
 La state machine canonica risolve simultaneous init deterministicamente, usa key confirmation, old-key grace bounded e termina la sessione su mismatch/timeout prima del lifetime limit.
 
-## 16. Transport semantic confusion
+## 17. Transport semantic confusion
 
 Adapters dichiarano reliable stream/datagram semantics. Control/media sequence spaces sono separati.
 
-## 17. Storage exhaustion
+## 18. Storage exhaustion
 
 TTL non basta: active state deve convergere a upper bound tramite overwrite/ring/prune/lease/reclaim.
 
-## 18. Device/account privacy
+## 19. Device/account privacy
 
 V1 evita di rendere necessaria una public RootIdentity→device proof. Peer validity deriva dal DeviceCertificate; record spam è anti-abuse problem.
 
 `max_devices` hard enforcement privacy-preserving è futuro; non si introduce un public device graph solo per monetizzazione.
 
-## 19. Relay Sybil / provenance
+## 20. Relay Sybil / provenance
 
 `N relay IDs != N operators`.
 
@@ -190,37 +236,37 @@ Signed descriptors e provenance attestations distinguono self-declared/observed/
 
 Diversity forte è probabilistica e migliora con issuer/source/custody domains differenti.
 
-## 20. Malicious relay
+## 21. Malicious relay
 
 Può drop/delay/correlare/mentire; non deve decrypt/impersonate/forge valid app ACK. Resource bounds obbligatori.
 
-## 21. Shield collusion
+## 22. Shield collusion
 
 Single hop compromise non ottiene plaintext/session identity authority. Collusion di tutti gli hop/global timing observer resta limite esplicito.
 
-## 22. Censura / DPI / active probing
+## 23. Censura / DPI / active probing
 
 Path/provider/transport diversity e bridges aumentano reachability. Freedom non promette universal firewall bypass.
 
-## 23. Adaptive inference
+## 24. Adaptive inference
 
 `SUSPECTED` deriva da osservazioni incoerenti; non prova censura/sorveglianza/attribution.
 
-## 24. Gateway egress/leaks
+## 25. Gateway egress/leaks
 
 Egress può vedere destination/timing/DNS/plaintext esterno non cifrato. Strict/Shield mode vieta silent direct fallback. DNS/IPv4/IPv6 leak tests necessari.
 
-## 25. Payment correlation
+## 26. Payment correlation
 
 Domain separation non basta se payment ed entitlement sono nella stessa public flow. Voucher/blind credential + nullifier riduce linkage; timing correlation può restare.
 
-## 26. Product quota tampering
+## 27. Product quota tampering
 
 Contact/device-count V1 sono product/service policy. Un client modificato può aggirare local quota.
 
 Questo non è un compromise E2EE; implica che il business model non deve dipendere esclusivamente da tali limiti.
 
-## 27. Governance quorum compromise
+## 28. Governance quorum compromise
 
 Threshold governance elimina una singola key unilaterale ma **non** elimina il rischio di quorum collusion/compromise.
 
@@ -232,17 +278,25 @@ Trust assumption:
 
 Se un singolo soggetto controlla unilateralmente il threshold, il claim corretto è “nessuna singola chiave”, non “nessun singolo attore”.
 
-## 28. Contract/state migration takeover
+Per `NETWORK_ANCHOR`, il danno di un quorum compromesso è ulteriormente limitato: una ordinary same-chain rotation non viene accettata senza una consensus-continuity proof valida dal current trusted state. Il quorum può influenzare disponibilità/adozione di checkpoint, ma non deve poter fabbricare history valida dal nulla.
+
+Questa proprietà non elimina il rischio di un contemporaneo compromise del quorum Freedom **e** della consensus assumption della chain; quella è una trust failure composta.
+
+## 29. Contract/state migration takeover
 
 Un quorum non deve poter chiamare “migration” uno state rewrite arbitrario.
 
 `StateMigrationProof` lega source finalized state + migration code hash + target imported root e deve essere verificabile.
 
-## 29. Supply chain / first install
+NetworkAnchor rotation non è un bypass alla migration proof.
 
-Source bytes non è trust. Verification richiede exact hash, threshold release, Android signer, current verified status/policy, bootstrap trust e freshness floor.
+## 30. Supply chain / first install
 
-## 30. Anti-overclaim
+Source bytes non è trust. Verification richiede exact hash, threshold release, Android signer, exact bootstrap-pinned NetworkAnchor, current verified status/policy, bootstrap trust e freshness floor.
+
+Il concrete production signature suite per release/governance/NetworkAnchor resta esplicitamente pinned/reviewed; non viene inferito dalla source.
+
+## 31. Anti-overclaim
 
 Claim vietati senza evidenza:
 
@@ -253,7 +307,9 @@ Claim vietati senza evidenza:
 - Shield anonymity against global observer;
 - root-compromise recovery senza independent recovery policy;
 - latest pairwise-backup freshness senza surviving-device state o independent anchor;
-- “nessun singolo attore” se un singolo operator controlla il governance quorum.
+- “nessun singolo attore” se un singolo operator controlla il governance quorum;
+- “RPC indipendentemente verificata” se il NetworkAnchor iniziale arriva solo dalla stessa RPC;
+- “governance cannot rewrite state” se il client accetta un threshold-signed NetworkAnchor senza consensus continuity.
 
 Claim corretto:
 

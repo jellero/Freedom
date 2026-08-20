@@ -6,6 +6,7 @@ public final class CoreSelfTest {
         testPairwiseRollback();
         testBootstrapFreshness();
         testVerifiedMutation();
+        testNetworkAnchorLifecycle();
         testRekeyLostAck();
         System.out.println("Freedom core self-tests passed.");
     }
@@ -59,6 +60,63 @@ public final class CoreSelfTest {
         check("CONTROL_PLANE_ROLLBACK".equals(mutation.lastReason()), "wrong mutation rollback class");
         check(mutation.hasCommittedState(), "failed follow-up mutation erased prior committed state");
         check(mutation.committedVersion() == 2, "failed follow-up mutation rolled back committed version");
+    }
+
+    private static void testNetworkAnchorLifecycle() {
+        FreedomCore.NetworkAnchorState anchor = new FreedomCore.NetworkAnchorState();
+        anchor.configure(
+                "freedom-testnet",
+                "NEAR",
+                "testnet",
+                "NEAR-NEP25-PRE-SPICE-BORSH-V1",
+                1,
+                "anchor-1",
+                100);
+
+        check(!anchor.acceptCandidate(
+                "freedom-testnet", "NEAR", "testnet", "NEAR-NEP25-PRE-SPICE-BORSH-V1", 1,
+                "attacker-anchor", null, 1, 120, 1, 100, 110,
+                true, true, true, false), "un-pinned bootstrap anchor accepted");
+        check("NETWORK_ANCHOR_INVALID".equals(anchor.lastReason()), "wrong bootstrap pin error");
+        check(!anchor.initialized(), "rejected bootstrap mutated anchor state");
+
+        check(anchor.acceptCandidate(
+                "freedom-testnet", "NEAR", "testnet", "NEAR-NEP25-PRE-SPICE-BORSH-V1", 1,
+                "anchor-1", null, 1, 120, 1, 100, 110,
+                true, true, true, false), "pinned bootstrap anchor rejected");
+        check(anchor.initialized(), "bootstrap anchor did not initialize state");
+        check("anchor-1".equals(anchor.currentCommitment()), "wrong initial anchor commitment");
+
+        check(!anchor.acceptCandidate(
+                "freedom-testnet", "NEAR", "testnet", "NEAR-NEP25-PRE-SPICE-BORSH-V1", 1,
+                "anchor-2", "anchor-1", 2, 140, 1, 120, 130,
+                true, true, true, false), "threshold-authorized rotation bypassed chain consensus");
+        check("CONTROL_PLANE_PROOF_INVALID".equals(anchor.lastReason()), "wrong continuity failure class");
+        check("anchor-1".equals(anchor.currentCommitment()), "failed continuity check replaced trusted anchor");
+        check(anchor.checkpointHeight() == 120, "failed continuity check changed checkpoint height");
+
+        check(!anchor.acceptCandidate(
+                "freedom-testnet", "NEAR", "testnet", "NEAR-NEP25-PRE-SPICE-BORSH-V1", 1,
+                "anchor-2", "anchor-1", 2, 140, 2, 120, 130,
+                true, true, false, true), "signer-set change without transition accepted");
+        check("GOVERNANCE_TRANSITION_INVALID".equals(anchor.lastReason()), "wrong signer transition error");
+        check(anchor.signerSetEpoch() == 1, "rejected signer transition mutated signer epoch");
+
+        check(anchor.acceptCandidate(
+                "freedom-testnet", "NEAR", "testnet", "NEAR-NEP25-PRE-SPICE-BORSH-V1", 1,
+                "anchor-2", "anchor-1", 2, 140, 2, 120, 130,
+                true, true, true, true), "valid NetworkAnchor rotation rejected");
+        check("anchor-2".equals(anchor.currentCommitment()), "valid rotation did not update commitment");
+        check(anchor.anchorEpoch() == 2, "valid rotation did not update anchor epoch");
+        check(anchor.checkpointHeight() == 140, "valid rotation did not update checkpoint height");
+        check(anchor.signerSetEpoch() == 2, "valid rotation did not update signer epoch");
+
+        check(!anchor.acceptCandidate(
+                "freedom-testnet", "NEAR", "testnet", "NEAR-NEP25-PRE-SPICE-BORSH-V1", 1,
+                "anchor-1", null, 1, 120, 1, 100, 110,
+                true, true, true, true), "old NetworkAnchor replay accepted");
+        check("CONTROL_PLANE_ROLLBACK".equals(anchor.lastReason()), "wrong anchor rollback error");
+        check("anchor-2".equals(anchor.currentCommitment()), "rollback attempt changed trusted anchor");
     }
 
     private static void testRekeyLostAck() {

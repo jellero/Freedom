@@ -12,7 +12,7 @@ Status: **canonical schema draft with frozen V1 byte-encoding profile**.
 
 If an object is not present in the CDDL, its wire shape is **not frozen for public interoperability**.
 
-Security semantics remain normative in `SECURITY_INVARIANTS.md`, `CONTROL_PLANE_SECURITY.md`, `REVOCATION.md`, `PAIRWISE_RECOVERY.md`, `IDENTITY_MODEL.md`, `PROTOCOL.md` and subsystem docs.
+Security semantics remain normative in `SECURITY_INVARIANTS.md`, `CONTROL_PLANE_SECURITY.md`, `NETWORK_ANCHORS.md`, `REVOCATION.md`, `PAIRWISE_RECOVERY.md`, `IDENTITY_MODEL.md`, `PROTOCOL.md` and subsystem docs.
 
 If Markdown and CDDL disagree on a frozen field/object shape, CDDL wins and Markdown must be corrected. If Markdown and `crypto-domains.txt` disagree on a domain constant, `crypto-domains.txt` wins. If code conflicts with a MUST/MUST NOT security invariant, the invariant wins.
 
@@ -76,7 +76,31 @@ The exact enabled constants are **not repeated normatively in Markdown**. They a
 
 The cryptographic suite still defines the signature algorithm and whether it consumes this preimage directly or a suite-defined digest. That algorithm/suite choice is separate from deterministic byte canonicalization.
 
-## 3. MAC / transcript-authentication domains
+## 3. NetworkAnchor commitment
+
+`network-anchor` is a frozen security-critical object family. Its signature domain is registered as `FREEDOM/NETWORK_ANCHOR`; authoritative semantics live in `docs/NETWORK_ANCHORS.md`.
+
+For V1:
+
+```text
+unsigned_anchor_body = network-anchor with signatures removed
+preimage = FreedomSigningInputV1(
+    network_id,
+    FREEDOM/NETWORK_ANCHOR,
+    1,
+    unsigned_anchor_body
+)
+
+NetworkAnchorCommitmentV1 = SHA-256(preimage)
+```
+
+This commitment intentionally excludes the `signatures` array while binding every other canonical body field. It is therefore stable across equivalent threshold-signature ordering/collection and can be pinned exactly by `BootstrapTrustAnchor.accepted_contract_or_controlplane_anchor`.
+
+`spec/vectors/dcbor-v1.json` freezes a representative `network-anchor-v1` encoding and `network-anchor-signing` preimage/digest. Changing those expected V1 bytes silently is forbidden.
+
+The concrete production signature algorithm/suite is **not** implied by `NetworkAnchorCommitmentV1`; it remains a separate explicit production cryptographic-suite decision.
+
+## 4. MAC / transcript-authentication domains
 
 Handshake/rekey messages that are authenticated inside an existing cryptographic context are not mislabeled as standalone signatures.
 
@@ -84,7 +108,7 @@ Their fixed `MAC`/transcript domains live in `spec/crypto-domains.txt`.
 
 The authenticated transcript MUST bind the domain, network/session context, object version, epochs and canonical fields required by `PROTOCOL.md`.
 
-## 4. AEAD associated-data domains
+## 5. AEAD associated-data domains
 
 Encrypted frames/records require type/context separation even when they are not separately signed.
 
@@ -110,7 +134,7 @@ PAIRWISE_RECOVERY_BUNDLE != SESSION_TRAFFIC
 
 A ciphertext valid in one context must not be accepted as another Freedom encrypted object simply because key bytes were accidentally reused. Purpose-separated keys are still required; AEAD associated data is an additional binding.
 
-## 5. HASH/KDF purpose separation
+## 6. HASH/KDF purpose separation
 
 Stable hash/KDF labels are also part of the registry.
 
@@ -118,7 +142,7 @@ Examples include rendezvous-slot derivation, pairwise backup IDs/state commitmen
 
 Do not create a new `H("some string" || ...)` or KDF label in code without registering/versioning the purpose when it affects protocol interoperability or a security boundary.
 
-## 6. Capability narrowing
+## 7. Capability narrowing
 
 ```text
 DeviceCertificate.capabilities
@@ -132,7 +156,7 @@ certificate.authorization_epoch   == delegation.authorization_epoch
 
 Child authority cannot outlive or exceed parent authority.
 
-## 7. User recovery-policy validity
+## 8. User recovery-policy validity
 
 For a `user-recovery-policy` to be valid:
 
@@ -152,7 +176,7 @@ A `NORMAL` rotation preserves it. A `COMPROMISE_RECOVERY` transition verifies th
 
 Arbitrary recovery-policy mutation is not a frozen V1 operation.
 
-## 8. Pairwise backup freshness
+## 9. Pairwise backup freshness
 
 `pairwise-recovery-bundle` provides encrypted integrity-protected pairwise state.
 
@@ -162,7 +186,7 @@ The rollback-detectable profile uses `pairwise-recovery-anchor` according to `do
 
 The anchor commits only to monotonic backup generation/hash/state commitment; it does not publish contacts or pairwise plaintext.
 
-## 9. Vector discipline
+## 10. Vector discipline
 
 The first frozen vector set covers representative security objects and canonicalization failures. It is a baseline, not permission to freeze future objects without vectors.
 

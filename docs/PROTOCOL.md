@@ -5,6 +5,7 @@ Status: **canonical design draft**.
 Normative security: [`SECURITY_INVARIANTS.md`](SECURITY_INVARIANTS.md).
 Identity: [`IDENTITY_MODEL.md`](IDENTITY_MODEL.md).
 Control-plane: [`CONTROL_PLANE_SECURITY.md`](CONTROL_PLANE_SECURITY.md).
+NetworkAnchor bootstrap/rotation: [`NETWORK_ANCHORS.md`](NETWORK_ANCHORS.md).
 Revocation: [`REVOCATION.md`](REVOCATION.md).
 Pairwise recovery: [`PAIRWISE_RECOVERY.md`](PAIRWISE_RECOVERY.md).
 Shield: [`SHIELD.md`](SHIELD.md).
@@ -21,6 +22,8 @@ Markdown definisce semantica/state machine. `spec/freedom.cddl` definisce field 
 - no mailbox/offline queue;
 - identity/authorization/device-control/pairwise/routing/traffic/recovery keys separated;
 - RPC not trust;
+- exact independently authenticated initial NetworkAnchor;
+- NetworkAnchor governance authorization != underlying chain consensus;
 - tx hash != success;
 - explicit revocation proof/freshness;
 - both-offer anti-downgrade;
@@ -315,15 +318,53 @@ no active authenticated session -> FAIL / DISCARD
 
 No StoreRequest/offline mailbox in base protocol.
 
-## 18. Verified control-plane state / bootstrap freshness
+## 18. NetworkAnchor / verified control-plane bootstrap
 
-Security-sensitive state requires verified checkpoint + state proof.
+The canonical `network-anchor` object is the trust bridge between Freedom's independently authenticated bootstrap/update path and an adapter-specific consensus verifier.
+
+Fresh install:
+
+```text
+authentic BootstrapTrustAnchor
+ -> exact NetworkAnchorCommitmentV1 pin
+ -> strict canonical NetworkAnchor parse
+ -> NETWORK_ANCHOR signer-set authorization
+ -> adapter payload/profile/checkpoint binding
+ -> BootstrapFreshnessFloor
+ -> initialize ChainAdapter consensus verifier
+```
+
+The same RPC that will later provide blocks/proofs MUST NOT be the sole trust source for the initial anchor.
+
+Ordinary post-bootstrap rotation:
+
+```text
+current trusted NetworkAnchor
+ -> candidate previous_anchor_commitment exact match
+ -> anchor_epoch + 1
+ -> same network/adapter/chain/profile/policy context
+ -> monotonic checkpoint/floor
+ -> active NETWORK_ANCHOR threshold authorization
+ -> valid signer-set transition when signer epoch changes
+ -> independent chain consensus/finality continuity from current trusted state
+ -> atomically accept candidate
+```
+
+A candidate that fails any check leaves the previous trusted anchor unchanged.
+
+Threshold authorization alone is insufficient post-bootstrap. Governance is not chain consensus.
+
+The first NEAR adapter payload profile is `NEAR-NEP25-PRE-SPICE-BORSH-V1`; unsupported commitment semantics fail closed. Full rules: `NETWORK_ANCHORS.md`.
+
+## 19. Verified control-plane state / bootstrap freshness
+
+After the NetworkAnchor is authenticated, security-sensitive state requires independently verified checkpoint + state proof.
 
 Fresh install additionally enforces `bootstrap-freshness-floor` from its verifier/release.
 
 An authentic but itself-obsolete verifier obtained only through attacker-controlled channels cannot infer newer state from nothing; independent verifier freshness remains an explicit bootstrap assumption.
 
-## 19. Verified mutation
+## 20. Verified mutation
 
 ```text
 submit
@@ -334,13 +375,15 @@ submit
  -> local commit
 ```
 
-## 20. Release / governance / migration
+## 21. Release / governance / migration
 
 Release/security objects use canonical CDDL and registered signature domains.
 
 Signer transitions are cross-authorized/monotonic; contract core is immutable or threshold/timelocked/code-hash pinned.
 
 Threshold governance removes unilateral single-key authority, not quorum-collusion risk.
+
+The `NETWORK_ANCHOR` signer role is scoped and uses its own signature domain. It authorizes adoption of an anchor package but cannot override chain consensus/finality or silently switch adapter/chain/profile.
 
 Chain migration requires:
 
@@ -351,13 +394,13 @@ chain-migration-manifest
 
 The proof binds source finalized/export state, migration program and target imported state.
 
-## 21. Product/payment boundary
+## 22. Product/payment boundary
 
 Payment may use one-time voucher/nullifier to reduce linkage.
 
 Device/contact counts and Relay Contributor bonuses V1 are product/service policies and do not change remote peer session acceptance.
 
-## 22. Error classes
+## 23. Error classes
 
 ```text
 MALFORMED
@@ -367,6 +410,8 @@ DEVICE_CERTIFICATE_INVALID
 DEVICE_CERTIFICATE_EXPIRED
 REVOCATION_STATE_STALE
 REVOCATION_PROOF_INVALID
+NETWORK_ANCHOR_INVALID
+NETWORK_ANCHOR_NOT_ACTIVE
 CONTROL_PLANE_PROOF_INVALID
 CONTROL_PLANE_ROLLBACK
 CONTROL_PLANE_EXECUTION_FAILED
@@ -390,9 +435,17 @@ GOVERNANCE_TRANSITION_INVALID
 BOOTSTRAP_STATE_TOO_OLD
 ```
 
-## 23. Interoperability gates
+`NETWORK_ANCHOR_INVALID` covers malformed/non-canonical anchor, wrong independent bootstrap pin, wrong network/adapter/chain/profile context, bad payload/checkpoint binding or invalid anchor authorization.
+
+`NETWORK_ANCHOR_NOT_ACTIVE` covers invalid activation ordering/current activation state. Consensus-continuity failure remains `CONTROL_PLANE_PROOF_INVALID`; monotonic lineage rollback remains `CONTROL_PLANE_ROLLBACK`; signer-set transition failure remains `GOVERNANCE_TRANSITION_INVALID`.
+
+## 24. Interoperability gates
 
 - deterministic encoding vectors;
+- NetworkAnchor canonical encoding/signing-input/commitment vectors;
+- initial NetworkAnchor pin/context/payload negative cases;
+- NetworkAnchor governance-valid / consensus-invalid rotation rejection;
+- NetworkAnchor signer transition + rollback tests;
 - crypto-domain cross-type/network/purpose negative vectors;
 - delegation scope/expiry negative cases;
 - recovery-policy threshold/distinct-key validation;

@@ -3,6 +3,7 @@
 Status: **canonical / normative design rules**.
 
 Normative baseline: [`SECURITY_INVARIANTS.md`](SECURITY_INVARIANTS.md).
+NetworkAnchor bootstrap/rotation: [`NETWORK_ANCHORS.md`](NETWORK_ANCHORS.md).
 Revocation/freshness: [`REVOCATION.md`](REVOCATION.md).
 Pairwise recovery: [`PAIRWISE_RECOVERY.md`](PAIRWISE_RECOVERY.md).
 Schema: [`../spec/freedom.cddl`](../spec/freedom.cddl).
@@ -22,11 +23,13 @@ NetworkAnchor
 
 RPC JSON da solo non è `VERIFIED_STATE`.
 
+Il primo `NetworkAnchor` non viene ottenuto dalla stessa RPC da verificare: il suo commitment esatto è autenticato dal bootstrap/release trust path. Le rotation successive richiedono sia authorization threshold sia consensus continuity dalla state già trusted. Una governance signature non sostituisce il consenso della chain.
+
 ## 2. Verified checkpoint / state proof
 
 Il `ChainAdapter` verifica finality/consensus proof, state-root binding, inclusion/non-inclusion proof, canonical encoding, cryptographic domain, epoch e policy.
 
-Per NEAR la prima implementazione deve usare primitive coerenti col modello reale di finality/state, non fidarsi del solo RPC response.
+Per NEAR la prima implementazione usa il profilo esplicito `NEAR-NEP25-PRE-SPICE-BORSH-V1` definito in `NETWORK_ANCHORS.md` e `near/README.md`. Un profilo/commitment model non supportato fallisce chiuso; non esiste fallback a raw RPC trust.
 
 ## 3. Cache / anti-rollback
 
@@ -38,6 +41,8 @@ highest_seen_object_epoch
 freshness class
 monotonic observation time
 ```
+
+Per NetworkAnchor persistire inoltre current anchor commitment/epoch, trusted checkpoint height e NETWORK_ANCHOR signer-set epoch.
 
 Un valid proof più vecchio del highest-seen/floor rilevante viene rifiutato.
 
@@ -226,6 +231,8 @@ Signer production devono usare per quanto praticabile custody/operator domains d
 
 Se un singolo soggetto controlla unilateralmente il quorum, il claim corretto è “nessuna singola chiave”, non “nessun singolo attore”.
 
+Per il ruolo `NETWORK_ANCHOR`, il quorum autorizza il package ma non può sovrascrivere finality/consensus. La rotation ordinaria post-bootstrap richiede entrambe le condizioni.
+
 ## 17. Signer-set anti-rollback
 
 ```text
@@ -247,8 +254,14 @@ Serve `StateMigrationProof` che lega source finalized checkpoint/export root, mi
 
 Governance autorizza la migration rule/version; non può firmare arbitrariamente uno state rewrite e chiamarlo migration.
 
+Una ordinary NetworkAnchor rotation non può cambiare chain adapter, chain network o verifier semantics: questi cambi passano dalla migration/update path appropriata.
+
 ## 19. Acceptance gates
 
+- fresh-install NetworkAnchor commitment mismatch + valid-signature case;
+- NetworkAnchor payload/checkpoint mismatch;
+- NetworkAnchor threshold-valid ma consensus-continuity-invalid;
+- NetworkAnchor signer-set rollback/jump e valid transition;
 - fresh-install stale checkpoint/floor;
 - honest/stale/forked/malicious RPC proof vectors;
 - revocation inclusion/non-inclusion/freshness;

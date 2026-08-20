@@ -209,6 +209,169 @@ public final class FreedomCore {
         public long committedVersion() { return committedVersion; }
     }
 
+    /**
+     * Chain-agnostic NetworkAnchor acceptance state machine.
+     *
+     * Cryptographic signature/payload/consensus checks are performed by adapters and supplied as
+     * verified booleans. This class owns the canonical bootstrap pin, context binding, monotonic
+     * lineage, governance-transition and no-quorum-as-consensus rules.
+     */
+    public static final class NetworkAnchorState {
+        private boolean configured;
+        private String expectedNetworkId;
+        private String expectedChainAdapterId;
+        private String expectedChainNetworkId;
+        private String expectedVerifierProfile;
+        private long expectedVerifierPolicyVersion;
+        private String pinnedBootstrapCommitment;
+        private long minimumCheckpointHeight;
+
+        private boolean initialized;
+        private String currentCommitment;
+        private long anchorEpoch;
+        private long checkpointHeight;
+        private long signerSetEpoch;
+        private boolean lastAccepted;
+        private String lastReason;
+
+        public void configure(
+                String networkId,
+                String chainAdapterId,
+                String chainNetworkId,
+                String verifierProfile,
+                long verifierPolicyVersion,
+                String pinnedBootstrapCommitment,
+                long minimumCheckpointHeight) {
+            if (blank(networkId) || blank(chainAdapterId) || blank(chainNetworkId)
+                    || blank(verifierProfile) || blank(pinnedBootstrapCommitment)
+                    || verifierPolicyVersion < 0 || minimumCheckpointHeight < 0) {
+                throw new ProtocolViolation("MALFORMED", "invalid NetworkAnchor verifier policy");
+            }
+            if (configured) {
+                boolean same = eq(expectedNetworkId, networkId)
+                        && eq(expectedChainAdapterId, chainAdapterId)
+                        && eq(expectedChainNetworkId, chainNetworkId)
+                        && eq(expectedVerifierProfile, verifierProfile)
+                        && expectedVerifierPolicyVersion == verifierPolicyVersion
+                        && eq(this.pinnedBootstrapCommitment, pinnedBootstrapCommitment)
+                        && this.minimumCheckpointHeight == minimumCheckpointHeight;
+                if (!same) {
+                    throw new ProtocolViolation("NETWORK_ANCHOR_INVALID", "NetworkAnchor verifier policy cannot be silently replaced");
+                }
+                return;
+            }
+            configured = true;
+            expectedNetworkId = networkId;
+            expectedChainAdapterId = chainAdapterId;
+            expectedChainNetworkId = chainNetworkId;
+            expectedVerifierProfile = verifierProfile;
+            expectedVerifierPolicyVersion = verifierPolicyVersion;
+            this.pinnedBootstrapCommitment = pinnedBootstrapCommitment;
+            this.minimumCheckpointHeight = minimumCheckpointHeight;
+        }
+
+        public boolean acceptCandidate(
+                String networkId,
+                String chainAdapterId,
+                String chainNetworkId,
+                String verifierProfile,
+                long verifierPolicyVersion,
+                String commitment,
+                String previousCommitment,
+                long candidateAnchorEpoch,
+                long trustedCheckpointHeight,
+                long candidateSignerSetEpoch,
+                long issuedAtHeight,
+                long activationHeight,
+                boolean payloadBindingValid,
+                boolean thresholdSignaturesValid,
+                boolean signerSetTransitionValid,
+                boolean consensusContinuityValid) {
+            if (!configured) {
+                throw new ProtocolViolation("NETWORK_ANCHOR_INVALID", "NetworkAnchor verifier policy is not configured");
+            }
+            if (blank(commitment) || candidateAnchorEpoch <= 0 || candidateSignerSetEpoch <= 0
+                    || trustedCheckpointHeight < 0 || issuedAtHeight < 0 || activationHeight < 0) {
+                return reject("NETWORK_ANCHOR_INVALID");
+            }
+            if (!eq(expectedNetworkId, networkId)
+                    || !eq(expectedChainAdapterId, chainAdapterId)
+                    || !eq(expectedChainNetworkId, chainNetworkId)
+                    || !eq(expectedVerifierProfile, verifierProfile)
+                    || expectedVerifierPolicyVersion != verifierPolicyVersion) {
+                return reject("NETWORK_ANCHOR_INVALID");
+            }
+            if (!payloadBindingValid || !thresholdSignaturesValid) {
+                return reject("NETWORK_ANCHOR_INVALID");
+            }
+            if (trustedCheckpointHeight < minimumCheckpointHeight) {
+                return reject("BOOTSTRAP_STATE_TOO_OLD");
+            }
+            if (issuedAtHeight > activationHeight || activationHeight > trustedCheckpointHeight) {
+                return reject("NETWORK_ANCHOR_NOT_ACTIVE");
+            }
+
+            if (!initialized) {
+                if (previousCommitment != null || !eq(commitment, pinnedBootstrapCommitment)) {
+                    return reject("NETWORK_ANCHOR_INVALID");
+                }
+                commit(commitment, candidateAnchorEpoch, trustedCheckpointHeight, candidateSignerSetEpoch);
+                return true;
+            }
+
+            if (!eq(previousCommitment, currentCommitment)
+                    || candidateAnchorEpoch != anchorEpoch + 1
+                    || trustedCheckpointHeight < checkpointHeight
+                    || candidateSignerSetEpoch < signerSetEpoch) {
+                return reject("CONTROL_PLANE_ROLLBACK");
+            }
+            if (eq(commitment, currentCommitment)) {
+                return reject("CONTROL_PLANE_ROLLBACK");
+            }
+            if (candidateSignerSetEpoch > signerSetEpoch + 1) {
+                return reject("GOVERNANCE_TRANSITION_INVALID");
+            }
+            if (candidateSignerSetEpoch == signerSetEpoch + 1 && !signerSetTransitionValid) {
+                return reject("GOVERNANCE_TRANSITION_INVALID");
+            }
+
+            // Threshold authorization is deliberately insufficient after bootstrap. The adapter
+            // must prove that the candidate checkpoint is a consensus-valid continuation of state
+            // the client already trusts; otherwise the Freedom quorum would become chain consensus.
+            if (!consensusContinuityValid) {
+                return reject("CONTROL_PLANE_PROOF_INVALID");
+            }
+
+            commit(commitment, candidateAnchorEpoch, trustedCheckpointHeight, candidateSignerSetEpoch);
+            return true;
+        }
+
+        private void commit(String commitment, long epoch, long height, long signerEpoch) {
+            initialized = true;
+            currentCommitment = commitment;
+            anchorEpoch = epoch;
+            checkpointHeight = height;
+            signerSetEpoch = signerEpoch;
+            lastAccepted = true;
+            lastReason = null;
+        }
+
+        private boolean reject(String reason) {
+            lastAccepted = false;
+            lastReason = reason;
+            return false;
+        }
+
+        public boolean configured() { return configured; }
+        public boolean initialized() { return initialized; }
+        public String currentCommitment() { return currentCommitment; }
+        public long anchorEpoch() { return anchorEpoch; }
+        public long checkpointHeight() { return checkpointHeight; }
+        public long signerSetEpoch() { return signerSetEpoch; }
+        public boolean lastAccepted() { return lastAccepted; }
+        public String lastReason() { return lastReason; }
+    }
+
     public static final class RekeyState {
         public enum Phase { STABLE, INIT_SENT, NEW_KEY_PENDING_ACK }
 
@@ -258,7 +421,12 @@ public final class FreedomCore {
         public final PairwiseRecoveryState recovery = new PairwiseRecoveryState();
         public final BootstrapFreshnessState controlPlane = new BootstrapFreshnessState();
         public final MutationVerificationState mutation = new MutationVerificationState();
+        public final NetworkAnchorState networkAnchor = new NetworkAnchorState();
         public final RekeyState rekey = new RekeyState();
+    }
+
+    private static boolean blank(String value) {
+        return value == null || value.isBlank();
     }
 
     private static boolean eq(Object a, Object b) {

@@ -1,7 +1,7 @@
 use anyhow::{Context, Result, bail};
 use freedom_near_proof_verifier::{
-    NearLightClientVerifier, NearNetworkAnchor, VerificationError, light_client_block_hash,
-    light_client_block_lite,
+    AnchorPayloadError, NEAR_ANCHOR_VERIFIER_PROFILE, NearLightClientVerifier, NearNetworkAnchor,
+    VerificationError, light_client_block_hash, light_client_block_lite,
 };
 use near_jsonrpc_client::{JsonRpcClient, methods};
 use near_jsonrpc_primitives::types::query::QueryResponseKind;
@@ -107,13 +107,57 @@ async fn trusted_bootstrap_anchor(
             "L4 bootstrap: anchor acquired at height {} with current+next validator sets",
             block.inner_lite.height
         );
-        return Ok(NearNetworkAnchor {
+        let raw_anchor = NearNetworkAnchor {
             network_id: "freedom-near-sandbox".to_string(),
             chain_id: "sandbox".to_string(),
             trusted_head: light_client_block_lite(&block),
             current_block_producers: current_block_producers.clone(),
             next_block_producers: next_block_producers.clone(),
-        });
+        };
+
+        // Exercise the exact adapter payload that canonical NetworkAnchor V1 carries. The local
+        // Sandbox is trusted only to construct the deterministic fixture; after decoding, later RPC
+        // objects remain untrusted. Wrong outer binding and trailing bytes must fail before verifier
+        // construction.
+        let payload = raw_anchor
+            .to_adapter_payload()
+            .context("encode trusted sandbox NetworkAnchor payload")?;
+        assert_eq!(
+            NearNetworkAnchor::from_adapter_payload(
+                raw_anchor.network_id.clone(),
+                raw_anchor.chain_id.clone(),
+                NEAR_ANCHOR_VERIFIER_PROFILE,
+                raw_anchor.trusted_head.inner_lite.height,
+                CryptoHash::hash_bytes(b"wrong-outer-anchor-hash"),
+                &payload,
+            )
+            .unwrap_err(),
+            AnchorPayloadError::CheckpointHashMismatch
+        );
+        let mut trailing_payload = payload.clone();
+        trailing_payload.push(0);
+        assert_eq!(
+            NearNetworkAnchor::from_adapter_payload(
+                raw_anchor.network_id.clone(),
+                raw_anchor.chain_id.clone(),
+                NEAR_ANCHOR_VERIFIER_PROFILE,
+                raw_anchor.trusted_head.inner_lite.height,
+                raw_anchor.trusted_hash(),
+                &trailing_payload,
+            )
+            .unwrap_err(),
+            AnchorPayloadError::MalformedPayload
+        );
+
+        return NearNetworkAnchor::from_adapter_payload(
+            raw_anchor.network_id.clone(),
+            raw_anchor.chain_id.clone(),
+            NEAR_ANCHOR_VERIFIER_PROFILE,
+            raw_anchor.trusted_head.inner_lite.height,
+            raw_anchor.trusted_hash(),
+            &payload,
+        )
+        .context("decode and bind trusted sandbox NetworkAnchor payload");
     }
 
     bail!("sandbox did not produce enough recent light-client blocks to bootstrap both validator sets")

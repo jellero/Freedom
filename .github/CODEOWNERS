@@ -6,6 +6,7 @@
 /sim/l3/ @jellero
 /docs/SECURITY_INVARIANTS.md @jellero
 /docs/CONTROL_PLANE_SECURITY.md @jellero
+/docs/NETWORK_ANCHORS.md @jellero
 /docs/REVOCATION.md @jellero
 /docs/PAIRWISE_RECOVERY.md @jellero
 /docs/IDENTITY_MODEL.md @jellero

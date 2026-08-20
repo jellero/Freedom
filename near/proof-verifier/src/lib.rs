@@ -1,4 +1,4 @@
-use borsh::BorshDeserialize;
+use borsh::{BorshDeserialize, BorshSerialize};
 use near_jsonrpc_client::methods::light_client_proof::RpcLightClientExecutionProofResponse;
 use near_primitives::block_header::{
     Approval, ApprovalInner, compute_bp_hash_from_validator_stakes,
@@ -17,6 +17,17 @@ use std::io::Read;
 use std::sync::Arc;
 use thiserror::Error;
 
+pub const NEAR_ANCHOR_VERIFIER_PROFILE: &str = "NEAR-NEP25-PRE-SPICE-BORSH-V1";
+const NEAR_ANCHOR_PAYLOAD_VERSION: u8 = 1;
+
+#[derive(BorshSerialize, BorshDeserialize)]
+struct NearNetworkAnchorPayloadV1 {
+    version: u8,
+    trusted_head: LightClientBlockLiteView,
+    current_block_producers: Vec<ValidatorStake>,
+    next_block_producers: Vec<ValidatorStake>,
+}
+
 /// Release/bootstrap-pinned trust material for the NEAR verifier profile.
 ///
 /// The anchor is deliberately constructed outside RPC transport. Production code must obtain
@@ -31,10 +42,104 @@ pub struct NearNetworkAnchor {
     pub next_block_producers: Vec<ValidatorStake>,
 }
 
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum AnchorPayloadError {
+    #[error("unsupported NEAR NetworkAnchor verifier profile")]
+    UnsupportedProfile,
+    #[error("malformed NEAR NetworkAnchor adapter payload")]
+    MalformedPayload,
+    #[error("unsupported NEAR NetworkAnchor adapter payload version")]
+    UnsupportedPayloadVersion,
+    #[error("NEAR NetworkAnchor payload checkpoint height does not match outer anchor")]
+    CheckpointHeightMismatch,
+    #[error("NEAR NetworkAnchor payload checkpoint hash does not match outer anchor")]
+    CheckpointHashMismatch,
+    #[error("NEAR NetworkAnchor payload is missing required validator sets")]
+    MissingValidatorSet,
+    #[error("NEAR NetworkAnchor next validator set does not match trusted-head commitment")]
+    NextValidatorSetCommitmentMismatch,
+}
+
 impl NearNetworkAnchor {
     pub fn trusted_hash(&self) -> CryptoHash {
         self.trusted_head.hash()
     }
+
+    /// Encode the adapter-specific payload carried by canonical `network-anchor` V1.
+    ///
+    /// The outer Freedom object supplies network/chain/profile context and threshold signatures;
+    /// this deterministic Borsh blob supplies only NEAR consensus trust material.
+    pub fn to_adapter_payload(&self) -> Result<Vec<u8>, AnchorPayloadError> {
+        validate_validator_sets(
+            &self.trusted_head,
+            &self.current_block_producers,
+            &self.next_block_producers,
+        )?;
+        borsh::to_vec(&NearNetworkAnchorPayloadV1 {
+            version: NEAR_ANCHOR_PAYLOAD_VERSION,
+            trusted_head: self.trusted_head.clone(),
+            current_block_producers: self.current_block_producers.clone(),
+            next_block_producers: self.next_block_producers.clone(),
+        })
+        .map_err(|_| AnchorPayloadError::MalformedPayload)
+    }
+
+    /// Decode and bind an untrusted adapter payload to the exact outer Freedom NetworkAnchor.
+    ///
+    /// No RPC transport metadata is accepted as a substitute for the outer authenticated fields.
+    /// Wrong profile, malformed/trailing Borsh, checkpoint mismatch or validator-set mismatch all
+    /// fail closed before a `NearLightClientVerifier` can be instantiated.
+    pub fn from_adapter_payload(
+        network_id: String,
+        chain_id: String,
+        verifier_profile: &str,
+        declared_checkpoint_height: u64,
+        declared_checkpoint_hash: CryptoHash,
+        payload_bytes: &[u8],
+    ) -> Result<Self, AnchorPayloadError> {
+        if verifier_profile != NEAR_ANCHOR_VERIFIER_PROFILE {
+            return Err(AnchorPayloadError::UnsupportedProfile);
+        }
+        let payload = NearNetworkAnchorPayloadV1::try_from_slice(payload_bytes)
+            .map_err(|_| AnchorPayloadError::MalformedPayload)?;
+        if payload.version != NEAR_ANCHOR_PAYLOAD_VERSION {
+            return Err(AnchorPayloadError::UnsupportedPayloadVersion);
+        }
+        if payload.trusted_head.inner_lite.height != declared_checkpoint_height {
+            return Err(AnchorPayloadError::CheckpointHeightMismatch);
+        }
+        if payload.trusted_head.hash() != declared_checkpoint_hash {
+            return Err(AnchorPayloadError::CheckpointHashMismatch);
+        }
+        validate_validator_sets(
+            &payload.trusted_head,
+            &payload.current_block_producers,
+            &payload.next_block_producers,
+        )?;
+        Ok(Self {
+            network_id,
+            chain_id,
+            trusted_head: payload.trusted_head,
+            current_block_producers: payload.current_block_producers,
+            next_block_producers: payload.next_block_producers,
+        })
+    }
+}
+
+fn validate_validator_sets(
+    trusted_head: &LightClientBlockLiteView,
+    current_block_producers: &Vec<ValidatorStake>,
+    next_block_producers: &Vec<ValidatorStake>,
+) -> Result<(), AnchorPayloadError> {
+    if current_block_producers.is_empty() || next_block_producers.is_empty() {
+        return Err(AnchorPayloadError::MissingValidatorSet);
+    }
+    if compute_bp_hash_from_validator_stakes(next_block_producers, true)
+        != trusted_head.inner_lite.next_bp_hash
+    {
+        return Err(AnchorPayloadError::NextValidatorSetCommitmentMismatch);
+    }
+    Ok(())
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

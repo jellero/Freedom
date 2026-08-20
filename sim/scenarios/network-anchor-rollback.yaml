@@ -1,0 +1,192 @@
+version: 1
+name: network-anchor-rollback
+seed: 5150
+clock: virtual
+nodes:
+  - verifier
+steps:
+  - at: 0s
+    action: configure_network_anchor
+    network_id: freedom-testnet
+    chain_adapter_id: NEAR
+    chain_network_id: testnet
+    verifier_profile: NEAR-NEP25-PRE-SPICE-BORSH-V1
+    verifier_policy_version: 1
+    pinned_commitment: anchor-1
+    minimum_checkpoint_height: 100
+
+  - at: 1s
+    action: evaluate_network_anchor
+    network_id: freedom-testnet
+    chain_adapter_id: NEAR
+    chain_network_id: testnet
+    verifier_profile: NEAR-NEP25-PRE-SPICE-BORSH-V1
+    verifier_policy_version: 1
+    commitment: attacker-anchor
+    previous_commitment: null
+    anchor_epoch: 1
+    trusted_checkpoint_height: 120
+    signer_set_epoch: 1
+    issued_at_height: 100
+    activation_height: 110
+    payload_binding_valid: true
+    threshold_signatures_valid: true
+    signer_set_transition_valid: true
+    consensus_continuity_valid: false
+
+  - at: 1s
+    assert: network_anchor_rejected
+    reason: NETWORK_ANCHOR_INVALID
+
+  - at: 1s
+    assert: network_anchor_commitment
+    equals: null
+
+  - at: 2s
+    action: evaluate_network_anchor
+    network_id: freedom-testnet
+    chain_adapter_id: NEAR
+    chain_network_id: testnet
+    verifier_profile: NEAR-NEP25-PRE-SPICE-BORSH-V1
+    verifier_policy_version: 1
+    commitment: anchor-1
+    previous_commitment: null
+    anchor_epoch: 1
+    trusted_checkpoint_height: 120
+    signer_set_epoch: 1
+    issued_at_height: 100
+    activation_height: 110
+    payload_binding_valid: true
+    threshold_signatures_valid: true
+    signer_set_transition_valid: true
+    consensus_continuity_valid: false
+
+  - at: 2s
+    assert: network_anchor_accepted
+
+  - at: 2s
+    assert: network_anchor_commitment
+    equals: anchor-1
+
+  - at: 3s
+    action: evaluate_network_anchor
+    network_id: freedom-testnet
+    chain_adapter_id: NEAR
+    chain_network_id: testnet
+    verifier_profile: NEAR-NEP25-PRE-SPICE-BORSH-V1
+    verifier_policy_version: 1
+    commitment: anchor-2
+    previous_commitment: anchor-1
+    anchor_epoch: 2
+    trusted_checkpoint_height: 140
+    signer_set_epoch: 1
+    issued_at_height: 120
+    activation_height: 130
+    payload_binding_valid: true
+    threshold_signatures_valid: true
+    signer_set_transition_valid: true
+    consensus_continuity_valid: false
+
+  - at: 3s
+    assert: network_anchor_rejected
+    reason: CONTROL_PLANE_PROOF_INVALID
+
+  - at: 3s
+    assert: network_anchor_commitment
+    equals: anchor-1
+
+  - at: 3s
+    assert: network_anchor_checkpoint_height
+    equals: 120
+
+  - at: 4s
+    action: evaluate_network_anchor
+    network_id: freedom-testnet
+    chain_adapter_id: NEAR
+    chain_network_id: testnet
+    verifier_profile: NEAR-NEP25-PRE-SPICE-BORSH-V1
+    verifier_policy_version: 1
+    commitment: anchor-2
+    previous_commitment: anchor-1
+    anchor_epoch: 2
+    trusted_checkpoint_height: 140
+    signer_set_epoch: 2
+    issued_at_height: 120
+    activation_height: 130
+    payload_binding_valid: true
+    threshold_signatures_valid: true
+    signer_set_transition_valid: false
+    consensus_continuity_valid: true
+
+  - at: 4s
+    assert: network_anchor_rejected
+    reason: GOVERNANCE_TRANSITION_INVALID
+
+  - at: 4s
+    assert: network_anchor_signer_set_epoch
+    equals: 1
+
+  - at: 5s
+    action: evaluate_network_anchor
+    network_id: freedom-testnet
+    chain_adapter_id: NEAR
+    chain_network_id: testnet
+    verifier_profile: NEAR-NEP25-PRE-SPICE-BORSH-V1
+    verifier_policy_version: 1
+    commitment: anchor-2
+    previous_commitment: anchor-1
+    anchor_epoch: 2
+    trusted_checkpoint_height: 140
+    signer_set_epoch: 2
+    issued_at_height: 120
+    activation_height: 130
+    payload_binding_valid: true
+    threshold_signatures_valid: true
+    signer_set_transition_valid: true
+    consensus_continuity_valid: true
+
+  - at: 5s
+    assert: network_anchor_accepted
+
+  - at: 5s
+    assert: network_anchor_commitment
+    equals: anchor-2
+
+  - at: 5s
+    assert: network_anchor_epoch
+    equals: 2
+
+  - at: 5s
+    assert: network_anchor_checkpoint_height
+    equals: 140
+
+  - at: 5s
+    assert: network_anchor_signer_set_epoch
+    equals: 2
+
+  - at: 6s
+    action: evaluate_network_anchor
+    network_id: freedom-testnet
+    chain_adapter_id: NEAR
+    chain_network_id: testnet
+    verifier_profile: NEAR-NEP25-PRE-SPICE-BORSH-V1
+    verifier_policy_version: 1
+    commitment: anchor-1
+    previous_commitment: null
+    anchor_epoch: 1
+    trusted_checkpoint_height: 120
+    signer_set_epoch: 1
+    issued_at_height: 100
+    activation_height: 110
+    payload_binding_valid: true
+    threshold_signatures_valid: true
+    signer_set_transition_valid: true
+    consensus_continuity_valid: true
+
+  - at: 6s
+    assert: network_anchor_rejected
+    reason: CONTROL_PLANE_ROLLBACK
+
+  - at: 6s
+    assert: network_anchor_commitment
+    equals: anchor-2

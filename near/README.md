@@ -2,7 +2,10 @@
 
 Status: **real L3 sandbox integration + L4 independent proof verification / not production mainnet acceptance**.
 
-This directory contains the executable NEAR `ChainAdapter` development path and the verifier that removes RPC authority after a trusted `NetworkAnchor` has been established.
+This directory contains the executable NEAR `ChainAdapter` development path and the verifier that removes RPC authority after a trusted canonical `NetworkAnchor` has been established.
+
+Normative NetworkAnchor lifecycle: [`../docs/NETWORK_ANCHORS.md`](../docs/NETWORK_ANCHORS.md).
+Canonical outer object: [`../spec/freedom.cddl`](../spec/freedom.cddl) `network-anchor`.
 
 ## Components
 
@@ -17,8 +20,9 @@ l3-adapter/
     executes transactions, observes transaction failure/success and reads resulting state.
 
 proof-verifier/
-    independent NEAR light-client / proof verifier. It accepts RPC objects only after
-    validating them against release/bootstrap-pinned `NearNetworkAnchor` trust material.
+    independent NEAR light-client / proof verifier plus the deterministic NEAR
+    NetworkAnchor adapter-payload codec. RPC objects are accepted only after validation
+    against trust material authenticated by the outer Freedom NetworkAnchor.
 ```
 
 The NEAR stack intentionally does **not** import Android code.
@@ -55,12 +59,57 @@ It checks, with real sandbox execution, that:
 
 Extra `near_block_height` / `near_block_hash` fields are evidence and are not canonical Freedom state.
 
-## L4: RPC is transport, not authority
+## Canonical NetworkAnchor boundary
 
-`proof-verifier` implements the security boundary required by `docs/CONTROL_PLANE_SECURITY.md`:
+Freedom does not define the trust root as a Rust `NearNetworkAnchor` struct or an RPC URL. The normative outer object is canonical `network-anchor` encoded under `Freedom-DCBOR-1`, domain-separated as `FREEDOM/NETWORK_ANCHOR` and independently authorized according to `docs/NETWORK_ANCHORS.md`.
+
+The outer object binds:
 
 ```text
-NetworkAnchor
+Freedom network_id
+chain_adapter_id = NEAR
+chain_network_id
+anchor_epoch
+verifier_profile / policy version
+trusted checkpoint height/hash
+adapter_anchor_payload
+NETWORK_ANCHOR signer-set epoch/commitment
+activation / previous-anchor lineage
+```
+
+For the first executable NEAR profile:
+
+```text
+NEAR-NEP25-PRE-SPICE-BORSH-V1
+```
+
+`adapter_anchor_payload` is deterministic Borsh V1 containing:
+
+```text
+payload version
+trusted LightClientBlockLiteView
+current epoch ValidatorStake set
+next epoch ValidatorStake set
+```
+
+`NearNetworkAnchor::from_adapter_payload(...)` rejects before verifier construction when:
+
+- the profile is unsupported;
+- Borsh bytes are malformed or contain trailing data;
+- payload version is unsupported;
+- trusted-head height/hash differs from the outer canonical anchor;
+- current/next validator sets are missing;
+- the next-validator-set hash does not match the trusted head.
+
+The outer Freedom threshold signatures/commitment are intentionally not implemented by the NEAR codec itself: they belong to the canonical bootstrap/governance verifier layer. This prevents NEAR-specific code from becoming a second Freedom governance format.
+
+## L4: RPC is transport, not authority
+
+`proof-verifier` implements the post-anchor security boundary required by `docs/CONTROL_PLANE_SECURITY.md`:
+
+```text
+independently authenticated canonical NetworkAnchor
+  -> validated NEAR adapter payload
   -> NEAR light-client head verification
        -> epoch continuity
        -> validator signatures
@@ -82,6 +131,8 @@ For state, the verifier does **not** treat the light-client header's `prev_state
 
 The Sandbox L4 gate is deliberately one-shard. That makes shard index `0` uniquely authenticated and allows both inclusion and non-inclusion to be tested without pretending that a production multi-shard routing rule has already been implemented. The gate tampers with signed light-client data, execution-proof data, the full block's shard state root, returned contract-state bytes and trie proof nodes. Every corruption must fail closed.
 
+The same gate now also round-trips the deterministic NEAR NetworkAnchor payload and proves that wrong outer checkpoint binding and trailing/malformed payload bytes are rejected before a light-client verifier can be constructed.
+
 Run it from this directory:
 
 ```bash
@@ -91,19 +142,47 @@ cargo test --manifest-path ../Cargo.toml \
   --test sandbox_proofs -- --nocapture
 ```
 
-### Remaining production boundary
+## Rotation semantics
 
-The test bootstraps `NearNetworkAnchor` from the trusted local Sandbox process so it can test the post-anchor verifier deterministically. Production Freedom **MUST NOT** bootstrap that anchor from the RPC being verified. Mainnet/testnet anchor packaging, release signing, rotation and emergency recovery remain part of the independently authenticated Freedom bootstrap/update path.
+A future production `NetworkAnchor` rotation is **not** accepted merely because `NETWORK_ANCHOR` Freedom signatures are valid.
 
-Production multi-shard state verification also requires an independently authenticated mapping from account/key to shard index. This is security-critical for non-inclusion: a valid proof from the wrong shard can truthfully prove that a key is absent from that shard. The current Sandbox gate avoids that ambiguity by asserting exactly one shard.
+Ordinary same-chain/profile rotation requires:
+
+```text
+valid canonical previous-anchor lineage
++ monotonic anchor/checkpoint/signer epochs
++ valid NETWORK_ANCHOR threshold authorization
++ independently verified NEAR consensus continuity from already trusted state
+```
+
+The current NEAR light-client verifier provides the consensus-continuity primitive; the shared `NetworkAnchorState` provides the chain-agnostic monotonic/governance acceptance state. A production adapter must compose both rather than treating either one alone as sufficient.
+
+## Remaining production boundary
+
+The Sandbox test constructs its first anchor from the trusted local Sandbox process only as a deterministic fixture, then serializes/deserializes it through the exact adapter payload profile. Production Freedom **MUST NOT** bootstrap the outer NetworkAnchor from the RPC being verified.
+
+Still required before production/mainnet acceptance:
+
+```text
+Freedom-DCBOR-1 outer NetworkAnchor parser/commitment verifier in production path
+explicit production NETWORK_ANCHOR signature suite + signer-set verifier
+release/bootstrap packaging of exact initial NetworkAnchorCommitmentV1
+ordinary rotation composition: Freedom authorization + NEAR consensus continuity
+independently authenticated account/key -> shard routing for multi-shard state proofs
+reviewed mainnet/testnet anchor packages and operational rotation/recovery procedure
+new verifier profile if NEAR commitment semantics differ from the pre-Spice profile
+```
+
+Production multi-shard state verification especially requires an independently authenticated mapping from account/key to shard index. A valid proof from the wrong shard can truthfully prove that a key is absent from that shard. The current Sandbox gate avoids that ambiguity by asserting exactly one shard.
 
 The current state-root binding is explicitly the pre-Spice NEAR profile. A protocol profile in which the light-client header no longer commits to state through the ordered chunk-state-root Merkle aggregate MUST be rejected until Freedom has a separately specified and tested verifier for that profile. No fallback to RPC trust is permitted.
 
-Therefore the presence of this verifier does not make an arbitrary RPC response `VERIFIED_STATE`. The valid production chain remains:
+Therefore the presence of this verifier does not make an arbitrary RPC response or an arbitrary threshold-signed anchor `VERIFIED_STATE`. The valid production chain remains:
 
 ```text
-independently authenticated NetworkAnchor
- -> independently verified NEAR light-client head
+authentic BootstrapTrustAnchor / trusted prior NetworkAnchor
+ -> canonical NetworkAnchor authorization + lineage
+ -> independently verified NEAR consensus continuity
  -> independently verified execution proof
  -> verified shard-state commitment + authenticated shard routing
  -> independently verified trie proof

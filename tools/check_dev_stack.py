@@ -12,6 +12,7 @@ REQUIRED = [
     "core/src/main/java/dev/freedom/core/FreedomCore.java",
     "core/src/test/java/dev/freedom/core/CoreSelfTest.java",
     "sim/jvm/dev/freedom/sim/CoreStateServer.java",
+    "sim/scenarios/network-anchor-rollback.yaml",
     "sim/l2/relay_server.py",
     "sim/l2/probe.py",
     "sim/l2/run_docker.py",
@@ -43,7 +44,14 @@ def main() -> int:
         errors.append("Android source set is not compiling the shared core")
 
     simctl = (ROOT / "sim" / "simctl.py").read_text(encoding="utf-8")
-    for marker in ("from build_core import build", "CoreStateServer", '"core": "shared-java-17"'):
+    for marker in (
+        "from build_core import build",
+        "CoreStateServer",
+        '"core": "shared-java-17"',
+        "configure_network_anchor",
+        "evaluate_network_anchor",
+        "network_anchor_rejected",
+    ):
         if marker not in simctl:
             errors.append(f"simctl is not wired to shared core marker: {marker}")
 
@@ -53,10 +61,19 @@ def main() -> int:
         "class PairwiseRecoveryState",
         "class BootstrapFreshnessState",
         "class MutationVerificationState",
+        "class NetworkAnchorState",
         "class RekeyState",
     ):
         if state_machine not in core:
             errors.append(f"shared core missing state machine: {state_machine}")
+    for marker in (
+        'reject("CONTROL_PLANE_PROOF_INVALID")',
+        'reject("GOVERNANCE_TRANSITION_INVALID")',
+        'reject("NETWORK_ANCHOR_INVALID")',
+        "consensusContinuityValid",
+    ):
+        if marker not in core:
+            errors.append(f"shared core NetworkAnchor rule missing marker: {marker}")
 
     try:
         l3 = json.loads((ROOT / "sim" / "l3" / "vectors.json").read_text(encoding="utf-8"))
@@ -103,6 +120,12 @@ def main() -> int:
     proof_verifier = (ROOT / "near" / "proof-verifier" / "src" / "lib.rs").read_text(encoding="utf-8")
     for marker in (
         "NearNetworkAnchor",
+        "NEAR-NEP25-PRE-SPICE-BORSH-V1",
+        "NearNetworkAnchorPayloadV1",
+        "to_adapter_payload",
+        "from_adapter_payload",
+        "CheckpointHashMismatch",
+        "NextValidatorSetCommitmentMismatch",
         "NearLightClientVerifier",
         "verify_and_advance",
         "InsufficientApprovedStake",
@@ -124,6 +147,10 @@ def main() -> int:
         "light_client_proof",
         "RpcBlockRequest",
         "StateShardRootSetMismatch",
+        "to_adapter_payload",
+        "from_adapter_payload",
+        "CheckpointHashMismatch",
+        "MalformedPayload",
         "FREEDOM_ABSENT_KEY",
     ):
         if marker not in proof_test:

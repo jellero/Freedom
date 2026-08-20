@@ -381,6 +381,25 @@ call-signal = {
 
 ; ---- Control-plane verification --------------------------------------------------------------
 
+network-anchor = {
+  version: uint,
+  network_id: network-id,
+  chain_adapter_id: tstr,
+  chain_network_id: tstr,
+  anchor_epoch: uint64,
+  verifier_profile: tstr,
+  verifier_policy_version: uint,
+  trusted_checkpoint_height: uint64,
+  trusted_checkpoint_hash: bytes32,
+  adapter_anchor_payload: bstr,
+  signer_set_epoch: uint64,
+  signer_set_commitment: bytes32,
+  issued_at_height: uint64,
+  activation_height: uint64,
+  previous_anchor_commitment: bytes32 / null,
+  signatures: [* bstr]
+}
+
 verified-control-plane-checkpoint = {
   version: uint,
   network_id: network-id,
