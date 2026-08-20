@@ -1,8 +1,8 @@
 # Freedom NEAR development stack
 
-Status: **real L3 sandbox integration / not production mainnet acceptance**.
+Status: **real L3 sandbox integration + L4 independent proof verification / not production mainnet acceptance**.
 
-This directory contains the first executable NEAR `ChainAdapter` development path.
+This directory contains the executable NEAR `ChainAdapter` development path and the verifier that removes RPC authority after a trusted `NetworkAnchor` has been established.
 
 ## Components
 
@@ -15,11 +15,15 @@ l3-adapter/
     persistent JSONL adapter used by `sim/l3/differential.py`.
     It starts NEAR Sandbox through `near-workspaces`, compiles/deploys the contract,
     executes transactions, observes transaction failure/success and reads resulting state.
+
+proof-verifier/
+    independent NEAR light-client / proof verifier. It accepts RPC objects only after
+    validating them against release/bootstrap-pinned `NearNetworkAnchor` trust material.
 ```
 
-The adapter intentionally does **not** import Android code.
+The NEAR stack intentionally does **not** import Android code.
 
-## Run
+## Run L3
 
 Requires Rust 1.93+ and Java 17 for the shared canonical core side.
 
@@ -30,7 +34,7 @@ python sim/l3/differential.py \
 
 The first run downloads/builds Rust dependencies and the NEAR Sandbox binary through the pinned `near-workspaces` dependency.
 
-## What this L3 gate proves
+## What the L3 gate proves
 
 The differential run uses the same transition vector on both sides:
 
@@ -51,24 +55,52 @@ It checks, with real sandbox execution, that:
 
 Extra `near_block_height` / `near_block_hash` fields are evidence and are not canonical Freedom state.
 
-## Important boundary: proof verification
+## L4: RPC is transport, not authority
 
-This is now a **real ChainAdapter integration test**, but it is not yet a production light client.
-
-`near-workspaces` talks to a trusted local sandbox node. Therefore a successful L3 sandbox run does not by itself prove the production requirement:
+`proof-verifier` implements the security boundary required by `docs/CONTROL_PLANE_SECURITY.md`:
 
 ```text
-untrusted RPC response
- -> independently verified NEAR finality/light-client proof
- -> verified state proof
+NetworkAnchor
+  -> NEAR light-client head verification
+       -> epoch continuity
+       -> validator signatures
+       -> >2/3 approved stake
+       -> next validator-set commitment
+  -> verified block-merkle root
+       -> execution outcome proof
+  -> authenticated previous-state root
+       -> contract-data trie inclusion / non-inclusion proof
+  -> locally accepted state
 ```
 
-NEAR exposes light-client proof RPCs, but production Freedom must verify those proofs against its `NetworkAnchor` rather than trusting the provider. That verifier remains a separate security component/gate.
+The verifier follows the NEAR light-client validation model and keeps the trusted head unchanged on any failed check. Transaction hashes are evidence only; execution success is accepted only when the execution outcome proves into the independently verified head. `view_state(include_proof=true)` bytes are also evidence only; the local trie walker authenticates the exact `ContractData` key against the state root committed by the verified light-client head.
 
-Do not rename sandbox trust into `VERIFIED_STATE` in production code.
+The sandbox proof gate deliberately tampers with candidate light-client data, execution-proof data, returned state bytes and trie proof nodes. These inputs must fail closed while the previously trusted head remains unchanged.
+
+Run it from this directory:
+
+```bash
+cd near/proof-verifier
+cargo test --manifest-path ../Cargo.toml \
+  -p freedom-near-proof-verifier \
+  --test sandbox_proofs -- --nocapture
+```
+
+### Remaining production boundary
+
+The test bootstraps `NearNetworkAnchor` from the trusted local Sandbox process so it can test the post-anchor verifier deterministically. Production Freedom **MUST NOT** bootstrap that anchor from the RPC being verified. Mainnet/testnet anchor packaging, release signing, rotation and emergency recovery remain part of the independently authenticated Freedom bootstrap/update path.
+
+Therefore the presence of this verifier does not make an arbitrary RPC response `VERIFIED_STATE`. The valid production chain remains:
+
+```text
+independently authenticated NetworkAnchor
+ -> independently verified NEAR light-client head
+ -> independently verified execution/state proof
+ -> canonical Freedom object/state transition
+```
 
 ## Contract scope
 
-`control-plane-contract` is deliberately small. It is an executable kernel for the first differential transitions, not the complete Freedom control-plane contract. Identity, revocation, rendezvous, recovery anchor, entitlement, release and governance objects are added only with canonical CDDL/domain vectors and corresponding L3 tests.
+`control-plane-contract` is deliberately small. It is an executable kernel for the first differential transitions, not the complete Freedom control-plane contract. Identity, revocation, rendezvous, recovery anchor, entitlement, release and governance objects are added only with canonical CDDL/domain vectors and corresponding L3/L4 tests.
 
 No messages, media, mailbox or full pairwise backup belong in this contract.
