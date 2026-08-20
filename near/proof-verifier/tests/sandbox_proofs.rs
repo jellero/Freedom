@@ -6,12 +6,15 @@ use freedom_near_proof_verifier::{
 use near_jsonrpc_client::{JsonRpcClient, methods};
 use near_jsonrpc_primitives::types::query::QueryResponseKind;
 use near_primitives::hash::CryptoHash;
+use near_primitives::types::validator_stake::ValidatorStake;
 use near_primitives::types::{BlockId, BlockReference, StoreKey, TransactionOrReceiptId};
 use near_primitives::views::{LightClientBlockView, QueryRequest};
 use near_workspaces::{Contract, Worker, network::Sandbox};
+use std::collections::HashMap;
 use std::sync::Arc;
 
-const EPOCH_JUMP: u64 = 520;
+const BOOTSTRAP_STEP: u64 = 50;
+const ADVANCE_STEP: u64 = 20;
 
 async fn next_light_client_block(
     rpc: &JsonRpcClient,
@@ -28,40 +31,60 @@ async fn trusted_bootstrap_anchor(
     worker: &Worker<Sandbox>,
     rpc: &JsonRpcClient,
 ) -> Result<NearNetworkAnchor> {
-    // Genesis is retained by Sandbox and is a stable seed for the first light-client walk. Using
-    // the current head here is fragile because fast-forward may make a recent seed unavailable to
-    // the light-client endpoint even though the chain itself remains healthy.
+    // The local Sandbox process is the trusted out-of-band bootstrap source in this deterministic
+    // gate. Start from a recent observed head and walk incrementally so every last_block_hash
+    // remains available to the node's light-client endpoint. Production must instead deserialize
+    // this equivalent material from Freedom's independently authenticated NetworkAnchor package.
     let seed_block = worker
         .view_block()
-        .block_height(0)
         .await
-        .context("read sandbox genesis block")?;
+        .context("read current sandbox bootstrap head")?;
     let mut trusted_hash = CryptoHash(seed_block.hash().0);
+    let mut producer_sets: HashMap<CryptoHash, Vec<ValidatorStake>> = HashMap::new();
 
-    // In this test only, the local Sandbox process is the out-of-band trusted bootstrap source.
-    // Once the anchor is built, all later RPC objects are treated as attacker-controlled inputs.
-    for attempt in 0..8 {
-        eprintln!("L4 bootstrap: fast-forward attempt {attempt}");
+    // Each LightClientBlockView always carries the ordered producer set for its next epoch. Once
+    // the walk crosses an epoch boundary, the set learned as "next" on the previous epoch becomes
+    // the exact current set for the new anchor; the new block simultaneously supplies its next set.
+    for attempt in 0..48 {
+        eprintln!("L4 bootstrap: incremental step {attempt}");
         worker
-            .fast_forward(EPOCH_JUMP)
+            .fast_forward(BOOTSTRAP_STEP)
             .await
-            .context("fast-forward sandbox for bootstrap light-client block")?;
-        eprintln!("L4 bootstrap: query next light-client block");
-        if let Some(block) = next_light_client_block(rpc, trusted_hash).await? {
-            trusted_hash = light_client_block_hash(&block);
-            if let Some(next_bps) = &block.next_bps {
-                eprintln!("L4 bootstrap: anchor acquired at height {}", block.inner_lite.height);
-                return Ok(NearNetworkAnchor {
-                    network_id: "freedom-near-sandbox".to_string(),
-                    chain_id: "sandbox".to_string(),
-                    trusted_head: light_client_block_lite(&block),
-                    current_block_producers: Vec::new(),
-                    next_block_producers: next_bps.iter().cloned().map(Into::into).collect(),
-                });
-            }
+            .context("fast-forward sandbox during trusted bootstrap")?;
+
+        let Some(block) = next_light_client_block(rpc, trusted_hash).await? else {
+            continue;
+        };
+        trusted_hash = light_client_block_hash(&block);
+
+        if let Some(next_bps) = &block.next_bps {
+            producer_sets.insert(
+                block.inner_lite.next_epoch_id,
+                next_bps.iter().cloned().map(Into::into).collect(),
+            );
         }
+
+        let Some(current_block_producers) = producer_sets.get(&block.inner_lite.epoch_id) else {
+            continue;
+        };
+        let Some(next_block_producers) = producer_sets.get(&block.inner_lite.next_epoch_id) else {
+            continue;
+        };
+
+        eprintln!(
+            "L4 bootstrap: anchor acquired at height {} with current+next validator sets",
+            block.inner_lite.height
+        );
+        return Ok(NearNetworkAnchor {
+            network_id: "freedom-near-sandbox".to_string(),
+            chain_id: "sandbox".to_string(),
+            trusted_head: light_client_block_lite(&block),
+            current_block_producers: current_block_producers.clone(),
+            next_block_producers: next_block_producers.clone(),
+        });
     }
-    bail!("sandbox did not produce a bootstrap light-client block with next_bps")
+
+    bail!("sandbox did not produce enough recent light-client blocks to bootstrap both validator sets")
 }
 
 async fn next_acceptable_block(
@@ -69,10 +92,10 @@ async fn next_acceptable_block(
     rpc: &JsonRpcClient,
     anchor: &NearNetworkAnchor,
 ) -> Result<LightClientBlockView> {
-    for attempt in 0..8 {
-        eprintln!("L4 verify: fast-forward candidate attempt {attempt}");
+    for attempt in 0..12 {
+        eprintln!("L4 verify: candidate step {attempt}");
         worker
-            .fast_forward(EPOCH_JUMP)
+            .fast_forward(ADVANCE_STEP)
             .await
             .context("fast-forward sandbox for verifiable light-client block")?;
         if let Some(block) = next_light_client_block(rpc, anchor.trusted_hash()).await? {
@@ -91,10 +114,10 @@ async fn advance_after(
     rpc: &JsonRpcClient,
     verifier: &mut NearLightClientVerifier,
 ) -> Result<()> {
-    for attempt in 0..8 {
-        eprintln!("L4 advance: fast-forward attempt {attempt}");
+    for attempt in 0..12 {
+        eprintln!("L4 advance: step {attempt}");
         worker
-            .fast_forward(EPOCH_JUMP)
+            .fast_forward(ADVANCE_STEP)
             .await
             .context("fast-forward sandbox after control-plane mutation")?;
         let head_hash = verifier.head().block_hash;
@@ -135,8 +158,8 @@ async fn malicious_rpc_objects_cannot_be_promoted_to_verified_state() -> Result<
     let worker = near_workspaces::sandbox().await.context("start NEAR Sandbox")?;
     let rpc = JsonRpcClient::connect(worker.rpc_addr());
 
-    // Establish and verify the light-client path before compiling the contract. This keeps
-    // failures in Sandbox light-client support separate from contract-build failures.
+    // The trusted-bootstrap phase ends here. Every object obtained through `rpc` below this point
+    // is attacker-controlled input and becomes trusted only if NearLightClientVerifier accepts it.
     let anchor = trusted_bootstrap_anchor(&worker, &rpc).await?;
     let candidate = next_acceptable_block(&worker, &rpc, &anchor).await?;
 
