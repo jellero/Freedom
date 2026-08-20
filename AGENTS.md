@@ -6,22 +6,23 @@ These instructions apply to Codex/agentic development in this repository.
 
 1. `docs/SECURITY_INVARIANTS.md`
 2. `docs/CONTROL_PLANE_SECURITY.md`
-3. `docs/REVOCATION.md`
-4. `docs/PAIRWISE_RECOVERY.md`
-5. `spec/README.md`
-6. `spec/ENCODING_PROFILE.md`
-7. `spec/freedom.cddl`
-8. `spec/crypto-domains.txt`
-9. `spec/vectors/dcbor-v1.json`
-10. `docs/IDENTITY_MODEL.md`
-11. `docs/PROTOCOL.md`
-12. `docs/THREAT_MODEL.md`
-13. `docs/ADVANCED_DEVELOPMENT.md`
-14. `core/README.md`
-15. `sim/README.md`
-16. `near/README.md`
-17. `docs/REPOSITORY_GOVERNANCE.md`
-18. subsystem-specific docs.
+3. `docs/NETWORK_ANCHORS.md`
+4. `docs/REVOCATION.md`
+5. `docs/PAIRWISE_RECOVERY.md`
+6. `spec/README.md`
+7. `spec/ENCODING_PROFILE.md`
+8. `spec/freedom.cddl`
+9. `spec/crypto-domains.txt`
+10. `spec/vectors/dcbor-v1.json`
+11. `docs/IDENTITY_MODEL.md`
+12. `docs/PROTOCOL.md`
+13. `docs/THREAT_MODEL.md`
+14. `docs/ADVANCED_DEVELOPMENT.md`
+15. `core/README.md`
+16. `sim/README.md`
+17. `near/README.md`
+18. `docs/REPOSITORY_GOVERNANCE.md`
+19. subsystem-specific docs.
 
 Normative MUST/MUST NOT rules override older implementation behavior.
 
@@ -30,6 +31,8 @@ Normative MUST/MUST NOT rules override older implementation behavior.
 Do not introduce global user/device network IDs, on-chain messages/mailbox, persistent relay inbox, automatic offline delivery queue, RootIdentity/RootControlCommitment/DeviceRecordCommitment as routing IDs, public social graph, mandatory single RPC/provider/relay/egress, master decryption key, single-key production super-admin, tx-hash-is-success, RPC-not-found-is-non-revoked, silent Shield downgrade, unbounded temporary active state or unregistered cryptographic purpose/domain constants.
 
 Do not claim a pairwise backup is the latest verified state after total device loss unless freshness is provided by surviving trusted state or the canonical independent monotonic recovery anchor.
+
+A governance/quorum signature over a NetworkAnchor MUST NOT be treated as a substitute for the underlying chain's consensus/finality continuity after bootstrap.
 
 ## Canonical schema / bytes / crypto domains
 
@@ -51,7 +54,7 @@ Security-relevant transition logic implemented for host simulation belongs in:
 core/src/main/java/dev/freedom/core/
 ```
 
-The Android source set compiles that same source tree. `sim/simctl.py` may own scenario parsing, virtual time, fault injection, process/container orchestration and evidence, but MUST NOT re-implement route/recovery/freshness/rekey/control-plane acceptance rules already present in the shared core.
+The Android source set compiles that same source tree. `sim/simctl.py` may own scenario parsing, virtual time, fault injection, process/container orchestration and evidence, but MUST NOT re-implement route/recovery/freshness/rekey/control-plane/NetworkAnchor acceptance rules already present in the shared core.
 
 When a new canonical state machine becomes executable:
 
@@ -62,7 +65,7 @@ When a new canonical state machine becomes executable:
 
 ## Normative-spec human gate
 
-Agents may propose changes to normative/security files, but MUST NOT autonomously weaken/remove a MUST/MUST NOT, change a trust assumption, cryptographic domain, `Freedom-DCBOR-1` byte rule/vector, canonical signed schema, revocation/recovery/governance/rekey state machine merely to make implementation/tests pass.
+Agents may propose changes to normative/security files, but MUST NOT autonomously weaken/remove a MUST/MUST NOT, change a trust assumption, cryptographic domain, `Freedom-DCBOR-1` byte rule/vector, canonical signed schema, revocation/recovery/governance/rekey/NetworkAnchor state machine merely to make implementation/tests pass.
 
 A failing test is evidence, not permission to weaken the oracle.
 
@@ -112,7 +115,7 @@ python sim/l3/differential.py \
 
 `--oracle-only` validates only the canonical side and MUST NOT be reported as real L3 acceptance.
 
-Real L3 currently means NEAR Sandbox execution + transaction outcome + resulting-state read. It does not by itself prove production light-client/finality/state-proof verification against an untrusted RPC. Do not rename a trusted sandbox/RPC response to `VERIFIED_STATE`.
+Real L3 currently means NEAR Sandbox execution + transaction outcome + resulting-state read. Independent post-anchor RPC verification is a separate L4 gate in `near/proof-verifier`; L3 alone does not prove finality/state proofs. L4 still does not make an RPC a valid source for the initial authenticated NetworkAnchor.
 
 Do not report a task complete while a relevant gate is failing.
 
@@ -125,13 +128,13 @@ For every bug/security fix:
 3. implement the smallest coherent fix in the shared layer;
 4. add regression coverage;
 5. run negative/adversarial cases;
-6. run relevant L0/L1/L2/L3 gates;
+6. run relevant L0/L1/L2/L3/L4 gates;
 7. update threat/docs only when the security boundary genuinely changes;
 8. request human review for normative semantic changes.
 
 ## Simulation targets
 
-Model endpoints, relay/bridge/egress failure, NAT/address rebinding, loss/reorder, DNS/TLS/transport blocking, stale/malicious RPC, failed tx, stale bootstrap checkpoint, revocation ambiguity, rendezvous overwrite/front-run, signer rollback, clock faults, storage exhaustion, Relay Sybil/eclipse, first-contact substitution, root compromise-recovery races, stale pairwise backup mirrors, recovery-anchor rollback and release/governance failures.
+Model endpoints, relay/bridge/egress failure, NAT/address rebinding, loss/reorder, DNS/TLS/transport blocking, stale/malicious RPC, failed tx, stale bootstrap checkpoint, invalid/mismatched NetworkAnchor, anchor rollback, governance-valid anchor without consensus continuity, revocation ambiguity, rendezvous overwrite/front-run, signer rollback, clock faults, storage exhaustion, Relay Sybil/eclipse, first-contact substitution, root compromise-recovery races, stale pairwise backup mirrors, recovery-anchor rollback and release/governance failures.
 
 ## Pairwise recovery tests
 
@@ -155,9 +158,9 @@ Host simulation does not replace Android validation for Keystore, lifecycle/back
 
 ## Governance boundaries
 
-Do not automatically change production/mainnet signer sets, release roots, contract governance anchors, migration anchors, user recovery-policy roots, pairwise recovery-anchor semantics or frozen encoding profiles/vectors.
+Do not automatically change production/mainnet signer sets, release roots, NetworkAnchor roots/rotation rules, contract governance anchors, migration anchors, user recovery-policy roots, pairwise recovery-anchor semantics or frozen encoding profiles/vectors.
 
-`near/` is security-sensitive execution infrastructure. Changing the sandbox contract/adaptor so that failing transactions or rollback states become accepted requires the same review discipline as changing the corresponding core/spec oracle.
+`near/` is security-sensitive execution infrastructure. Changing the sandbox contract/adaptor/verifier so that failing transactions, invalid anchors, invalid consensus continuity or rollback states become accepted requires the same review discipline as changing the corresponding core/spec oracle.
 
 ## Evidence
 
