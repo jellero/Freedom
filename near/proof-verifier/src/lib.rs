@@ -5,13 +5,13 @@ use near_primitives::block_header::{
 };
 use near_primitives::hash::CryptoHash;
 use near_primitives::merkle::{
-    combine_hash, compute_root_from_path_and_item, verify_hash, verify_path,
+    combine_hash, compute_root_from_path_and_item, merklize, verify_hash, verify_path,
 };
 use near_primitives::state::ValueRef;
 use near_primitives::trie_key::TrieKey;
 use near_primitives::types::AccountId;
 use near_primitives::types::validator_stake::ValidatorStake;
-use near_primitives::views::{LightClientBlockLiteView, LightClientBlockView};
+use near_primitives::views::{BlockView, LightClientBlockLiteView, LightClientBlockView};
 use std::collections::HashMap;
 use std::io::Read;
 use std::sync::Arc;
@@ -41,8 +41,9 @@ impl NearNetworkAnchor {
 pub struct VerifiedNearHead {
     pub height: u64,
     pub block_hash: CryptoHash,
-    /// State root authenticated by this head. NEAR's light-client header binds the state of the
-    /// previous block, whose hash is `state_block_hash`.
+    /// Aggregate previous-state root authenticated by this head. In the pre-Spice NEAR profile
+    /// this is the Merkle root over the ordered `chunk.prev_state_root` values of this block, not
+    /// a contract trie root by itself.
     pub state_block_hash: CryptoHash,
     pub state_root: CryptoHash,
     pub timestamp_nanosec: u64,
@@ -72,6 +73,14 @@ pub enum VerificationError {
     OutcomeBlockHashMismatch,
     #[error("execution proof block is not in the verified head block-merkle tree")]
     BlockMerkleProofInvalid,
+    #[error("state block does not match the independently verified light-client head")]
+    StateBlockHashMismatch,
+    #[error("verified-head block contains no shard state roots")]
+    StateShardRootsEmpty,
+    #[error("ordered shard state roots do not reconstruct the light-client aggregate state root")]
+    StateShardRootSetMismatch,
+    #[error("requested shard index is outside the authenticated shard-root set")]
+    StateShardIndexOutOfBounds,
     #[error("state proof is missing an authenticated trie node")]
     StateProofMissingNode,
     #[error("state proof contains a malformed trie node")]
@@ -244,20 +253,47 @@ impl NearLightClientVerifier {
         Ok(())
     }
 
-    /// Verify one NEAR contract-storage key against the state root authenticated by the current
-    /// light-client head. `proof_nodes` are untrusted `view_state(include_proof=true)` trie blobs.
+    /// Verify one NEAR contract-storage key through the pre-Spice shard-state commitment of the
+    /// independently verified light-client head.
     ///
-    /// This routine does not trust the value returned by RPC. It authenticates the trie path and
-    /// compares the value reference committed in the trie with `expected_value`.
+    /// `head_block` is an untrusted full block response for the exact verified head. Its hash must
+    /// match the light-client head, and the ordered `chunk.prev_state_root` values must reconstruct
+    /// the aggregate `prev_state_root` committed by that head. Only then is `shard_index` used to
+    /// choose the trie root for `proof_nodes`.
+    ///
+    /// `shard_index` MUST come from an independently authenticated shard-layout/routing rule. This
+    /// matters especially for non-inclusion: a proof from the wrong shard could honestly prove that
+    /// a key is absent there. The Sandbox L4 gate is explicitly one-shard, where index 0 is unique.
+    ///
+    /// This profile intentionally fails closed if NEAR changes the state-root commitment model
+    /// (including Spice deployments whose header commitment no longer follows this aggregate rule).
     pub fn verify_contract_state_value(
         &self,
+        head_block: &BlockView,
+        shard_index: usize,
         account_id: &AccountId,
         storage_key: &[u8],
         expected_value: Option<&[u8]>,
         proof_nodes: &[Arc<[u8]>],
     ) -> Result<(), VerificationError> {
+        if head_block.header.hash != self.head.hash() {
+            return Err(VerificationError::StateBlockHashMismatch);
+        }
+
+        let shard_state_roots: Vec<CryptoHash> =
+            head_block.chunks.iter().map(|chunk| chunk.prev_state_root).collect();
+        if shard_state_roots.is_empty() {
+            return Err(VerificationError::StateShardRootsEmpty);
+        }
+        if merklize(&shard_state_roots).0 != self.head.inner_lite.prev_state_root {
+            return Err(VerificationError::StateShardRootSetMismatch);
+        }
+        let shard_root = *shard_state_roots
+            .get(shard_index)
+            .ok_or(VerificationError::StateShardIndexOutOfBounds)?;
+
         verify_contract_state_value_at_root(
-            self.head.inner_lite.prev_state_root,
+            shard_root,
             account_id,
             storage_key,
             expected_value,
@@ -278,6 +314,10 @@ pub fn light_client_block_hash(block: &LightClientBlockView) -> CryptoHash {
     light_client_block_lite(block).hash()
 }
 
+/// Low-level trie verifier for an already authenticated shard state root.
+///
+/// Callers handling RPC responses should normally use `NearLightClientVerifier::verify_contract_state_value`
+/// so the shard root itself is first bound to the independently verified light-client head.
 pub fn verify_contract_state_value_at_root(
     state_root: CryptoHash,
     account_id: &AccountId,
