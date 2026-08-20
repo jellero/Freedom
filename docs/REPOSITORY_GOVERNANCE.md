@@ -13,12 +13,13 @@ agent/worktree branch
  -> frozen byte vectors
  -> shared-core self-tests
  -> deterministic L1 simulator
- -> L3 canonical oracle vectors
+ -> L3 canonical/real adapter gates as relevant
+ -> L4 proof/NetworkAnchor adapter gate as relevant
  -> relevant L2 Docker smoke
  -> pull request
  -> human review for normative/security changes
  -> required checks green
- -> merge to protected main
+ -> human merge to protected main
 ```
 
 ## 2. Protected main requirement
@@ -34,10 +35,12 @@ At minimum:
 ```text
 spec/**
 core/**
+near/**
 sim/jvm/**
 sim/l3/**
 docs/SECURITY_INVARIANTS.md
 docs/CONTROL_PLANE_SECURITY.md
+docs/NETWORK_ANCHORS.md
 docs/REVOCATION.md
 docs/PAIRWISE_RECOVERY.md
 docs/IDENTITY_MODEL.md
@@ -53,11 +56,15 @@ AGENTS.md
 
 `core/**` is equally security-sensitive once a normative transition is executable: moving a rule from Markdown into Java does not make it an ordinary implementation detail.
 
+`near/proof-verifier/**` is security-sensitive because changes can alter whether untrusted RPC/NetworkAnchor payload data is promoted into trusted consensus/state.
+
 ## 4. Agent permissions
 
-Agents may create branches/worktrees, implement changes, add tests/scenarios, run L0-L3/L2 gates, open PRs and respond to review.
+Agents may create branches/worktrees, implement changes, add tests/scenarios, run L0-L4/L2 gates, open PRs and respond to review.
 
-Agents MUST NOT independently weaken a security invariant, trust assumption, frozen encoding/vector, cryptographic domain, recovery/revocation/governance/rekey state machine, canonical signed schema or shared-core transition rule merely to make tests pass.
+Agents MUST NOT independently weaken a security invariant, trust assumption, frozen encoding/vector, cryptographic domain, NetworkAnchor bootstrap/rotation rule, recovery/revocation/governance/rekey state machine, canonical signed schema or shared-core transition rule merely to make tests pass.
+
+Agents MUST NOT autonomously merge normative/security-sensitive changes, even if repository permissions technically allow it.
 
 ## 5. Repository gates
 
@@ -78,25 +85,41 @@ Network/routing changes also run, on a disposable Docker-capable runner:
 python sim/l2/run_docker.py
 ```
 
+Real NEAR control-plane changes run L3:
+
+```text
+python sim/l3/differential.py \
+  --adapter-cmd "cargo run --quiet --manifest-path near/l3-adapter/Cargo.toml"
+```
+
+NEAR proof/NetworkAnchor adapter changes run L4:
+
+```text
+cd near/proof-verifier
+cargo test --manifest-path ../Cargo.toml \
+  -p freedom-near-proof-verifier \
+  --test sandbox_proofs -- --nocapture
+```
+
 ### Specification consistency
 
-Catches canonical-file/schema/domain/document drift.
+Catches canonical-file/schema/domain/document drift, including required NetworkAnchor schema/domain/document/scenario markers.
 
 ### Development-stack consistency
 
-Ensures the Android source set, simulator bridge, shared core, L2 harness and L3 differential contract remain connected instead of silently diverging.
+Ensures the Android source set, simulator bridge, shared core, L2 harness, L3 differential contract and L4 NEAR verifier remain connected instead of silently diverging.
 
 ### Frozen byte vectors
 
-Checks `Freedom-DCBOR-1` exact bytes/strict decoding/signing preimages/negative cases.
+Checks `Freedom-DCBOR-1` exact bytes/strict decoding/signing preimages/negative cases. NetworkAnchor has an explicit canonical encoding/signing-input vector.
 
 ### Shared-core tests
 
-Compiles pure Java 17 with `javac` and tests route, pairwise recovery, bootstrap freshness, verified control-plane mutation and rekey state transitions without building the APK.
+Compiles pure Java 17 with `javac` and tests route, pairwise recovery, bootstrap freshness, verified control-plane mutation, NetworkAnchor acceptance/rollback and rekey state transitions without building the APK.
 
 ### L1 deterministic simulator
 
-Python owns DSL/virtual time/fault injection; the state transitions execute in the shared Java core. Passing L1 is not evidence for Android or real-network behavior.
+Python owns DSL/virtual time/fault injection; the state transitions execute in the shared Java core. Passing L1 is not evidence for Android, real-network behavior or cryptographic consensus verification.
 
 ### L2 Docker network smoke
 
@@ -104,17 +127,23 @@ Uses real container namespaces/TCP sockets and verifies address rebinding plus p
 
 ### L3 differential harness
 
-`--oracle-only` validates only canonical transition vectors. **It is not real L3 acceptance.** Real L3 requires a local/test `NearChainAdapter` driver passed via `--adapter-cmd` and must compare accepted/rejected result, failure class and resulting canonical state.
+`--oracle-only` validates only canonical transition vectors. **It is not real L3 acceptance.** Real L3 uses `near/l3-adapter` + NEAR Sandbox and compares accepted/rejected result, failure class and resulting canonical state.
+
+### L4 proof / NetworkAnchor adapter gate
+
+`near/proof-verifier` verifies post-anchor NEAR light-client consensus, execution and state proofs against untrusted RPC objects. It also verifies the deterministic `NEAR-NEP25-PRE-SPICE-BORSH-V1` adapter payload against the outer declared checkpoint before verifier construction.
+
+L4 Sandbox does not authenticate the production outer NetworkAnchor by itself. Production bootstrap pin/signature/rotation/multi-shard requirements remain separate normative gates.
 
 ## 6. CI is not the security oracle
 
-A green workflow proves only the gates it actually executed. It does not prove cryptographic correctness, a missing NearChainAdapter, Android platform behavior, real carrier networking or external interoperability.
+A green workflow proves only the gates it actually executed. It does not prove cryptographic correctness, production NetworkAnchor signer custody, authentic mainnet bootstrap packaging, Android platform behavior, real carrier networking or external interoperability.
 
-Higher L3/L4/L5/L6 gates remain required according to `ADVANCED_DEVELOPMENT.md`.
+Higher L5/L6/L7 gates remain required according to `ADVANCED_DEVELOPMENT.md`.
 
 ## 7. Scenario/oracle integrity
 
-Do not make a failing security scenario green by deleting/weaking assertions or rewriting expected vectors around buggy behavior.
+Do not make a failing security scenario green by deleting/weakening assertions or rewriting expected vectors around buggy behavior.
 
 ```text
 failing oracle
@@ -123,8 +152,10 @@ failing oracle
  -> otherwise request human review for normative change
 ```
 
+For NetworkAnchor specifically, it is forbidden to turn a threshold signature into a substitute for chain consensus merely because continuity verification is inconvenient or unavailable.
+
 ## 8. Current enforcement caveat
 
 Until GitHub branch/ruleset protection is actually enabled, these controls are partly procedural.
 
-> **Normative/security-sensitive changes still go through branch + PR + human merge even if GitHub technically permits a direct push.**
+> **Normative/security-sensitive changes still go through branch + PR + human review/merge even if GitHub technically permits a direct push or autonomous merge.**
